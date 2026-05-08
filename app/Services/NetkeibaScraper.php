@@ -52,7 +52,8 @@ class NetkeibaScraper
             throw new \RuntimeException("netkeiba HTTP {$status} for race_id={$raceId}");
         }
 
-        $html = $this->decodeHtml($response->getBody()->getContents());
+        $contentType = $response->getHeaderLine('Content-Type');
+        $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
 
         // デバッグ用: 取得HTMLを保存（環境変数で有効化）
         if (env('NETKEIBA_DEBUG_SAVE')) {
@@ -79,7 +80,8 @@ class NetkeibaScraper
             return [];
         }
 
-        $html = $this->decodeHtml($response->getBody()->getContents());
+        $contentType = $response->getHeaderLine('Content-Type');
+        $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
 
         $crawler = new Crawler($html);
         $ids = [];
@@ -96,31 +98,134 @@ class NetkeibaScraper
     /**
      * HTMLのエンコーディングを正しく判定してUTF-8に変換
      *
-     * netkeibaは現在UTF-8で配信されているが、過去のEUC-JPページが残ってる場合もある。
-     * Content-Type ヘッダ または HTML内のmeta charset で判定する。
+     * netkeiba.com は db.netkeiba.com 配下が長らく EUC-JP で配信されている。
+     * 判定優先順位:
+     *   1) HTTP レスポンスヘッダの Content-Type: charset=...
+     *   2) HTML 本文の <meta charset=...> / <meta http-equiv ... charset=...>
+     *   3) mb_detect_encoding (strict)。ただし EUC-JP/SJIS/UTF-8 混同を避けるため
+     *      バイトパターンで EUC-JP らしさを別途判定
+     *   4) 最終フォールバック: EUC-JP を仮定（netkeiba旧ページの実情に合わせる）
      */
-    protected function decodeHtml(string $body): string
+    protected function decodeHtml(string $body, string $contentType = ''): string
     {
-        // 1) HTML内の meta charset を最優先で見る
-        if (preg_match('/<meta[^>]+charset\s*=\s*["\']?([\w-]+)/i', $body, $m)) {
+        // BOM除去
+        if (substr($body, 0, 3) === "\xEF\xBB\xBF") {
+            $body = substr($body, 3);
+            return $body; // BOM付きはほぼ確実にUTF-8
+        }
+
+        $declared = null;
+
+        // 1) HTTPヘッダ Content-Type: text/html; charset=XXX
+        if ($contentType && preg_match('/charset\s*=\s*["\']?([\w-]+)/i', $contentType, $m)) {
             $declared = strtolower($m[1]);
-            if (in_array($declared, ['utf-8', 'utf8'])) {
-                return $body;  // 既にUTF-8
+        }
+
+        // 2) HTML 本文の meta charset
+        if (!$declared) {
+            // <meta charset="..."> または <meta http-equiv="Content-Type" content="text/html; charset=...">
+            if (preg_match('/<meta[^>]+charset\s*=\s*["\']?([\w-]+)/i', substr($body, 0, 4096), $m)) {
+                $declared = strtolower($m[1]);
             }
-            $converted = @mb_convert_encoding($body, 'UTF-8', strtoupper($declared));
+        }
+
+        if ($declared) {
+            $declared = $this->canonicalizeCharset($declared);
+            if (in_array($declared, ['UTF-8'], true)) {
+                return $body;
+            }
+            $converted = @mb_convert_encoding($body, 'UTF-8', $declared);
             if ($converted !== false && $converted !== '') {
-                return $converted;
+                return $this->stripCharsetMeta($converted);
             }
         }
 
-        // 2) mb_detect_encoding で推定
-        $detected = mb_detect_encoding($body, ['UTF-8', 'EUC-JP', 'SJIS', 'JIS'], true);
-        if ($detected && $detected !== 'UTF-8') {
-            return mb_convert_encoding($body, 'UTF-8', $detected);
+        // 3) バイトパターンで EUC-JP らしさを判定
+        //    EUC-JP の漢字は 0xA1-0xFE 0xA1-0xFE のペア。UTF-8 では 0xE0-0xEF で始まる3バイトが多い。
+        //    まず純粋な UTF-8 として valid か確認
+        $isValidUtf8 = mb_check_encoding($body, 'UTF-8');
+        $eucScore = 0;
+        $utfScore = 0;
+        $len = strlen($body);
+        $sampleLen = min($len, 8000);
+        for ($i = 0; $i < $sampleLen - 1; $i++) {
+            $b1 = ord($body[$i]);
+            if ($b1 >= 0xA1 && $b1 <= 0xFE) {
+                $b2 = ord($body[$i + 1]);
+                if ($b2 >= 0xA1 && $b2 <= 0xFE) {
+                    $eucScore++;
+                    $i++;
+                    continue;
+                }
+            }
+            if ($b1 >= 0xE0 && $b1 <= 0xEF && $i + 2 < $sampleLen) {
+                $b2 = ord($body[$i + 1]);
+                $b3 = ord($body[$i + 2]);
+                if ($b2 >= 0x80 && $b2 <= 0xBF && $b3 >= 0x80 && $b3 <= 0xBF) {
+                    $utfScore++;
+                    $i += 2;
+                    continue;
+                }
+            }
         }
 
-        // 3) フォールバック: そのまま返す（UTF-8と仮定）
+        // EUC-JP のスコアが優勢なら EUC-JP として扱う
+        if ($eucScore > $utfScore * 2 && $eucScore > 20) {
+            $converted = @mb_convert_encoding($body, 'UTF-8', 'EUC-JP');
+            if ($converted !== false && $converted !== '') {
+                return $this->stripCharsetMeta($converted);
+            }
+        }
+
+        // 4) UTF-8 として valid なら UTF-8 として扱う
+        if ($isValidUtf8 && $utfScore > 0) {
+            return $body;
+        }
+
+        // 5) mb_detect_encoding（strict）
+        $detected = mb_detect_encoding($body, ['UTF-8', 'EUC-JP', 'SJIS-win', 'SJIS', 'JIS'], true);
+        if ($detected && $detected !== 'UTF-8') {
+            $converted = @mb_convert_encoding($body, 'UTF-8', $detected);
+            if ($converted !== false && $converted !== '') {
+                return $this->stripCharsetMeta($converted);
+            }
+        }
+
+        // 6) 最終フォールバック: netkeiba 旧ページに合わせて EUC-JP を仮定
+        $converted = @mb_convert_encoding($body, 'UTF-8', 'EUC-JP');
+        if ($converted !== false && $converted !== '') {
+            return $this->stripCharsetMeta($converted);
+        }
+
         return $body;
+    }
+
+    /**
+     * charset エイリアスを正規化
+     */
+    protected function canonicalizeCharset(string $cs): string
+    {
+        $cs = strtoupper(str_replace('_', '-', $cs));
+        return match ($cs) {
+            'UTF8', 'UTF-8'         => 'UTF-8',
+            'EUCJP', 'EUC-JP', 'X-EUC-JP' => 'EUC-JP',
+            'SJIS', 'SHIFT-JIS', 'SHIFT_JIS', 'MS_KANJI', 'CP932' => 'SJIS-win',
+            'ISO-2022-JP', 'JIS'    => 'JIS',
+            default                 => $cs,
+        };
+    }
+
+    /**
+     * 変換後HTMLに残る古い charset 宣言を除去（DOMパーサが二度変換しないように）
+     */
+    protected function stripCharsetMeta(string $html): string
+    {
+        return preg_replace(
+            '/<meta[^>]+charset\s*=\s*["\']?[\w-]+["\']?[^>]*>/i',
+            '<meta charset="UTF-8">',
+            $html,
+            1
+        ) ?? $html;
     }
 
     /**
@@ -142,6 +247,11 @@ class NetkeibaScraper
      */
     protected function parseRaceHtml(string $raceId, string $html): array
     {
+        // パース前に HTML コメントを除去（<!--img ...--> がレース名等に紛れ込むのを防止）
+        $html = preg_replace('/<!--.*?-->/su', '', $html);
+        // 不正に閉じてないコメント残骸も削る
+        $html = preg_replace('/<!--[^>]*$/s', '', $html);
+
         $crawler = new Crawler($html);
         $data = ['netkeiba_id' => $raceId];
 
@@ -158,10 +268,15 @@ class NetkeibaScraper
         $data['race_number'] = $raceNumber;
 
         // ============ レース名 ============
-        $name = $this->extractText($crawler, '.data_intro h1, .RaceName, .race_title h1, dl.racedata h1');
+        // db.netkeiba.com の現行構造: <dl class="racedata fc"><dd><h1>レース名</h1>...
+        $name = $this->extractText($crawler, 'dl.racedata h1, .data_intro h1, .RaceName, .race_title h1');
         if (!$name) {
-            // h1が複数候補
             try { $name = $this->cleanText($crawler->filter('h1')->first()->text('')); } catch (\Throwable $e) {}
+        }
+        // レース名にHTMLタグ・"!--" 等の残骸が残っていれば再度クレンジング
+        if ($name) {
+            $name = preg_replace('/!--.*$/u', '', $name);
+            $name = trim(preg_replace('/\s+/u', ' ', $name));
         }
         $data['name'] = $name ?: "Race {$raceId}";
 
