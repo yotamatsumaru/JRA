@@ -20,14 +20,17 @@ class JockeyController extends Controller
             $query->where('belonging', $request->belonging);
         }
 
-        // 勝利数を結合
+        // 勝利数をサブクエリで取得（ONLY_FULL_GROUP_BY 対策）
+        $winsSub = DB::table('race_results')
+            ->select('jockey_id', DB::raw('count(*) as wins'))
+            ->where('finish_position_int', 1)
+            ->groupBy('jockey_id');
+
         $jockeys = $query
-            ->leftJoin('race_results', function ($join) {
-                $join->on('race_results.jockey_id', '=', 'jockeys.id')
-                     ->where('race_results.finish_position_int', 1);
+            ->leftJoinSub($winsSub, 'w', function ($join) {
+                $join->on('w.jockey_id', '=', 'jockeys.id');
             })
-            ->select('jockeys.*', DB::raw('count(race_results.id) as wins'))
-            ->groupBy('jockeys.id')
+            ->select('jockeys.*', DB::raw('COALESCE(w.wins, 0) as wins'))
             ->orderByDesc('wins')
             ->orderBy('jockeys.name')
             ->paginate(40)
