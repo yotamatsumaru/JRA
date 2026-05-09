@@ -82,9 +82,10 @@
     @endphp
 
     {{-- ============ ペース × 脚質 ピボット ============ --}}
-    <div class="bg-white rounded-lg shadow p-4 overflow-x-auto">
+    <div class="bg-white rounded-lg shadow p-4">
         <h2 class="font-semibold text-gray-700 mb-3">ペース × 脚質ピボット（上位3着以内）</h2>
-        <table class="w-full text-sm">
+        <div class="table-scroll">
+        <table class="w-full text-sm min-w-[480px]">
             <thead class="bg-gray-100 text-xs text-gray-600">
                 <tr>
                     <th class="px-3 py-2">ペース</th>
@@ -120,6 +121,7 @@
                 @endforeach
             </tbody>
         </table>
+        </div>
     </div>
 
     <div class="bg-white rounded-lg shadow p-4">
@@ -133,9 +135,9 @@
             <h2 class="font-semibold text-gray-700 mb-3">距離カテゴリ別 ペース分布</h2>
             <div id="dist-chart"></div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4 overflow-x-auto">
+        <div class="bg-white rounded-lg shadow p-4 table-scroll">
             <h2 class="font-semibold text-gray-700 mb-3">距離カテゴリ別 (件数)</h2>
-            <table class="w-full text-sm">
+            <table class="w-full text-sm min-w-[520px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
                         <th class="px-3 py-2 text-left">距離</th>
@@ -169,12 +171,13 @@
     </div>
 
     {{-- ============ コース別 ペース分布 ============ --}}
-    <div class="bg-white rounded-lg shadow p-4 overflow-x-auto">
+    <div class="bg-white rounded-lg shadow p-4">
         <h2 class="font-semibold text-gray-700 mb-3">コース別 ペース分布 (競馬場×トラック)</h2>
         @if (empty($byCoursePivot))
             <p class="text-sm text-gray-500">データがありません</p>
         @else
-            <table class="w-full text-sm">
+            <div class="table-scroll">
+            <table class="w-full text-sm min-w-[520px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
                         <th class="px-3 py-2 text-left">コース</th>
@@ -204,14 +207,15 @@
                     @endforeach
                 </tbody>
             </table>
+            </div>
         @endif
     </div>
 
     {{-- ============ 馬場状態別 + 平均タイム ============ --}}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="bg-white rounded-lg shadow p-4 overflow-x-auto">
+        <div class="bg-white rounded-lg shadow p-4 table-scroll">
             <h2 class="font-semibold text-gray-700 mb-3">馬場状態別 ペース分布</h2>
-            <table class="w-full text-sm">
+            <table class="w-full text-sm min-w-[420px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
                         <th class="px-3 py-2 text-left">馬場</th>
@@ -242,9 +246,9 @@
                 </tbody>
             </table>
         </div>
-        <div class="bg-white rounded-lg shadow p-4 overflow-x-auto">
+        <div class="bg-white rounded-lg shadow p-4 table-scroll">
             <h2 class="font-semibold text-gray-700 mb-3">ペース別 平均勝ちタイム / 上がり3F (1着のみ)</h2>
-            <table class="w-full text-sm">
+            <table class="w-full text-sm min-w-[480px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
                         <th class="px-3 py-2 text-left">ペース</th>
@@ -270,10 +274,11 @@
     </div>
 
     {{-- ============ 距離カテゴリ × ペース × 脚質 (3次元) ============ --}}
-    <div class="bg-white rounded-lg shadow p-4 overflow-x-auto">
+    <div class="bg-white rounded-lg shadow p-4">
         <h2 class="font-semibold text-gray-700 mb-3">距離 × ペース × 決着脚質 (3着以内)</h2>
         <p class="text-xs text-gray-500 mb-3">距離カテゴリごとにペース別の決着脚質を見ます。「同じスローでも短距離と長距離では決まり方が違う」を可視化。</p>
-        <table class="w-full text-sm">
+        <div class="table-scroll">
+        <table class="w-full text-sm min-w-[560px]">
             <thead class="bg-gray-100 text-xs text-gray-600">
                 <tr>
                     <th class="px-3 py-2 text-left">距離</th>
@@ -318,6 +323,7 @@
                 @endforeach
             </tbody>
         </table>
+        </div>
     </div>
 
     <div class="bg-amber-50 border-l-4 border-amber-400 p-4 rounded">

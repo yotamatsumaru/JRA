@@ -4,8 +4,8 @@
 @section('content')
 <div class="space-y-6">
 
-    <div class="bg-white rounded-lg shadow p-6">
-        <h1 class="text-2xl font-bold text-gray-800">
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+        <h1 class="text-xl sm:text-2xl font-bold text-gray-800 break-words">
             {{ $jockey->name }}
             @if ($jockey->belonging) <span class="ml-2 text-sm bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{{ $jockey->belonging }}</span> @endif
         </h1>
@@ -13,7 +13,7 @@
     </div>
 
     {{-- サマリー --}}
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         <div class="bg-white rounded-lg shadow p-4">
             <div class="text-xs text-gray-500">騎乗数</div>
             <div class="text-2xl font-bold text-primary-700">{{ $summary['runs'] ?? 0 }}</div>
@@ -39,7 +39,8 @@
     {{-- 競馬場別 --}}
     <div class="bg-white rounded-lg shadow p-4">
         <h2 class="font-semibold text-gray-700 mb-3">競馬場別成績</h2>
-        <table class="w-full text-sm">
+        <div class="table-scroll">
+        <table class="w-full text-sm min-w-[520px]">
             <thead class="text-xs text-gray-500 border-b">
                 <tr>
                     <th class="text-left py-1">競馬場</th>
@@ -65,6 +66,7 @@
                 @endforelse
             </tbody>
         </table>
+        </div>
     </div>
 
     {{-- 直近 --}}
@@ -73,8 +75,8 @@
         @if ($recentResults->isEmpty())
             <p class="text-sm text-gray-500">データなし</p>
         @else
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[680px]">
                 <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
                     <tr>
                         <th class="text-left px-2 py-2">日付</th>

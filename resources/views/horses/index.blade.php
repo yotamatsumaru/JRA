@@ -14,12 +14,15 @@
     </x-page-header>
 
     {{-- フィルタ --}}
-    <form method="GET" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
-        <div class="flex items-center space-x-2 mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200">
-            <x-icon name="filter" class="w-4 h-4 text-turf-600 dark:text-turf-400" />
-            <span>絞り込み</span>
-        </div>
-        <div class="flex flex-wrap gap-3 text-sm items-end">
+    <form method="GET" x-data="{ open: window.innerWidth >= 640 }" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
+        <button type="button" @click="open = !open" class="w-full flex items-center justify-between mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200 sm:cursor-default">
+            <span class="flex items-center space-x-2">
+                <x-icon name="filter" class="w-4 h-4 text-turf-600 dark:text-turf-400" />
+                <span>絞り込み</span>
+            </span>
+            <x-icon name="chevron-down" class="w-4 h-4 sm:hidden transition-transform" ::class="open ? 'rotate-180' : ''" />
+        </button>
+        <div x-show="open" x-transition.opacity class="flex flex-wrap gap-3 text-sm items-end">
             <div class="flex-1 min-w-[200px]">
                 <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">キーワード（馬名 / 父 / 母）</label>
                 <div class="relative">
@@ -46,8 +49,8 @@
     </form>
 
     {{-- リスト --}}
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 overflow-x-auto">
-        <table class="w-full text-sm">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 table-scroll">
+        <table class="w-full text-sm min-w-[680px]">
             <thead class="bg-gray-50 dark:bg-gray-700/60 text-xs text-gray-600 dark:text-gray-300 uppercase">
                 <tr>
                     <th class="text-left px-3 py-2.5">馬名</th>

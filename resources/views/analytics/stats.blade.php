@@ -15,7 +15,7 @@
     </x-page-header>
 
     {{-- タイプ切替タブ --}}
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
         @php
             $tabs = [
                 'jockey'  => ['騎手',   'user'],
@@ -34,9 +34,13 @@
     </div>
 
     {{-- フィルタ --}}
-    <form method="GET" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
+    <form method="GET" x-data="{ open: window.innerWidth >= 640 }" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
         <input type="hidden" name="type" value="{{ $type }}">
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
+        <button type="button" @click="open = !open" class="w-full flex items-center justify-between mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200 sm:hidden">
+            <span class="flex items-center space-x-2"><x-icon name="filter" class="w-4 h-4" /><span>フィルタ</span></span>
+            <span x-text="open ? '−' : '＋'"></span>
+        </button>
+        <div x-show="open" x-transition.opacity class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
             <div>
                 <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">From</label>
                 <input type="date" name="from" value="{{ $from }}" class="w-full border rounded px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600">
@@ -78,7 +82,7 @@
                 </select>
             </div>
         </div>
-        <div class="flex gap-2 mt-3">
+        <div x-show="open" x-transition.opacity class="flex gap-2 mt-3">
             <button class="bg-turf-600 hover:bg-turf-700 text-white px-4 py-1.5 rounded text-sm inline-flex items-center space-x-1">
                 <x-icon name="filter" class="w-4 h-4" /><span>適用</span>
             </button>
@@ -87,7 +91,7 @@
     </form>
 
     {{-- 全体サマリ --}}
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-data>
         <x-kpi-card label="対象{{ $label }}数" :value="number_format($total['actors'])" subtext="人 / 頭" icon="users" color="turf" />
         <x-kpi-card label="総出走数"        :value="number_format($total['runs'])"   subtext="件" icon="list" color="sand" />
         <x-kpi-card label="全体勝率"        :value="$total['win_rate'].'%'"          subtext="1着率" icon="trophy" color="gold" />
@@ -96,15 +100,15 @@
 
     {{-- ランキングテーブル --}}
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+        <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between flex-wrap gap-2">
             <h2 class="font-semibold text-gray-800 dark:text-gray-100">{{ $label }}ランキング (TOP100)</h2>
             <span class="text-xs text-gray-500">最小出走数: {{ $minRuns }}件</span>
         </div>
         @if ($rows->isEmpty())
             <div class="p-10 text-center text-sm text-gray-400">条件に該当するデータがありません</div>
         @else
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[900px]">
                 <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-600 dark:text-gray-300">
                     <tr>
                         <th class="px-3 py-2 text-right">#</th>
@@ -171,8 +175,8 @@
             $actors  = $byVenue->groupBy('actor_id');
             $venuesUsed = $byVenue->pluck('venue_name')->unique()->values();
         @endphp
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[640px]">
                 <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-600 dark:text-gray-300">
                     <tr>
                         <th class="px-3 py-2 text-left">{{ $label }}</th>

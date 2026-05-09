@@ -5,8 +5,8 @@
 <div class="space-y-6">
 
     <div>
-        <h1 class="text-2xl font-bold text-gray-800">回収率シミュレーション</h1>
-        <p class="text-sm text-gray-600 mt-1">
+        <h1 class="text-xl sm:text-2xl font-bold text-gray-800">回収率シミュレーション</h1>
+        <p class="text-xs sm:text-sm text-gray-600 mt-1">
             過去データを元に、指定条件で買い続けた場合の回収率をシミュレートします。
             100%超で利益が出る組合せです。
         </p>
@@ -36,8 +36,13 @@
     </div>
 
     {{-- フィルタ --}}
-    <form method="GET" class="bg-white rounded-lg shadow p-4 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm items-end">
+    <form method="GET" x-data="{ open: window.innerWidth >= 640 }" class="bg-white rounded-lg shadow p-4">
         <input type="hidden" name="kind" value="{{ $kind }}">
+        <button type="button" @click="open = !open" class="w-full flex items-center justify-between mb-3 text-sm font-semibold text-gray-700 sm:hidden">
+            <span>フィルタ</span>
+            <span x-text="open ? '−' : '＋'"></span>
+        </button>
+        <div x-show="open" x-transition.opacity class="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm items-end">
         <div>
             <label class="block text-xs text-gray-500 mb-1">人気
                 @if (in_array($kind, ['uma-ren','wide','san-fuku']))
@@ -86,10 +91,11 @@
         <div>
             <button type="submit" class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded w-full">計算</button>
         </div>
+        </div>
     </form>
 
     {{-- KPIサマリ --}}
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
         <div class="bg-white rounded-lg shadow p-4">
             <div class="text-xs text-gray-500">対象レース</div>
             <div class="text-2xl font-bold text-gray-800 mt-1">{{ number_format($simulation['races']) }}</div>
@@ -172,8 +178,8 @@
     @if (!empty($detailRows))
     <div class="bg-white rounded-lg shadow p-4">
         <h3 class="font-semibold text-gray-700 mb-3">{{ $detailTitle }}</h3>
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[640px]">
                 <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
                     <tr>
                         <th class="text-left px-3 py-2">区分</th>

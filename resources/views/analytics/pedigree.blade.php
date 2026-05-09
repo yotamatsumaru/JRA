@@ -3,8 +3,8 @@
 
 @section('content')
 <div class="space-y-6">
-    <h1 class="text-2xl font-bold text-gray-800">血統傾向分析（父系）</h1>
-    <p class="text-sm text-gray-600">父馬を選択すると、その産駒が好走している競馬場・距離が分析されます。</p>
+    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">血統傾向分析（父系）</h1>
+    <p class="text-xs sm:text-sm text-gray-600">父馬を選択すると、その産駒が好走している競馬場・距離が分析されます。</p>
 
     {{-- 父馬選択 --}}
     <div class="bg-white rounded-lg shadow p-4">
@@ -27,8 +27,8 @@
         @if ($stats->isEmpty())
             <p class="text-sm text-gray-500">データがありません</p>
         @else
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[640px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
                         <th class="text-left px-3 py-2">競馬場</th>

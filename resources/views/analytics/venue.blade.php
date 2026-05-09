@@ -3,7 +3,7 @@
 
 @section('content')
 <div class="space-y-6">
-    <h1 class="text-2xl font-bold text-gray-800">競馬場別傾向分析</h1>
+    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">競馬場別傾向分析</h1>
 
     {{-- フィルタ --}}
     <form method="GET" class="bg-white rounded-lg shadow p-4 flex flex-wrap gap-3 text-sm items-end">
@@ -50,8 +50,8 @@
         @if ($frameStats->isEmpty())
             <p class="text-sm text-gray-500">データがありません。レース結果が蓄積されると表示されます。</p>
         @else
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[760px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
                         <th class="px-2 py-2">枠</th>

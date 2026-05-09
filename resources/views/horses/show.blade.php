@@ -5,13 +5,13 @@
 <div class="space-y-6">
 
     {{-- ヘッダー --}}
-    <div class="bg-white rounded-lg shadow p-6 flex justify-between items-start">
-        <div>
-            <h1 class="text-2xl font-bold text-gray-800">
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex justify-between items-start gap-3">
+        <div class="min-w-0 flex-1">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 break-words">
                 {{ $horse->name }}
                 @if ($horse->sex) <span class="text-sm bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{{ $horse->sex }}</span> @endif
             </h1>
-            <div class="mt-2 text-sm text-gray-600 space-y-1">
+            <div class="mt-2 text-xs sm:text-sm text-gray-600 space-y-1">
                 @if ($horse->name_kana)<div>{{ $horse->name_kana }}</div>@endif
                 @if ($horse->birthday)<div>生年月日: {{ $horse->birthday->format('Y年m月d日') }}</div>@endif
                 @if ($horse->color)<div>毛色: {{ $horse->color }}</div>@endif
@@ -21,11 +21,11 @@
                 @if ($horse->breeder)<div>生産者: {{ $horse->breeder }}</div>@endif
             </div>
         </div>
-        <a href="{{ route('horses.edit', $horse) }}" class="text-sm text-gray-500 hover:text-primary-600 px-3 py-1 border rounded">編集</a>
+        <a href="{{ route('horses.edit', $horse) }}" class="text-sm text-gray-500 hover:text-primary-600 px-3 py-1 border rounded shrink-0">編集</a>
     </div>
 
     {{-- 成績サマリー --}}
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         <div class="bg-white rounded-lg shadow p-4">
             <div class="text-xs text-gray-500">出走</div>
             <div class="text-2xl font-bold text-primary-700">{{ $summary['runs'] ?? 0 }}</div>
@@ -52,9 +52,9 @@
 
     {{-- 距離別 / 競馬場別 --}}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white rounded-lg shadow p-4 table-scroll">
             <h2 class="font-semibold text-gray-700 mb-3">距離別成績</h2>
-            <table class="w-full text-sm">
+            <table class="w-full text-sm min-w-[360px]">
                 <thead class="text-xs text-gray-500 border-b">
                     <tr><th class="text-left py-1">距離</th><th class="py-1">出走</th><th class="py-1">勝利</th><th class="py-1">勝率</th></tr>
                 </thead>
@@ -72,9 +72,9 @@
                 </tbody>
             </table>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white rounded-lg shadow p-4 table-scroll">
             <h2 class="font-semibold text-gray-700 mb-3">競馬場別成績</h2>
-            <table class="w-full text-sm">
+            <table class="w-full text-sm min-w-[360px]">
                 <thead class="text-xs text-gray-500 border-b">
                     <tr><th class="text-left py-1">場</th><th class="py-1">出走</th><th class="py-1">勝利</th><th class="py-1">勝率</th></tr>
                 </thead>
@@ -100,8 +100,8 @@
         @if ($horse->results->isEmpty())
             <p class="text-sm text-gray-500">まだ出走記録がありません</p>
         @else
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[820px]">
                 <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
                     <tr>
                         <th class="text-left px-2 py-2">日付</th>

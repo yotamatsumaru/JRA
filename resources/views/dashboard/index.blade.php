@@ -266,7 +266,7 @@
     {{-- 直近開催日のレース --}}
     @if ($latestDateRaces->isNotEmpty())
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
-        <div class="flex justify-between items-center mb-3">
+        <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
             <div class="flex items-center space-x-2">
                 <x-icon name="calendar" class="w-5 h-5 text-fuchsia-500" />
                 <h2 class="font-semibold text-gray-700 dark:text-gray-200">
@@ -283,8 +283,8 @@
             </div>
             <span class="text-xs text-gray-500 dark:text-gray-400">{{ $latestDateRaces->count() }}レース</span>
         </div>
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[640px]">
                 <thead class="text-xs text-gray-500 dark:text-gray-400 uppercase border-b dark:border-gray-700">
                     <tr>
                         <th class="text-left py-2 px-2">場</th>
@@ -346,8 +346,8 @@
                 actionHref="{{ route('races.create') }}"
             />
         @else
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+            <div class="table-scroll">
+                <table class="w-full text-sm min-w-[680px]">
                     <thead class="text-xs text-gray-500 dark:text-gray-400 uppercase border-b dark:border-gray-700">
                         <tr>
                             <th class="text-left py-2 px-2">日付</th>

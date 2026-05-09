@@ -5,15 +5,15 @@
 <div class="space-y-6">
 
     {{-- ヘッダー --}}
-    <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex items-start justify-between">
-            <div>
-                <div class="text-sm text-gray-500">{{ $race->race_date?->format('Y年m月d日') }} {{ $race->venue?->name }} {{ $race->race_number }}R</div>
-                <h1 class="text-2xl font-bold text-gray-800 mt-1">
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+        <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+                <div class="text-xs sm:text-sm text-gray-500">{{ $race->race_date?->format('Y年m月d日') }} {{ $race->venue?->name }} {{ $race->race_number }}R</div>
+                <h1 class="text-xl sm:text-2xl font-bold text-gray-800 mt-1 break-words">
                     {{ $race->name }}
                     @if ($race->grade) <span class="ml-2 text-sm bg-amber-500 text-white px-2 py-0.5 rounded">{{ $race->grade }}</span> @endif
                 </h1>
-                <div class="mt-2 text-sm text-gray-600 space-x-3">
+                <div class="mt-2 text-xs sm:text-sm text-gray-600 flex flex-wrap gap-x-3 gap-y-1">
                     <span>{{ $race->track_type }}{{ $race->distance }}m</span>
                     @if ($race->direction) <span>・{{ $race->direction }}</span> @endif
                     @if ($race->course_detail) <span>・{{ $race->course_detail }}</span> @endif
@@ -22,7 +22,7 @@
                     @if ($race->pace) <span>・ペース:{{ $race->pace }}</span> @endif
                 </div>
             </div>
-            <div class="flex space-x-2">
+            <div class="flex space-x-2 shrink-0">
                 <a href="{{ route('races.edit', $race) }}" class="text-sm text-gray-500 hover:text-primary-600 px-3 py-1 border rounded">編集</a>
             </div>
         </div>
@@ -38,14 +38,14 @@
     @endphp
 
     {{-- 出走結果 --}}
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6">
         <h2 class="font-semibold text-gray-700 mb-3">出走結果（{{ $results->count() }}頭）</h2>
 
         @if ($results->isEmpty())
             <p class="text-sm text-gray-500 mb-4">まだ結果が登録されていません。下のフォームから入力してください。</p>
         @else
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+            <div class="table-scroll -mx-4 sm:mx-0">
+                <table class="w-full text-sm min-w-[1100px]">
                     <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
                         <tr>
                             <th class="px-2 py-2">着</th>
@@ -160,8 +160,8 @@
 
         {{-- 結果追加フォーム --}}
         <details class="mt-6">
-            <summary class="cursor-pointer text-sm text-primary-600 hover:underline">＋ 出走馬の結果を追加</summary>
-            <form method="POST" action="{{ route('races.results.store', $race) }}" class="mt-4 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm bg-gray-50 p-4 rounded">
+            <summary class="cursor-pointer text-sm text-primary-600 hover:underline py-2">＋ 出走馬の結果を追加</summary>
+            <form method="POST" action="{{ route('races.results.store', $race) }}" class="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-sm bg-gray-50 p-3 sm:p-4 rounded">
                 @csrf
                 <div>
                     <label class="block text-xs text-gray-600 mb-1">着順</label>
@@ -248,10 +248,10 @@
 
     {{-- 公式払戻 --}}
     @if ($payouts->isNotEmpty())
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6">
         <h2 class="font-semibold text-gray-700 mb-3">公式払戻</h2>
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[480px]">
                 <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
                     <tr>
                         <th class="text-left px-3 py-2">券種</th>
@@ -296,12 +296,12 @@
 
     {{-- 自分の馬券 --}}
     @if ($myBets->isNotEmpty())
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6">
         <div class="flex items-center justify-between mb-3">
             <h2 class="font-semibold text-gray-700">このレースの自分の馬券</h2>
             <a href="{{ route('bets.create', ['race_id' => $race->id]) }}" class="text-xs text-primary-600 hover:underline">＋ 追加</a>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 text-sm">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4 text-sm">
             <div class="bg-gray-50 rounded p-3">
                 <div class="text-xs text-gray-500">点数</div>
                 <div class="font-bold text-gray-800">{{ $myBetSummary['count'] }}件</div>
@@ -328,8 +328,8 @@
             </div>
         </div>
 
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div class="table-scroll">
+            <table class="w-full text-sm min-w-[700px]">
                 <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
                     <tr>
                         <th class="text-left px-3 py-2">券種</th>
@@ -372,17 +372,17 @@
         </div>
     </div>
     @else
-    <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex items-center justify-between">
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6">
+        <div class="flex items-center justify-between flex-wrap gap-2">
             <div class="text-sm text-gray-500">このレースの馬券はまだ登録されていません。</div>
-            <a href="{{ route('bets.create', ['race_id' => $race->id]) }}" class="text-sm bg-primary-600 hover:bg-primary-700 text-white px-3 py-1 rounded">＋ 馬券を登録</a>
+            <a href="{{ route('bets.create', ['race_id' => $race->id]) }}" class="text-sm bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded">＋ 馬券を登録</a>
         </div>
     </div>
     @endif
 
     {{-- メモ --}}
     @if ($notes->isNotEmpty())
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6">
         <h2 class="font-semibold text-gray-700 mb-3">レースメモ</h2>
         <ul class="space-y-3">
             @foreach ($notes as $note)
