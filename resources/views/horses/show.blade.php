@@ -21,7 +21,10 @@
                 @if ($horse->breeder)<div>生産者: {{ $horse->breeder }}</div>@endif
             </div>
         </div>
-        <a href="{{ route('horses.edit', $horse) }}" class="text-sm text-gray-500 hover:text-primary-600 px-3 py-1 border rounded shrink-0">編集</a>
+        <div class="flex items-start gap-2 shrink-0">
+            <x-watchlist-button type="horse" :targetId="$horse->id" :label="$horse->name" />
+            <a href="{{ route('horses.edit', $horse) }}" class="text-sm text-gray-500 hover:text-primary-600 px-3 py-1 border rounded">編集</a>
+        </div>
     </div>
 
     {{-- 成績サマリー --}}

@@ -49,6 +49,7 @@
                     ['job' => 'netkeiba:date',         'label' => '本日結果取込',        'icon' => 'download', 'color' => 'sky'],
                     ['job' => 'netkeiba:shutuba-date', 'label' => '翌日出馬表取込',      'icon' => 'list',     'color' => 'turf'],
                     ['job' => 'app:backup',            'label' => 'バックアップ',        'icon' => 'database', 'color' => 'gray'],
+                    ['job' => 'jra:check',             'label' => '整合性チェック',      'icon' => 'badge-check', 'color' => 'rose'],
                 ];
             @endphp
             @foreach ($jobs as $j)

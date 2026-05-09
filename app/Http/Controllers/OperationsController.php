@@ -89,6 +89,7 @@ class OperationsController extends Controller
             'netkeiba:date'        => '--date=today',
             'netkeiba:shutuba-date'=> '--date=tomorrow',
             'app:backup'           => '--keep=14',
+            'jra:check'            => '',
         ];
         $job = (string) $request->input('job');
         if (!isset($allowed[$job])) {

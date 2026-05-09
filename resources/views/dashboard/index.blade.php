@@ -17,6 +17,133 @@
         </x-slot>
     </x-page-header>
 
+    {{-- Phase 5-D: パーソナル サマリ (ログイン中のみ表示) --}}
+    @if (!empty($personal['enabled']))
+        @php
+            $tm = $personal['todayMarks'] ?? ['races'=>0,'finished'=>0,'wins'=>0,'top3'=>0];
+            $r30 = $personal['recent30'] ?? null;
+            $sh = $personal['shares'] ?? ['active'=>0,'total'=>0,'views'=>0];
+            $upcoming = $personal['upcoming'] ?? [];
+            $recentWins = $personal['recentWins'] ?? collect();
+            $todayProgress = $tm['races'] > 0 ? round($tm['finished'] / $tm['races'] * 100) : 0;
+        @endphp
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            {{-- 本日の◎進捗 --}}
+            <a href="{{ route('analytics.prediction-accuracy') }}"
+               class="block bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4 hover:ring-rose-300 dark:hover:ring-rose-700 transition">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-1.5 text-xs text-gray-500">
+                        <x-icon name="target" class="w-4 h-4 text-rose-500" />
+                        <span>本日の ◎ 進捗</span>
+                    </div>
+                    <span class="text-[10px] text-gray-400">{{ now()->format('n/j') }}</span>
+                </div>
+                <div class="text-2xl font-semibold text-gray-800 dark:text-gray-100">
+                    {{ $tm['finished'] }} / {{ $tm['races'] }}
+                    <span class="text-xs font-normal text-gray-400">レース確定</span>
+                </div>
+                <div class="mt-2 h-1.5 rounded bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                    <div class="h-full bg-rose-500" style="width: {{ $todayProgress }}%"></div>
+                </div>
+                <div class="mt-2 text-[11px] text-gray-500 flex gap-3">
+                    <span>勝 <strong class="text-emerald-600">{{ $tm['wins'] }}</strong></span>
+                    <span>3着内 <strong class="text-sky-600">{{ $tm['top3'] }}</strong></span>
+                </div>
+            </a>
+
+            {{-- 直近30日 ◎ROI --}}
+            <a href="{{ route('analytics.prediction-accuracy') }}"
+               class="block bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4 hover:ring-emerald-300 dark:hover:ring-emerald-700 transition">
+                <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
+                    <x-icon name="chart" class="w-4 h-4 text-emerald-500" />
+                    <span>直近30日 ◎ ROI</span>
+                </div>
+                @if ($r30 && $r30['runs'] > 0)
+                    <div class="text-2xl font-semibold {{ $r30['win_roi'] >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400' }}">
+                        {{ $r30['win_roi'] }}%
+                    </div>
+                    <div class="mt-1 text-[11px] text-gray-500 flex gap-3">
+                        <span>N={{ $r30['runs'] }}</span>
+                        <span>勝率 <strong>{{ $r30['win_rate'] }}%</strong></span>
+                        <span>複勝率 <strong>{{ $r30['place_rate'] }}%</strong></span>
+                    </div>
+                @else
+                    <div class="text-sm text-gray-400 mt-3">直近30日の◎データがありません</div>
+                @endif
+            </a>
+
+            {{-- ウォッチリスト --}}
+            <a href="{{ route('watchlist.index') }}"
+               class="block bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4 hover:ring-amber-300 dark:hover:ring-amber-700 transition">
+                <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
+                    <x-icon name="star" class="w-4 h-4 text-amber-500" />
+                    <span>ウォッチ出走予定 (3日以内)</span>
+                </div>
+                <div class="text-2xl font-semibold text-gray-800 dark:text-gray-100">
+                    {{ count($upcoming) }} <span class="text-xs font-normal text-gray-400">レース</span>
+                </div>
+                @if (count($upcoming) > 0)
+                    <ul class="mt-2 space-y-0.5 text-[11px] text-gray-600 dark:text-gray-300">
+                        @foreach (array_slice($upcoming, 0, 3) as $e)
+                            <li class="truncate">
+                                <span class="text-gray-400">{{ $e['race']?->race_date?->format('n/j') }}</span>
+                                {{ $e['race']?->venue?->name }}{{ $e['race']?->race_number }}R
+                                <span class="text-amber-600">×{{ count($e['hits']) }}</span>
+                            </li>
+                        @endforeach
+                    </ul>
+                @else
+                    <div class="text-sm text-gray-400 mt-3">登録対象の出走予定なし</div>
+                @endif
+            </a>
+
+            {{-- 共有スナップショット --}}
+            <a href="{{ route('shares.index') }}"
+               class="block bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4 hover:ring-sky-300 dark:hover:ring-sky-700 transition">
+                <div class="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
+                    <x-icon name="share" class="w-4 h-4 text-sky-500" />
+                    <span>予想共有</span>
+                </div>
+                <div class="text-2xl font-semibold text-gray-800 dark:text-gray-100">
+                    {{ $sh['active'] }}<span class="text-sm text-gray-400 font-normal"> / {{ $sh['total'] }}</span>
+                </div>
+                <div class="mt-1 text-[11px] text-gray-500">アクティブ / 総作成数</div>
+                <div class="mt-2 text-[11px] text-gray-500">
+                    閲覧回数 <strong class="text-sky-600">{{ number_format($sh['views']) }}</strong>
+                </div>
+            </a>
+        </div>
+
+        {{-- 直近7日の◎的中 --}}
+        @if ($recentWins->count() > 0)
+            <div class="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-lg ring-1 ring-emerald-200 dark:ring-emerald-700 p-4">
+                <div class="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300 mb-2">
+                    <x-icon name="trophy" class="w-4 h-4" />
+                    <span>直近7日の ◎ 的中</span>
+                    <span class="text-[10px] font-normal text-emerald-600 dark:text-emerald-400">{{ $recentWins->count() }} 件</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    @foreach ($recentWins as $rw)
+                        <a href="{{ route('races.show', $rw->race_id) }}"
+                           class="block bg-white dark:bg-gray-800 rounded p-2.5 ring-1 ring-emerald-100 dark:ring-emerald-800 hover:ring-emerald-300 transition text-xs">
+                            <div class="text-gray-400 text-[10px]">
+                                {{ \Illuminate\Support\Carbon::parse($rw->race_date)->format('n/j') }}
+                                {{ $rw->venue }}{{ $rw->race_number }}R
+                            </div>
+                            <div class="font-medium text-gray-800 dark:text-gray-100 truncate">{{ $rw->race_name }}</div>
+                            <div class="flex items-center justify-between mt-1">
+                                <span class="text-gray-700 dark:text-gray-200 truncate">{{ $rw->horse }}</span>
+                                <span class="text-emerald-600 dark:text-emerald-400 font-mono text-[11px] flex-shrink-0 ml-2">
+                                    @if ($rw->win_odds) {{ number_format($rw->win_odds, 1) }} 倍 @endif
+                                </span>
+                            </div>
+                        </a>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+    @endif
+
     {{-- KPI カード (上段) --}}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <x-kpi-card label="登録レース" :value="$stats['races_total']" icon="flag" color="turf" :href="route('races.index')" />

@@ -134,6 +134,8 @@ Route::middleware('auth')->group(function () {
 
         // Phase 4-N: 予想精度トラッキング
         Route::get('/prediction-accuracy', [PredictionAccuracyController::class, 'index'])->name('prediction-accuracy');
+        // Phase 5-E: 予想精度 CSV エクスポート
+        Route::get('/prediction-accuracy/export.csv', [PredictionAccuracyController::class, 'exportCsv'])->name('prediction-accuracy.export-csv');
         // Phase 4-K: コース×ペース×脚質 3D 分析
         Route::get('/pace-style', [AnalyticsController::class, 'paceStyle'])->name('pace-style');
     });

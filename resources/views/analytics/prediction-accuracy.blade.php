@@ -56,9 +56,29 @@
                     class="mt-1 w-full rounded border-gray-300 dark:bg-gray-900 dark:border-gray-600">
             </label>
         </div>
-        <div class="flex items-center gap-2 mt-3">
+        <div class="flex items-center gap-2 mt-3 flex-wrap">
             <button type="submit" class="bg-turf-600 hover:bg-turf-700 text-white px-4 py-1.5 rounded text-sm">適用</button>
             <a href="{{ route('analytics.prediction-accuracy') }}" class="text-xs text-gray-500 hover:underline">クリア</a>
+
+            {{-- Phase 5-E: CSV エクスポート --}}
+            <span class="ml-auto flex items-center gap-1.5 text-xs">
+                <span class="text-gray-400">CSVエクスポート:</span>
+                <a href="{{ route('analytics.prediction-accuracy.export-csv', array_merge(request()->query(), ['type' => 'summary'])) }}"
+                   class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
+                    <x-icon name="download" class="w-3.5 h-3.5" />
+                    <span>印別</span>
+                </a>
+                <a href="{{ route('analytics.prediction-accuracy.export-csv', array_merge(request()->query(), ['type' => 'monthly'])) }}"
+                   class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
+                    <x-icon name="download" class="w-3.5 h-3.5" />
+                    <span>月別</span>
+                </a>
+                <a href="{{ route('analytics.prediction-accuracy.export-csv', array_merge(request()->query(), ['type' => 'courses'])) }}"
+                   class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
+                    <x-icon name="download" class="w-3.5 h-3.5" />
+                    <span>コース別</span>
+                </a>
+            </span>
         </div>
     </form>
 

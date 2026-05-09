@@ -4,12 +4,17 @@
 @section('content')
 <div class="space-y-6">
 
-    <div class="bg-white rounded-lg shadow p-4 sm:p-6">
-        <h1 class="text-xl sm:text-2xl font-bold text-gray-800 break-words">
-            {{ $jockey->name }}
-            @if ($jockey->belonging) <span class="ml-2 text-sm bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{{ $jockey->belonging }}</span> @endif
-        </h1>
-        @if ($jockey->name_kana) <div class="text-sm text-gray-500 mt-1">{{ $jockey->name_kana }}</div> @endif
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex justify-between items-start gap-3">
+        <div class="min-w-0 flex-1">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 break-words">
+                {{ $jockey->name }}
+                @if ($jockey->belonging) <span class="ml-2 text-sm bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{{ $jockey->belonging }}</span> @endif
+            </h1>
+            @if ($jockey->name_kana) <div class="text-sm text-gray-500 mt-1">{{ $jockey->name_kana }}</div> @endif
+        </div>
+        <div class="shrink-0">
+            <x-watchlist-button type="jockey" :targetId="$jockey->id" :label="$jockey->name" />
+        </div>
     </div>
 
     {{-- サマリー --}}

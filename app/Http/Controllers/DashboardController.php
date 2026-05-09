@@ -4,18 +4,28 @@ namespace App\Http\Controllers;
 
 use App\Models\Horse;
 use App\Models\Jockey;
+use App\Models\PredictionShare;
 use App\Models\Race;
+use App\Models\RaceMark;
 use App\Models\RaceResult;
 use App\Models\Trainer;
 use App\Models\Venue;
+use App\Services\PredictionAccuracyService;
+use App\Services\WatchlistService;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function index(): View
+    public function index(WatchlistService $watchlistService, PredictionAccuracyService $accuracyService): View
     {
+        // ========= Phase 5-D: パーソナル サマリ (ログインユーザー) =========
+        $userId = Auth::id();
+        $personal = $this->buildPersonalSummary($userId, $watchlistService, $accuracyService);
+
         // ========= 基本 KPI =========
         $stats = [
             'races_total'    => $this->safe(fn() => Race::count(), 0),
@@ -238,6 +248,7 @@ class DashboardController extends Controller
         }
 
         return view('dashboard.index', compact(
+            'personal',
             'stats',
             'byGrade', 'byMonth', 'byVenue',
             'byTrack', 'byDistanceCat', 'byCondition', 'byWeather', 'byWeekday',
@@ -246,6 +257,106 @@ class DashboardController extends Controller
             'venueTrackWinRate', 'frameWinRates', 'venueStyleStats',
             'latestDate', 'latestDateRaces'
         ));
+    }
+
+    /**
+     * Phase 5-D: ログインユーザー向けの個人ダッシュボード セクション
+     *  - ウォッチリスト出走予定 (今日〜3日)
+     *  - 本日の◎進捗 (印付与レース vs 結果確定)
+     *  - 直近30日 ◎ROI/勝率
+     *  - 共有スナップショット
+     */
+    private function buildPersonalSummary(?int $userId, WatchlistService $wls, PredictionAccuracyService $pas): array
+    {
+        if (!$userId) {
+            return [
+                'enabled' => false,
+            ];
+        }
+
+        // ウォッチリスト出走予定 (今日〜3日, 上位5件)
+        $upcoming = $this->safe(fn() => array_slice($wls->upcomingEntries($userId, 3), 0, 5), []);
+
+        // 本日の◎進捗
+        $todayMarks = $this->safe(function () use ($userId) {
+            $today = Carbon::today()->toDateString();
+            $rows = DB::table('race_marks')
+                ->join('race_results', 'race_results.id', '=', 'race_marks.race_result_id')
+                ->join('races', 'races.id', '=', 'race_results.race_id')
+                ->where('race_marks.user_id', $userId)
+                ->where('race_marks.mark', '◎')
+                ->whereDate('races.race_date', $today)
+                ->select(
+                    'races.id as race_id',
+                    DB::raw('SUM(CASE WHEN race_results.finish_position_int IS NOT NULL THEN 1 ELSE 0 END) as finished'),
+                    DB::raw('SUM(CASE WHEN race_results.finish_position_int = 1 THEN 1 ELSE 0 END) as wins'),
+                    DB::raw('SUM(CASE WHEN race_results.finish_position_int <= 3 THEN 1 ELSE 0 END) as top3')
+                )
+                ->groupBy('races.id')
+                ->get();
+            return [
+                'races'    => $rows->count(),
+                'finished' => (int) $rows->sum('finished'),
+                'wins'     => (int) $rows->sum('wins'),
+                'top3'     => (int) $rows->sum('top3'),
+            ];
+        }, ['races' => 0, 'finished' => 0, 'wins' => 0, 'top3' => 0]);
+
+        // 直近30日 ◎ROI/勝率
+        $recent30 = $this->safe(function () use ($userId, $pas) {
+            $from = Carbon::today()->subDays(30)->toDateString();
+            $to   = Carbon::today()->toDateString();
+            $summary = $pas->summary($userId, ['from' => $from, 'to' => $to]);
+            return $summary['◎'] ?? null;
+        }, null);
+
+        // 共有スナップショット
+        $shares = $this->safe(function () use ($userId) {
+            return [
+                'active' => PredictionShare::where('user_id', $userId)
+                    ->where('is_active', true)
+                    ->where(function ($q) {
+                        $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
+                    })->count(),
+                'total'  => PredictionShare::where('user_id', $userId)->count(),
+                'views'  => (int) PredictionShare::where('user_id', $userId)->sum('view_count'),
+            ];
+        }, ['active' => 0, 'total' => 0, 'views' => 0]);
+
+        // 直近の◎獲得 (バッジ表示用) — 過去7日に的中したレース
+        $recentWins = $this->safe(function () use ($userId) {
+            return DB::table('race_marks')
+                ->join('race_results', 'race_results.id', '=', 'race_marks.race_result_id')
+                ->join('races', 'races.id', '=', 'race_results.race_id')
+                ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
+                ->leftJoin('horses', 'horses.id', '=', 'race_results.horse_id')
+                ->where('race_marks.user_id', $userId)
+                ->where('race_marks.mark', '◎')
+                ->where('race_results.finish_position_int', 1)
+                ->whereDate('races.race_date', '>=', Carbon::today()->subDays(7)->toDateString())
+                ->select(
+                    'races.id as race_id',
+                    'races.name as race_name',
+                    'races.race_date',
+                    'races.race_number',
+                    'venues.name as venue',
+                    'horses.name as horse',
+                    'race_results.win_odds'
+                )
+                ->orderByDesc('races.race_date')
+                ->orderByDesc('races.race_number')
+                ->limit(5)
+                ->get();
+        }, collect());
+
+        return [
+            'enabled'    => true,
+            'upcoming'   => $upcoming,
+            'todayMarks' => $todayMarks,
+            'recent30'   => $recent30,
+            'shares'     => $shares,
+            'recentWins' => $recentWins,
+        ];
     }
 
     /**
