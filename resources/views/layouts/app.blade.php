@@ -289,6 +289,19 @@
                         </div>
 
                         <div class="relative" x-data="{ open: false }">
+                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('admin.db.*') ? $active : $inactive }} flex items-center space-x-1.5">
+                                <span class="text-base">🗄️</span>
+                                <span>DB</span>
+                                <x-icon name="chevron-down" class="w-3 h-3" />
+                            </button>
+                            <div x-show="open" x-cloak x-transition class="absolute mt-2 w-52 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
+                                <a href="{{ route('admin.db.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><span>🏠</span><span>DBトップ</span></a>
+                                <a href="{{ route('admin.db.stats') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><span>📊</span><span>DB統計</span></a>
+                                <a href="{{ route('admin.db.schema') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><span>🗺️</span><span>ER図</span></a>
+                            </div>
+                        </div>
+
+                        <div class="relative" x-data="{ open: false }">
                             <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? $active : $inactive }} flex items-center space-x-1.5">
                                 <x-icon name="cash" class="w-4 h-4" />
                                 <span>馬券</span>
@@ -414,6 +427,19 @@
                         <a href="{{ route('import.csv') }}"      class="{{ $mSub }}" @click="menuOpen=false">📄 CSV取込</a>
                         <a href="{{ route('import.image') }}"    class="{{ $mSub }}" @click="menuOpen=false">📷 画像取込(GPT-4o)</a>
                         <a href="{{ route('import.logs') }}"     class="{{ $mSub }}" @click="menuOpen=false">📋 取込ログ</a>
+                    </div>
+                </div>
+
+                {{-- DBビューア(折り畳み) --}}
+                <div x-data="{ o: {{ request()->routeIs('admin.db.*') ? 'true' : 'false' }} }" class="rounded">
+                    <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
+                        <span class="flex items-center gap-2">🗄️ DBビューア</span>
+                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
+                    </button>
+                    <div x-show="o" x-cloak class="space-y-0.5">
+                        <a href="{{ route('admin.db.index') }}"  class="{{ $mSub }}" @click="menuOpen=false">🏠 DBトップ</a>
+                        <a href="{{ route('admin.db.stats') }}"  class="{{ $mSub }}" @click="menuOpen=false">📊 DB統計</a>
+                        <a href="{{ route('admin.db.schema') }}" class="{{ $mSub }}" @click="menuOpen=false">🗺️ ER図</a>
                     </div>
                 </div>
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\BetController;
 use App\Http\Controllers\BettingDashboardController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DbViewerController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\HorseController;
 use App\Http\Controllers\ImportController;
@@ -79,6 +80,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/horse', [AnalyticsController::class, 'horse'])->name('horse');
         Route::get('/stats', [AnalyticsController::class, 'stats'])->name('stats');
         Route::get('/roi', [AnalyticsController::class, 'roi'])->name('roi');
+    });
+
+    // 管理: DBビューア (読み取り専用)
+    Route::prefix('admin/db')->name('admin.db.')->group(function () {
+        Route::get('/',                [DbViewerController::class, 'index'])->name('index');
+        Route::get('/stats',           [DbViewerController::class, 'stats'])->name('stats');
+        Route::get('/schema',          [DbViewerController::class, 'schema'])->name('schema');
+        Route::get('/table/{table}',   [DbViewerController::class, 'table'])->name('table');
     });
 
     // インポート
