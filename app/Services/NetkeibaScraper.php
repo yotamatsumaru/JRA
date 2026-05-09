@@ -37,6 +37,133 @@ class NetkeibaScraper
     }
 
     /**
+     * 馬ID から血統・プロフィール情報を取得
+     *
+     * 取得項目:
+     *  - father        父
+     *  - mother        母
+     *  - mother_father 母父
+     *  - sex           性別 (牡/牝/セ)
+     *  - color         毛色
+     *  - birthday      生年月日 (YYYY-MM-DD)
+     *  - owner         馬主
+     *  - breeder       生産者
+     *  - birth_place   産地
+     *
+     * @param string $horseId  netkeiba 馬ID（10桁）
+     * @return array           取得できた項目のみ含むハッシュ
+     */
+    public function fetchHorse(string $horseId): array
+    {
+        $this->respectInterval();
+
+        $url = "/horse/{$horseId}/";
+        Log::info("Netkeiba fetch horse: {$url}");
+
+        $response = $this->http->get($url);
+        $status = $response->getStatusCode();
+        if ($status !== 200) {
+            throw new \RuntimeException("netkeiba HTTP {$status} for horse_id={$horseId}");
+        }
+
+        $contentType = $response->getHeaderLine('Content-Type');
+        $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
+
+        return $this->parseHorseHtml($horseId, $html);
+    }
+
+    /**
+     * 馬詳細ページのHTMLをパース
+     */
+    protected function parseHorseHtml(string $horseId, string $html): array
+    {
+        $html = preg_replace('/<!--.*?-->/su', '', $html);
+        $crawler = new Crawler($html);
+
+        $data = ['netkeiba_id' => $horseId];
+
+        // ============ 馬名 ============
+        $name = $this->extractText($crawler, '.horse_title h1, h1.horse_title, div.horse_title h1');
+        if ($name) {
+            $data['name'] = preg_replace('/\s+/u', ' ', trim($name));
+        }
+
+        // ============ 血統テーブル ============
+        // <table class="blood_table"> セル順は通常 [父, 父父, 父母, 母, 母父, 母母]
+        try {
+            $bloodTable = $crawler->filter('table.blood_table')->first();
+            if ($bloodTable->count() > 0) {
+                $parents = [];
+                $bloodTable->filter('td')->each(function (Crawler $td) use (&$parents) {
+                    $a = $td->filter('a')->first();
+                    if ($a->count() > 0) {
+                        $parents[] = $this->cleanText($a->text(''));
+                    } else {
+                        $parents[] = $this->cleanText($td->text(''));
+                    }
+                });
+                if (count($parents) >= 5) {
+                    if (!empty($parents[0])) $data['father']        = mb_substr($parents[0], 0, 50);
+                    if (!empty($parents[3])) $data['mother']        = mb_substr($parents[3], 0, 50);
+                    if (!empty($parents[4])) $data['mother_father'] = mb_substr($parents[4], 0, 50);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba: blood_table parse failed for horse_id={$horseId}: " . $e->getMessage());
+        }
+
+        // ============ プロフィールテーブル ============
+        // <table class="db_prof_table"> 行ごとに <th>項目名</th><td>値</td>
+        try {
+            $profTable = $crawler->filter('table.db_prof_table')->first();
+            if ($profTable->count() > 0) {
+                $profTable->filter('tr')->each(function (Crawler $tr) use (&$data) {
+                    try {
+                        $th = $tr->filter('th')->first();
+                        $td = $tr->filter('td')->first();
+                        if ($th->count() === 0 || $td->count() === 0) return;
+                        $label = $this->cleanText($th->text(''));
+                        $value = $this->cleanText($td->text(''));
+                        if ($value === '') return;
+
+                        switch ($label) {
+                            case '生年月日':
+                                if (preg_match('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $value, $m)) {
+                                    $data['birthday'] = sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
+                                }
+                                break;
+                            case '毛色':
+                                $data['color'] = mb_substr($value, 0, 20);
+                                break;
+                            case '馬主':
+                                $data['owner'] = mb_substr($value, 0, 100);
+                                break;
+                            case '生産者':
+                                $data['breeder'] = mb_substr($value, 0, 100);
+                                break;
+                            case '産地':
+                                $data['birth_place'] = mb_substr($value, 0, 50);
+                                break;
+                        }
+                    } catch (\Throwable $e) {}
+                });
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba: db_prof_table parse failed for horse_id={$horseId}: " . $e->getMessage());
+        }
+
+        // ============ 性別（タイトル付近に「牡」「牝」「セ」が出る） ============
+        try {
+            $titleText = $this->cleanText($crawler->filter('.horse_title, .db_main_data')->text(''));
+            if (preg_match('/(牡|牝|セ)/u', $titleText, $m)) {
+                $data['sex'] = $m[1];
+            }
+        } catch (\Throwable $e) {}
+
+        return $data;
+    }
+
+    /**
      * race_id (12桁) からレース結果を取得
      */
     public function fetchRace(string $raceId): array
@@ -605,12 +732,21 @@ class NetkeibaScraper
                 if (!$key) return;
 
                 // リンク内テキストを優先（馬名・騎手名等はaタグでラップされてる）
+                // 馬・騎手・調教師リンクからは netkeiba_id も併せて取得
                 try {
                     $a = $td->filter('a')->first();
                     if ($a->count() > 0) {
                         $val = $this->cleanText($a->text(''));
                         if ($val !== '') {
                             $row[$key] = $val;
+                            $href = $a->attr('href') ?? '';
+                            if ($key === 'horse_name' && preg_match('#/horse/(\d+)#', $href, $m)) {
+                                $row['horse_netkeiba_id'] = $m[1];
+                            } elseif ($key === 'jockey_name' && preg_match('#/jockey/(?:result/)?(\d+)#', $href, $m)) {
+                                $row['jockey_netkeiba_id'] = $m[1];
+                            } elseif ($key === 'trainer_name' && preg_match('#/trainer/(?:result/)?(\d+)#', $href, $m)) {
+                                $row['trainer_netkeiba_id'] = $m[1];
+                            }
                             return;
                         }
                     }
@@ -693,9 +829,14 @@ class NetkeibaScraper
             $out['weight_carried'] = (float) $row['weight_carried'];
         }
 
-        // 騎手
+        // 騎手・調教師
         if (isset($row['jockey_name']))    $out['jockey_name'] = $row['jockey_name'];
         if (isset($row['trainer_name']))   $out['trainer_name'] = $row['trainer_name'];
+
+        // netkeiba ID（馬・騎手・調教師）
+        if (isset($row['horse_netkeiba_id']))   $out['horse_netkeiba_id']   = $row['horse_netkeiba_id'];
+        if (isset($row['jockey_netkeiba_id']))  $out['jockey_netkeiba_id']  = $row['jockey_netkeiba_id'];
+        if (isset($row['trainer_netkeiba_id'])) $out['trainer_netkeiba_id'] = $row['trainer_netkeiba_id'];
 
         // タイム "1:23.4"
         if (isset($row['time']))           $out['time'] = mb_substr($row['time'], 0, 10);

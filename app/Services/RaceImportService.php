@@ -163,21 +163,15 @@ class RaceImportService
 
     /**
      * RaceResult を作成（馬・騎手・調教師は自動作成）
+     *
+     * 馬は netkeiba_id があればそちらを優先キーに、無ければ name で firstOrCreate。
+     * 血統(父/母/母父)が未取得なら netkeiba から自動取得して補完する。
      */
     protected function createResult(Race $race, array $row): RaceResult
     {
-        $horse = Horse::firstOrCreate(
-            ['name' => $row['horse_name'] ?? 'Unknown'],
-            ['sex' => $row['sex'] ?? null]
-        );
-
-        $jockey = !empty($row['jockey_name'])
-            ? Jockey::firstOrCreate(['name' => $row['jockey_name']])
-            : null;
-
-        $trainer = !empty($row['trainer_name'])
-            ? Trainer::firstOrCreate(['name' => $row['trainer_name']])
-            : null;
+        $horse = $this->resolveHorse($row);
+        $jockey = $this->resolveJockey($row);
+        $trainer = $this->resolveTrainer($row);
 
         $finishInt = is_numeric($row['finish_position'] ?? null)
             ? (int) $row['finish_position']
@@ -226,5 +220,112 @@ class RaceImportService
             return (float) $time;
         }
         return null;
+    }
+
+    /**
+     * 馬を解決（netkeiba_id があればそれをキーに、無ければ name）
+     * 血統が未取得かつ netkeiba_id があれば自動取得して補完
+     */
+    protected function resolveHorse(array $row): Horse
+    {
+        $name = $row['horse_name'] ?? 'Unknown';
+        $netkeibaId = $row['horse_netkeiba_id'] ?? null;
+
+        if ($netkeibaId) {
+            $horse = Horse::firstOrCreate(
+                ['netkeiba_id' => $netkeibaId],
+                [
+                    'name' => $name,
+                    'sex'  => $row['sex'] ?? null,
+                ]
+            );
+
+            // 名前が変わってたら更新（出走時馬名は不変なので通常一致）
+            if ($horse->name !== $name && $name !== 'Unknown') {
+                $horse->name = $name;
+            }
+            if (empty($horse->sex) && !empty($row['sex'])) {
+                $horse->sex = $row['sex'];
+            }
+            if ($horse->isDirty()) $horse->save();
+
+            // 血統が空なら netkeiba から取得して補完
+            if (empty($horse->father) || empty($horse->mother)) {
+                $this->fillHorsePedigree($horse);
+            }
+
+            return $horse;
+        }
+
+        // netkeiba_id 無し → name で解決
+        $horse = Horse::firstOrCreate(
+            ['name' => $name],
+            ['sex' => $row['sex'] ?? null]
+        );
+        return $horse;
+    }
+
+    /**
+     * 馬の血統情報を netkeiba から取得して補完
+     * 失敗しても取込全体は止めない（ログのみ残す）
+     */
+    public function fillHorsePedigree(Horse $horse): bool
+    {
+        if (empty($horse->netkeiba_id)) {
+            return false;
+        }
+
+        try {
+            $scraper = app(NetkeibaScraper::class);
+            $info = $scraper->fetchHorse($horse->netkeiba_id);
+
+            $updated = false;
+            foreach (['father', 'mother', 'mother_father', 'color', 'birthday', 'owner', 'breeder', 'birth_place', 'sex'] as $key) {
+                if (!empty($info[$key]) && empty($horse->{$key})) {
+                    $horse->{$key} = $info[$key];
+                    $updated = true;
+                }
+            }
+            if ($updated) {
+                $horse->save();
+                Log::info("Horse pedigree filled: {$horse->name} ({$horse->netkeiba_id})");
+            }
+            return $updated;
+        } catch (\Throwable $e) {
+            Log::warning('血統取得失敗', [
+                'horse_id'    => $horse->id,
+                'netkeiba_id' => $horse->netkeiba_id,
+                'error'       => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    protected function resolveJockey(array $row): ?Jockey
+    {
+        if (empty($row['jockey_name'])) return null;
+
+        $netkeibaId = $row['jockey_netkeiba_id'] ?? null;
+        if ($netkeibaId) {
+            return Jockey::firstOrCreate(
+                ['netkeiba_id' => $netkeibaId],
+                ['name' => $row['jockey_name']]
+            );
+        }
+        return Jockey::firstOrCreate(['name' => $row['jockey_name']]);
+    }
+
+    protected function resolveTrainer(array $row): ?Trainer
+    {
+        if (empty($row['trainer_name'])) return null;
+
+        $netkeibaId = $row['trainer_netkeiba_id'] ?? null;
+        if ($netkeibaId) {
+            return Trainer::firstOrCreate(
+                ['netkeiba_id' => $netkeibaId],
+                ['name' => $row['trainer_name']]
+            );
+        }
+        return Trainer::firstOrCreate(['name' => $row['trainer_name']]);
     }
 }
