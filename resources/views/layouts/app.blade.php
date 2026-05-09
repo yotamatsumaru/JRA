@@ -243,6 +243,10 @@
                             <x-icon name="flag" class="w-4 h-4" />
                             <span>レース</span>
                         </a>
+                        <a href="{{ route('shutuba.index') }}" class="{{ request()->routeIs('shutuba.*') ? $active : $inactive }} flex items-center space-x-1.5">
+                            <x-icon name="target" class="w-4 h-4" />
+                            <span>出馬表</span>
+                        </a>
                         <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $active : $inactive }} flex items-center space-x-1.5">
                             <x-icon name="horse" class="w-4 h-4" />
                             <span>馬</span>
@@ -394,6 +398,9 @@
                 </a>
                 <a href="{{ route('races.index') }}" class="{{ request()->routeIs('races.*') ? $mActive : $mLink }}" @click="menuOpen=false">
                     <x-icon name="flag" class="w-4 h-4" /> レース
+                </a>
+                <a href="{{ route('shutuba.index') }}" class="{{ request()->routeIs('shutuba.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="target" class="w-4 h-4" /> 出馬表
                 </a>
                 <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $mActive : $mLink }}" @click="menuOpen=false">
                     <x-icon name="horse" class="w-4 h-4" /> 馬

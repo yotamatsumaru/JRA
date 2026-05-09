@@ -83,6 +83,31 @@ class Race extends Model
         return $this->hasMany(Payout::class);
     }
 
+    public function marks(): HasMany
+    {
+        return $this->hasMany(RaceMark::class);
+    }
+
+    /**
+     * 指定ユーザーの印一覧 (race_result_id => mark)
+     */
+    public function marksFor(int $userId): array
+    {
+        return $this->marks()
+            ->where('user_id', $userId)
+            ->pluck('mark', 'race_result_id')
+            ->toArray();
+    }
+
+    /**
+     * 出馬表のみ(レース未確定)かどうか
+     */
+    public function getIsShutubaOnlyAttribute(): bool
+    {
+        return $this->results()->whereNotNull('finish_position_int')->doesntExist()
+            && $this->results()->exists();
+    }
+
     public function winner(): ?RaceResult
     {
         return $this->results()->where('finish_position_int', 1)->first();

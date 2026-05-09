@@ -16,6 +16,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RaceController;
 use App\Http\Controllers\RaceNoteController;
 use App\Http\Controllers\RaceResultController;
+use App\Http\Controllers\ShutubaController;
 use App\Http\Controllers\VenueController;
 use Illuminate\Support\Facades\Route;
 
@@ -51,6 +52,15 @@ Route::middleware('auth')->group(function () {
     Route::post('races/{race}/results', [RaceResultController::class, 'store'])->name('races.results.store');
     Route::put('races/{race}/results/{result}', [RaceResultController::class, 'update'])->name('races.results.update');
     Route::delete('races/{race}/results/{result}', [RaceResultController::class, 'destroy'])->name('races.results.destroy');
+
+    // 出馬表 予想ボード
+    Route::prefix('shutuba')->name('shutuba.')->group(function () {
+        Route::get('/',                      [ShutubaController::class, 'index'])->name('index');
+        Route::get('/{race}',                [ShutubaController::class, 'show'])->name('show');
+        Route::post('/{race}/mark',          [ShutubaController::class, 'mark'])->name('mark');
+        Route::post('/{race}/memo',          [ShutubaController::class, 'memo'])->name('memo');
+        Route::post('/{race}/generate-bets', [ShutubaController::class, 'generateBets'])->name('generate-bets');
+    });
 
     // 馬
     Route::resource('horses', HorseController::class);

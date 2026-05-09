@@ -75,6 +75,19 @@ class RaceResult extends Model
         return $this->belongsTo(Trainer::class);
     }
 
+    public function marks(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(RaceMark::class);
+    }
+
+    /**
+     * 指定ユーザーの印(1件)を取得
+     */
+    public function markFor(int $userId): ?RaceMark
+    {
+        return $this->marks()->where('user_id', $userId)->first();
+    }
+
     /**
      * 通過順位から脚質を自動判定
      */
