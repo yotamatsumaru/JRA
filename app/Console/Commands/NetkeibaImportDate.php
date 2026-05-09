@@ -19,6 +19,7 @@ class NetkeibaImportDate extends Command
     protected $signature = 'netkeiba:date
                             {date : 開始日 (YYYY-MM-DD)}
                             {--to= : 終了日 (YYYY-MM-DD)。指定なしなら開始日のみ}
+                            {--include-nar : 地方競馬(NAR)も対象に含める（デフォルトはJRA中央のみ）}
                             {--limit=200 : 1日あたり最大取込レース数}';
 
     protected $description = 'netkeibaから指定日(範囲)の全レースをインポート';
@@ -28,6 +29,10 @@ class NetkeibaImportDate extends Command
         $start = $this->argument('date');
         $end = $this->option('to') ?: $start;
         $limit = (int) $this->option('limit');
+        $includeNar = (bool) $this->option('include-nar');
+
+        // JRA中央競馬の venue_code（race_id の5-6文字目）: 01〜10
+        $jraVenueCodes = ['01','02','03','04','05','06','07','08','09','10'];
 
         $log = ImportLog::create([
             'source' => 'netkeiba',
@@ -49,13 +54,24 @@ class NetkeibaImportDate extends Command
 
                 try {
                     $raceIds = $scraper->fetchRaceIdsByDate($date);
-                    $this->info("  取得レース数: " . count($raceIds));
                 } catch (\Throwable $e) {
                     $this->error("  ✗ レース一覧取得失敗: " . $e->getMessage());
                     $totalFailed++;
                     $current = strtotime('+1 day', $current);
                     continue;
                 }
+
+                // 地方競馬を除外（デフォルト動作）
+                $narFiltered = 0;
+                if (!$includeNar) {
+                    $before = count($raceIds);
+                    $raceIds = array_values(array_filter($raceIds, function ($rid) use ($jraVenueCodes) {
+                        $vc = substr((string) $rid, 4, 2);
+                        return in_array($vc, $jraVenueCodes, true);
+                    }));
+                    $narFiltered = $before - count($raceIds);
+                }
+                $this->info("  取得レース数: " . count($raceIds) . ($narFiltered > 0 ? " (NAR {$narFiltered}件除外)" : ''));
 
                 $count = 0;
                 foreach ($raceIds as $raceId) {

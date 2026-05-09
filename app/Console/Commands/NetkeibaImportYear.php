@@ -44,6 +44,7 @@ class NetkeibaImportYear extends Command
                             {--reset : 進捗ファイルを削除して最初から}
                             {--force : DB既存race_idも全て再取得（デフォルトはスキップ）}
                             {--missing-payouts-only : 払戻データが無い既存レースだけ再取得}
+                            {--include-nar : 地方競馬(NAR)も対象に含める（デフォルトはJRA中央のみ）}
                             {--day-sleep=0 : 1日処理ごとに追加で待機する秒数}
                             {--limit-per-day=200 : 1日あたりの最大処理レース数}';
 
@@ -65,8 +66,13 @@ class NetkeibaImportYear extends Command
         $reset = (bool) $this->option('reset');
         $force = (bool) $this->option('force');
         $missingPayoutsOnly = (bool) $this->option('missing-payouts-only');
+        $includeNar = (bool) $this->option('include-nar');
         $daySleep = max(0, (int) $this->option('day-sleep'));
         $limitPerDay = max(1, (int) $this->option('limit-per-day'));
+
+        // JRA中央競馬の venue_code（race_id の5-6文字目）: 01〜10
+        // 01:札幌 02:函館 03:福島 04:新潟 05:東京 06:中山 07:中京 08:京都 09:阪神 10:小倉
+        $jraVenueCodes = ['01','02','03','04','05','06','07','08','09','10'];
 
         // --force と --missing-payouts-only は同時指定不可
         if ($force && $missingPayoutsOnly) {
@@ -152,13 +158,25 @@ class NetkeibaImportYear extends Command
                         continue;
                     }
                     $raceIds = array_values(array_unique($raceIds));
+
+                    // 地方競馬を除外（デフォルト動作）
+                    $narFiltered = 0;
+                    if (!$includeNar) {
+                        $before = count($raceIds);
+                        $raceIds = array_values(array_filter($raceIds, function ($rid) use ($jraVenueCodes) {
+                            $vc = substr((string) $rid, 4, 2);
+                            return in_array($vc, $jraVenueCodes, true);
+                        }));
+                        $narFiltered = $before - count($raceIds);
+                    }
+
                     $totalCandidates += count($raceIds);
 
                     if (empty($raceIds)) {
-                        $this->line("  · {$date}: 0 レース");
+                        $this->line("  · {$date}: 0 レース" . ($narFiltered > 0 ? " (NAR {$narFiltered}件除外)" : ''));
                         continue;
                     }
-                    $this->info("  ▼ {$date}: " . count($raceIds) . " レース");
+                    $this->info("  ▼ {$date}: " . count($raceIds) . " レース" . ($narFiltered > 0 ? " (NAR {$narFiltered}件除外)" : ''));
 
                     if ($dryRun) {
                         // dry-runは件数のみ
