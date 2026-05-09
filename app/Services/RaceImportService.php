@@ -90,6 +90,127 @@ class RaceImportService
     }
 
     /**
+     * netkeiba から取得した出馬表データを DB に保存（レース確定前）
+     *
+     * importFromNetkeiba との違い:
+     *   - 既存の race_results を削除せず、(race_id, horse_number) で UPSERT
+     *     → レース後に importFromNetkeiba を再実行すると同じ行が結果で上書きされる
+     *   - finish_position / time / margin / corner_positions / last_3f は null のまま
+     *   - 払戻データは無いのでスキップ
+     *   - 馬券の自動精算もスキップ（結果が無いため）
+     *   - races のフィールドは出馬表で確定している項目のみ更新
+     */
+    public function importShutuba(array $data): Race
+    {
+        return DB::transaction(function () use ($data) {
+            // 競馬場
+            $venue = Venue::where('code', $data['venue_code'] ?? null)->first();
+            if (!$venue) {
+                throw new \RuntimeException('対応する競馬場が見つかりません: ' . ($data['venue_code'] ?? 'null'));
+            }
+
+            // レース本体（updateOrCreate だが、結果由来フィールドは更新しない）
+            $race = Race::updateOrCreate(
+                ['netkeiba_id' => $data['netkeiba_id']],
+                array_filter([
+                    'venue_id'         => $venue->id,
+                    'race_date'        => $data['race_date'] ?? now()->toDateString(),
+                    'kaisai_kai'       => $data['kaisai_kai'] ?? null,
+                    'kaisai_day'       => $data['kaisai_day'] ?? null,
+                    'race_number'      => $data['race_number'] ?? 1,
+                    'name'             => $data['name'] ?? 'Unknown',
+                    'grade'            => $data['grade'] ?? null,
+                    'track_type'       => $data['track_type'] ?? '芝',
+                    'distance'         => $data['distance'] ?? 1600,
+                    'direction'        => $data['direction'] ?? null,
+                    'course_condition' => $data['course_condition'] ?? null,
+                    'weather'          => $data['weather'] ?? null,
+                    'horses_count'     => $data['horses_count'] ?? null,
+                ], fn($v) => $v !== null),
+            );
+
+            // 出馬表行を UPSERT（既存結果はそのまま温存）
+            foreach ($data['results'] ?? [] as $row) {
+                $this->upsertShutubaResult($race, $row);
+            }
+
+            return $race;
+        });
+    }
+
+    /**
+     * 出馬表段階の RaceResult を (race_id, horse_number) キーで UPSERT
+     *
+     * 既に同じ (race_id, horse_number) の行が存在する場合（=結果取込済み）は
+     * 結果系フィールド (finish_position / time 等) を絶対に上書きしない。
+     * 出馬表でしか拾えない静的フィールド（騎手・斤量・性齢・厩舎）のみ補完する。
+     */
+    protected function upsertShutubaResult(Race $race, array $row): RaceResult
+    {
+        $horse   = $this->resolveHorse($row);
+        $jockey  = $this->resolveJockey($row);
+        $trainer = $this->resolveTrainer($row);
+
+        $horseNumber = (int) ($row['horse_number'] ?? 0);
+        if ($horseNumber <= 0) {
+            throw new \RuntimeException('出馬表行に馬番がありません: ' . json_encode($row, JSON_UNESCAPED_UNICODE));
+        }
+
+        // 既存行があれば取得（UNIQUE(race_id, horse_number)）
+        $existing = RaceResult::where('race_id', $race->id)
+            ->where('horse_number', $horseNumber)
+            ->first();
+
+        // 出馬表で取得できる静的属性（結果由来フィールドは触らない）
+        $payload = [
+            'race_id'        => $race->id,
+            'horse_id'       => $horse->id,
+            'jockey_id'      => $jockey?->id,
+            'trainer_id'     => $trainer?->id,
+            'horse_number'   => $horseNumber,
+            'frame_number'   => $row['frame_number'] ?? null,
+            'sex'            => $row['sex'] ?? null,
+            'age'            => $row['age'] ?? null,
+            'weight_carried' => $row['weight_carried'] ?? null,
+            // 馬体重は出馬表段階では当日計測前のことも多いが、取れた場合のみ反映
+            'horse_weight'      => $row['horse_weight'] ?? null,
+            'horse_weight_diff' => $row['horse_weight_diff'] ?? null,
+            'popularity'        => $row['popularity'] ?? null,
+            'win_odds'          => $row['win_odds'] ?? null,
+        ];
+
+        if ($existing) {
+            // 既存行: 値が空のフィールドのみ補完（結果取込済みデータを破壊しない）
+            foreach ($payload as $key => $value) {
+                if ($value === null) continue;
+                if ($key === 'race_id' || $key === 'horse_number') continue;
+                if (empty($existing->{$key})) {
+                    $existing->{$key} = $value;
+                }
+            }
+            // 馬・騎手・調教師のIDが変わっていれば必ず更新（同馬番でも異なる馬の登録漏れを防ぐ）
+            $existing->horse_id   = $horse->id;
+            if ($jockey)  $existing->jockey_id  = $jockey->id;
+            if ($trainer) $existing->trainer_id = $trainer->id;
+            if ($existing->isDirty()) $existing->save();
+            return $existing;
+        }
+
+        // 新規行: 結果系フィールドは明示的に null
+        $payload['finish_position']     = null;
+        $payload['finish_position_int'] = null;
+        $payload['time']                = null;
+        $payload['time_seconds']        = null;
+        $payload['margin']              = null;
+        $payload['last_3f']             = null;
+        $payload['last_3f_seconds']     = null;
+        $payload['corner_positions']    = null;
+        $payload['running_style']       = null;
+
+        return RaceResult::create($payload);
+    }
+
+    /**
      * レース結果の通過順位から races.pace を再計算して保存
      */
     public function recalcPace(Race $race): ?string

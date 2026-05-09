@@ -84,13 +84,16 @@ class ImportController extends Controller
     public function netkeibaStore(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'race_id' => ['nullable', 'string', 'regex:/^\d{12}$/'],
+            'race_id'  => ['nullable', 'string', 'regex:/^\d{12}$/'],
             'race_url' => ['nullable', 'url'],
+            'mode'     => ['nullable', 'in:result,shutuba'],
         ]);
 
         $raceId = $validated['race_id'] ?? null;
         if (!$raceId && !empty($validated['race_url'])) {
-            if (preg_match('/race\/(\d{12})/', $validated['race_url'], $m)) {
+            if (preg_match('/race[\/_]?(?:id=)?(\d{12})/', $validated['race_url'], $m)) {
+                $raceId = $m[1];
+            } elseif (preg_match('/race_id=(\d{12})/', $validated['race_url'], $m)) {
                 $raceId = $m[1];
             }
         }
@@ -98,31 +101,42 @@ class ImportController extends Controller
             return back()->withErrors(['race_id' => 'race_id か netkeibaのURLを入力してください']);
         }
 
+        $mode = $validated['mode'] ?? 'result';
+        $isShutuba = ($mode === 'shutuba');
+
         $log = ImportLog::create([
-            'user_id' => $request->user()->id,
-            'source' => 'netkeiba',
-            'reference' => "race/{$raceId}",
-            'status' => 'processing',
+            'user_id'    => $request->user()->id,
+            'source'     => $isShutuba ? 'netkeiba_shutuba' : 'netkeiba',
+            'reference'  => ($isShutuba ? 'shutuba/' : 'race/') . $raceId,
+            'status'     => 'processing',
             'started_at' => now(),
         ]);
 
         try {
-            $data = $this->netkeiba->fetchRace($raceId);
-            $imported = $this->raceImporter->importFromNetkeiba($data);
+            if ($isShutuba) {
+                $data     = $this->netkeiba->fetchShutuba($raceId);
+                $imported = $this->raceImporter->importShutuba($data);
+                $statusMsg = '出馬表を取込完了: ' . $imported->full_name . '（' . count($data['results'] ?? []) . '頭）';
+            } else {
+                $data     = $this->netkeiba->fetchRace($raceId);
+                $imported = $this->raceImporter->importFromNetkeiba($data);
+                $statusMsg = 'netkeibaから取込完了: ' . $imported->full_name;
+            }
+
             $log->update([
-                'status' => 'success',
-                'records_total' => 1,
+                'status'           => 'success',
+                'records_total'    => 1,
                 'records_imported' => 1,
-                'payload' => ['race_id_db' => $imported->id],
-                'finished_at' => now(),
+                'payload'          => ['race_id_db' => $imported->id, 'mode' => $mode],
+                'finished_at'      => now(),
             ]);
             return redirect()->route('races.show', $imported)
-                ->with('status', 'netkeibaから取込完了: ' . $imported->full_name);
+                ->with('status', $statusMsg);
         } catch (\Throwable $e) {
             $log->update([
-                'status' => 'failed',
+                'status'        => 'failed',
                 'error_message' => $e->getMessage(),
-                'finished_at' => now(),
+                'finished_at'   => now(),
             ]);
             return back()->withErrors(['race_id' => '取込失敗: ' . $e->getMessage()]);
         }

@@ -412,6 +412,296 @@ class NetkeibaScraper
     }
 
     /**
+     * race_id (12桁) から出馬表を取得（レース確定前のエントリー情報）
+     *
+     * 取得先: https://race.netkeiba.com/race/shutuba.html?race_id={id}
+     *
+     * 取得項目:
+     *   - レース基本情報 (name, race_date, track_type, distance, direction, weather, course_condition)
+     *   - 出走馬一覧 (results) — 着順・タイム等は null
+     *
+     * 結果(fetchRace) と同じスキーマで返すため、importFromNetkeiba と互換的に取込可能。
+     * 出馬表段階では当然ながら finish_position / time / margin / corner_positions / last_3f /
+     * horse_weight / horse_weight_diff は null となる（レース後に上書きされる）。
+     *
+     * @param string $raceId
+     * @return array
+     */
+    public function fetchShutuba(string $raceId): array
+    {
+        $this->respectInterval();
+        $url = "/race/shutuba.html?race_id={$raceId}";
+        Log::info("Netkeiba fetch shutuba: {$url}");
+
+        $response = $this->httpRace->get($url);
+        $status = $response->getStatusCode();
+        if ($status !== 200) {
+            throw new \RuntimeException("netkeiba shutuba HTTP {$status} for race_id={$raceId}");
+        }
+
+        $contentType = $response->getHeaderLine('Content-Type');
+        $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
+
+        if (env('NETKEIBA_DEBUG_SAVE')) {
+            $path = storage_path("logs/netkeiba_{$raceId}_shutuba.html");
+            @file_put_contents($path, $html);
+        }
+
+        return $this->parseShutubaHtml($raceId, $html);
+    }
+
+    /**
+     * 出馬表 HTML をパース
+     *
+     * URL: https://race.netkeiba.com/race/shutuba.html?race_id={id}
+     * DOM:
+     *   - h1.RaceName               : レース名
+     *   - .RaceData01               : "12:10発走 / 芝1600m / 天候:曇 / 馬場:稍"  ※発走前は天候/馬場が無いことも多い
+     *   - .RaceData02               : "4回 中山 3日目 サラ系2歳 新馬 ..."
+     *   - table.Shutuba_Table       : 出馬表テーブル (tr.HorseList)
+     *
+     * 列構成 (出馬表):
+     *   枠 / 馬番 / 馬名(性齢の隣に印列を含む場合あり) / 性齢 / 斤量 / 騎手 / 厩舎 / 馬体重(増減) / 単勝オッズ / 人気
+     *
+     * 出馬表ページは結果ページと列構成が異なるため、ヘッダ行から列インデックスを動的に判定する。
+     */
+    protected function parseShutubaHtml(string $raceId, string $html): array
+    {
+        $html = preg_replace('/<!--.*?-->/su', '', $html);
+        $crawler = new Crawler($html);
+
+        $data = ['netkeiba_id' => $raceId];
+
+        // race_id 構造分解
+        $year = substr($raceId, 0, 4);
+        $data['venue_code']  = substr($raceId, 4, 2);
+        $data['kaisai_kai']  = (int) substr($raceId, 6, 2);
+        $data['kaisai_day']  = (int) substr($raceId, 8, 2);
+        $data['race_number'] = (int) substr($raceId, 10, 2);
+
+        // ============ レース名 ============
+        $name = $this->extractText($crawler, 'h1.RaceName, .RaceName');
+        if ($name) {
+            $name = preg_replace('/\s+/u', ' ', $name);
+            $data['name'] = trim($name);
+        } else {
+            $data['name'] = "Race {$raceId}";
+        }
+
+        // ============ RaceData01 から距離・トラック・天候・馬場 ============
+        $data01 = '';
+        try {
+            $data01 = $this->cleanText($crawler->filter('.RaceData01')->text(''));
+        } catch (\Throwable $e) {}
+
+        if (preg_match('/(芝|ダート|ダ|障害|障)\s*(?:\(?(右|左|直線)\)?)?\s*(\d+)\s*m/u', $data01, $m)) {
+            $data['track_type'] = match ($m[1]) {
+                '芝'             => '芝',
+                'ダ', 'ダート'   => 'ダート',
+                '障', '障害'     => '障害',
+                default          => $m[1],
+            };
+            $data['direction'] = $m[2] ?: null;
+            $data['distance']  = (int) $m[3];
+        }
+        if (preg_match('/天候\s*[:：]?\s*(晴|曇|小雨|雨|小雪|雪)/u', $data01, $m)) {
+            $data['weather'] = $m[1];
+        }
+        if (preg_match('/馬場\s*[:：]?\s*(稍重|不良|良|稍|重|不)/u', $data01, $m)) {
+            $cond = $m[1];
+            $data['course_condition'] = match ($cond) {
+                '稍'    => '稍重',
+                '不'    => '不良',
+                default => $cond,
+            };
+        }
+
+        // ============ 開催日 ============
+        try {
+            $bodyText = $this->cleanText($crawler->filter('body')->text(''));
+        } catch (\Throwable $e) {
+            $bodyText = '';
+        }
+        if (preg_match('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $bodyText, $m)) {
+            $data['race_date'] = sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
+        } elseif (preg_match('/(\d{1,2})月(\d{1,2})日/u', $bodyText, $m)) {
+            $data['race_date'] = sprintf('%s-%02d-%02d', $year, $m[1], $m[2]);
+        }
+
+        // ============ 出馬表テーブル ============
+        $data['results']      = $this->parseShutubaTable($crawler);
+        $data['horses_count'] = count($data['results']);
+
+        // 出馬表段階では払戻・ラップは存在しない
+        $data['payouts']   = [];
+        $data['is_shutuba'] = true;
+
+        return $data;
+    }
+
+    /**
+     * table.Shutuba_Table を行ごとにパースして出走馬配列に変換
+     *
+     * ヘッダ行から列名→列インデックスのマップを構築する（列構成変更にロバスト）。
+     * 出馬表は結果と異なり「着順 / タイム / 着差 / 通過 / 上り」の列が無い。
+     *
+     * @return array[]
+     */
+    protected function parseShutubaTable(Crawler $crawler): array
+    {
+        $results = [];
+
+        $table = null;
+        try {
+            $cand = $crawler->filter('table.Shutuba_Table');
+            if ($cand->count() > 0) $table = $cand->first();
+        } catch (\Throwable $e) {}
+
+        if (!$table) {
+            // フォールバック: id でも試す
+            try {
+                $cand = $crawler->filter('table#Shutuba_Table, table.RaceTable01.ShutubaTable');
+                if ($cand->count() > 0) $table = $cand->first();
+            } catch (\Throwable $e) {}
+        }
+
+        if (!$table) {
+            Log::warning("Netkeiba: Shutuba_Table not found");
+            return [];
+        }
+
+        // ヘッダ列マップ構築（複数 thead/tr があるので最後の th 行を使う）
+        $headerMap = [];
+        try {
+            $headerRows = $table->filter('tr');
+            $headerCells = null;
+            $headerRows->each(function (Crawler $tr) use (&$headerCells) {
+                $ths = $tr->filter('th');
+                if ($ths->count() >= 5) {
+                    $headerCells = $ths;
+                }
+            });
+            if ($headerCells) {
+                $headerCells->each(function (Crawler $th, $i) use (&$headerMap) {
+                    $label = $this->cleanText($th->text(''));
+                    $key = $this->normalizeShutubaHeader($label);
+                    if ($key) $headerMap[$i] = $key;
+                });
+            }
+        } catch (\Throwable $e) {}
+
+        // データ行 (tr.HorseList)
+        try {
+            $rows = $table->filter('tr.HorseList');
+        } catch (\Throwable $e) {
+            return [];
+        }
+        if ($rows->count() === 0) {
+            Log::warning("Netkeiba: tr.HorseList not found in Shutuba_Table");
+            return [];
+        }
+
+        $rows->each(function (Crawler $tr) use (&$results, $headerMap) {
+            $tds = $tr->filter('td');
+            if ($tds->count() < 5) return;
+
+            $row = [];
+            $tds->each(function (Crawler $td, $colIdx) use (&$row, $headerMap) {
+                // ヘッダから判明したキーを優先
+                $key = $headerMap[$colIdx] ?? null;
+                $cls = $td->attr('class') ?? '';
+
+                // class ベースの追加判定（netkeiba の出馬表は class が手堅い）
+                if (!$key) {
+                    if (str_contains($cls, 'Waku')) $key = 'frame_number';
+                    elseif (str_contains($cls, 'Umaban')) $key = 'horse_number';
+                    elseif (str_contains($cls, 'HorseInfo')) $key = 'horse_name';
+                    elseif (str_contains($cls, 'Barei')) $key = 'sex_age';
+                    elseif (str_contains($cls, 'Jockey')) $key = 'jockey_name';
+                    elseif (str_contains($cls, 'Trainer')) $key = 'trainer_name';
+                    elseif (str_contains($cls, 'Weight')) $key = 'horse_weight_str';
+                    elseif (str_contains($cls, 'Popular')) $key = 'win_odds';
+                    elseif (str_contains($cls, 'Odds')) $key = 'win_odds';
+                }
+                if (!$key) return;
+
+                // リンクからは netkeiba_id を回収
+                try {
+                    $a = $td->filter('a')->first();
+                    if ($a->count() > 0) {
+                        $val = $this->cleanText($a->text(''));
+                        if ($val !== '') {
+                            $row[$key] = $val;
+                            $href = $a->attr('href') ?? '';
+                            if ($key === 'horse_name' && preg_match('#/horse/(\d+)#', $href, $m)) {
+                                $row['horse_netkeiba_id'] = $m[1];
+                            } elseif ($key === 'jockey_name' && preg_match('#/jockey/(?:result/(?:recent/)?)?(\d+)#', $href, $m)) {
+                                $row['jockey_netkeiba_id'] = $m[1];
+                            } elseif ($key === 'trainer_name' && preg_match('#/trainer/(?:result/(?:recent/)?)?(\d+)#', $href, $m)) {
+                                $row['trainer_netkeiba_id'] = $m[1];
+                            }
+                            return;
+                        }
+                    }
+                } catch (\Throwable $e) {}
+
+                $row[$key] = $this->cleanText($td->text(''));
+            });
+
+            if (empty($row)) return;
+
+            // 出馬表専用の正規化（normalizeRow を流用しつつ、結果系フィールドは null のまま）
+            $normalized = $this->normalizeRow($row);
+
+            // 出馬表段階で確実に存在しないフィールドを null で埋める
+            $normalized['finish_position']   = null;
+            $normalized['time']              = null;
+            $normalized['margin']            = null;
+            $normalized['corner_positions']  = null;
+            $normalized['last_3f']           = null;
+
+            // 馬番が取れていない行はスキップ（無効行）
+            if (empty($normalized['horse_number'])) return;
+
+            $results[] = $normalized;
+        });
+
+        // 馬番昇順でソート
+        usort($results, fn($a, $b) => ($a['horse_number'] ?? 0) <=> ($b['horse_number'] ?? 0));
+
+        return $results;
+    }
+
+    /**
+     * 出馬表ヘッダラベルを正規化キーに変換
+     *
+     * 結果ページとの差分:
+     *   - 「印」「お気に入り」等の出馬表特有列は無視
+     *   - 「着順」「タイム」「着差」「通過」「上り」は出馬表に存在しない
+     */
+    protected function normalizeShutubaHeader(string $label): ?string
+    {
+        $label = trim(preg_replace('/\s+/u', '', $label));
+        $map = [
+            '枠'      => 'frame_number',
+            '枠番'    => 'frame_number',
+            '馬番'    => 'horse_number',
+            '馬名'    => 'horse_name',
+            '性齢'    => 'sex_age',
+            '斤量'    => 'weight_carried',
+            '騎手'    => 'jockey_name',
+            '厩舎'    => 'trainer_name',
+            '調教師'  => 'trainer_name',
+            '馬体重'  => 'horse_weight_str',
+            '馬体重(増減)' => 'horse_weight_str',
+            '単勝'    => 'win_odds',
+            'オッズ'  => 'win_odds',
+            '人気'    => 'popularity',
+        ];
+        return $map[$label] ?? null;
+    }
+
+    /**
      * 指定月の開催日一覧を取得
      *
      * netkeibaのカレンダー（/top/calendar.html?year=YYYY&month=MM）と
