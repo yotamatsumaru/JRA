@@ -313,19 +313,107 @@ class AnalyticsController extends Controller
 
     /**
      * 騎手×コース相性
+     *
+     * 一覧モード: 全騎手の主要指標を表で見える化(騎乗数・勝率・連対率・複勝率・平均人気・平均着順)
+     * 詳細モード: 特定騎手の競馬場×トラック相性
+     *
+     * クエリ:
+     *   ?jockey=    騎手名(個別ドリルダウン)
+     *   ?min_runs=  最小騎乗数フィルタ(default 50)
+     *   ?keyword=   騎手名キーワード検索
+     *   ?sort=      runs|wins|win_rate|place_rate|show_rate|avg_pop (default win_rate)
+     *   ?from= ?to= 期間
+     *   ?venue_id=  競馬場
+     *   ?track_type= 芝/ダート/障害
      */
     public function jockey(Request $request): View
     {
         $jockeyName = $request->get('jockey');
+        $minRuns    = (int) $request->get('min_runs', 50);
+        $keyword    = trim((string) $request->get('keyword', ''));
+        $sort       = $request->get('sort', 'win_rate');
+        $from       = $request->get('from');
+        $to         = $request->get('to');
+        $venueId    = $request->get('venue_id');
+        $trackType  = $request->get('track_type');
 
+        $venues = Venue::orderBy('code')->get();
+
+        // 共通フィルター
+        $applyFilters = function ($q) use ($from, $to, $venueId, $trackType) {
+            if ($from)      $q->whereDate('races.race_date', '>=', $from);
+            if ($to)        $q->whereDate('races.race_date', '<=', $to);
+            if ($venueId)   $q->where('races.venue_id', $venueId);
+            if ($trackType) $q->where('races.track_type', $trackType);
+        };
+
+        // ============ 騎手一覧(全騎手の主要指標) ============
+        $listQuery = DB::table('race_results')
+            ->join('jockeys', 'jockeys.id', '=', 'race_results.jockey_id')
+            ->join('races', 'races.id', '=', 'race_results.race_id')
+            ->whereNotNull('finish_position_int');
+        $applyFilters($listQuery);
+        if ($keyword !== '') {
+            $listQuery->where('jockeys.name', 'like', '%' . $keyword . '%');
+        }
+        $rawList = $listQuery
+            ->selectRaw("
+                jockeys.id as jockey_id,
+                jockeys.name,
+                count(*) as runs,
+                SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN finish_position_int<=2 THEN 1 ELSE 0 END) as places,
+                SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows,
+                AVG(race_results.popularity) as avg_pop,
+                AVG(race_results.finish_position_int) as avg_finish,
+                MAX(races.race_date) as last_ride
+            ")
+            ->groupBy('jockeys.id', 'jockeys.name')
+            ->having('runs', '>=', $minRuns)
+            ->get();
+
+        // PHP 側で派生指標を計算
+        $jockeyRows = $rawList->map(function ($r) {
+            $r->win_rate   = $r->runs > 0 ? round($r->wins   / $r->runs * 100, 1) : 0;
+            $r->place_rate = $r->runs > 0 ? round($r->places / $r->runs * 100, 1) : 0;
+            $r->show_rate  = $r->runs > 0 ? round($r->shows  / $r->runs * 100, 1) : 0;
+            $r->avg_pop    = $r->avg_pop    !== null ? round((float) $r->avg_pop, 2) : null;
+            $r->avg_finish = $r->avg_finish !== null ? round((float) $r->avg_finish, 2) : null;
+            return $r;
+        });
+
+        // ソート
+        $sortMap = [
+            'runs'       => fn($r) => -$r->runs,
+            'wins'       => fn($r) => -$r->wins,
+            'win_rate'   => fn($r) => -$r->win_rate,
+            'place_rate' => fn($r) => -$r->place_rate,
+            'show_rate'  => fn($r) => -$r->show_rate,
+            'avg_pop'    => fn($r) => $r->avg_pop ?? 999,
+        ];
+        $sortFn = $sortMap[$sort] ?? $sortMap['win_rate'];
+        $jockeyRows = $jockeyRows->sortBy($sortFn)->values();
+
+        // サマリ
+        $summary = [
+            'jockey_count'   => $jockeyRows->count(),
+            'total_runs'     => $jockeyRows->sum('runs'),
+            'total_wins'     => $jockeyRows->sum('wins'),
+            'top_win_rate'   => $jockeyRows->max('win_rate'),
+            'top_show_rate'  => $jockeyRows->max('show_rate'),
+        ];
+
+        // ============ 詳細モード(従来) ============
         $stats = collect();
         if ($jockeyName) {
-            $stats = DB::table('race_results')
+            $detailQuery = DB::table('race_results')
                 ->join('jockeys', 'jockeys.id', '=', 'race_results.jockey_id')
                 ->join('races', 'races.id', '=', 'race_results.race_id')
                 ->join('venues', 'venues.id', '=', 'races.venue_id')
                 ->where('jockeys.name', $jockeyName)
-                ->whereNotNull('finish_position_int')
+                ->whereNotNull('finish_position_int');
+            $applyFilters($detailQuery);
+            $stats = $detailQuery
                 ->selectRaw('venues.name as venue, races.track_type,
                     count(*) as runs,
                     SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
@@ -335,6 +423,7 @@ class AnalyticsController extends Controller
                 ->get();
         }
 
+        // 後方互換の jockeyList(キーワードに引っかかる上位騎乗数50)
         $jockeyList = DB::table('jockeys')
             ->join('race_results', 'race_results.jockey_id', '=', 'jockeys.id')
             ->select('jockeys.name', DB::raw('count(*) as cnt'))
@@ -343,7 +432,12 @@ class AnalyticsController extends Controller
             ->limit(50)
             ->get();
 
-        return view('analytics.jockey', compact('jockeyList', 'jockeyName', 'stats'));
+        $filters = compact('minRuns', 'keyword', 'sort', 'from', 'to', 'venueId', 'trackType');
+
+        return view('analytics.jockey', compact(
+            'jockeyList', 'jockeyName', 'stats',
+            'jockeyRows', 'summary', 'venues', 'filters'
+        ));
     }
 
     /**
