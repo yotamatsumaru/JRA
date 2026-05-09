@@ -222,7 +222,7 @@
 
     {{-- ============== ヘッダー ============== --}}
     <nav class="bg-gradient-to-r from-turf-700 to-turf-900 dark:from-turf-900 dark:to-gray-900 text-white shadow-md sticky top-0 z-40">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-14">
             <div class="flex justify-between h-16 items-center">
                 <div class="flex items-center space-x-6">
                     <a href="{{ route('dashboard') }}" class="flex items-center space-x-2 font-bold text-lg group">
@@ -460,7 +460,7 @@
     {{-- バリデーションエラー（フラッシュはトーストで表示済み） --}}
     @if ($errors->any())
     <div class="bg-red-50 dark:bg-red-900/40 border-l-4 border-red-500 text-red-800 dark:text-red-200 px-4 py-3 mx-4 mt-4 rounded shadow">
-        <div class="max-w-7xl mx-auto flex items-start space-x-2">
+        <div class="w-full flex items-start space-x-2">
             <x-icon name="warning" class="w-5 h-5 mt-0.5 flex-shrink-0" />
             <ul class="list-disc list-inside text-sm">
                 @foreach ($errors->all() as $error)
@@ -472,7 +472,7 @@
     @endif
 
     {{-- ============== メインコンテンツ ============== --}}
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <main class="flex-1 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-14 py-6">
         @yield('content')
     </main>
 
