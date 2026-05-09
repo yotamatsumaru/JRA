@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Venue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class AnalyticsController extends Controller
@@ -372,21 +373,24 @@ class AnalyticsController extends Controller
             return $q;
         };
 
-        $simulation = match ($kind) {
+        // 各集計を try/catch で個別に守る（1個失敗してもページ全体は表示）
+        $simulation = $this->safe(fn() => match ($kind) {
             'fuku'     => $this->simulateFuku($applyFilters, $popularity),
             'uma-ren'  => $this->simulatePayoutKind($applyFilters, 'uma-ren', $popularity),
             'wide'     => $this->simulatePayoutKind($applyFilters, 'wide', $popularity),
             'san-fuku' => $this->simulatePayoutKind($applyFilters, 'san-fuku', $popularity),
             default    => $this->simulateTan($applyFilters, $popularity),
-        };
+        }, $this->emptySimulation());
 
         // ====== グラフ用クロスタブ ======
         $charts = [
-            'by_popularity' => $this->roiBreakdown($applyFilters, $kind, 'popularity'),
-            'by_venue'      => $this->roiBreakdown($applyFilters, $kind, 'venue'),
-            'by_track'      => $this->roiBreakdown($applyFilters, $kind, 'track'),
-            'by_distance'   => $this->roiBreakdown($applyFilters, $kind, 'distance'),
-            'by_odds_band'  => $kind === 'tan' ? $this->roiByOddsBand($applyFilters) : [],
+            'by_popularity' => $this->safe(fn() => $this->roiBreakdown($applyFilters, $kind, 'popularity'), []),
+            'by_venue'      => $this->safe(fn() => $this->roiBreakdown($applyFilters, $kind, 'venue'),      []),
+            'by_track'      => $this->safe(fn() => $this->roiBreakdown($applyFilters, $kind, 'track'),      []),
+            'by_distance'   => $this->safe(fn() => $this->roiBreakdown($applyFilters, $kind, 'distance'),   []),
+            'by_odds_band'  => $kind === 'tan'
+                ? $this->safe(fn() => $this->roiByOddsBand($applyFilters), [])
+                : [],
         ];
 
         $kindLabels = [
@@ -476,13 +480,15 @@ class AnalyticsController extends Controller
         // 購入レース母集団 = 該当券種の払戻があったレース母集団
         // (払戻データ自体がそのレースの該当券種の存在を保証する)
         $rq = DB::table('races')
-            ->join('payouts', function ($join) use ($kind) {
-                $join->on('payouts.race_id', '=', 'races.id')
-                     ->where('payouts.kind', '=', $kind);
+            ->whereExists(function ($sub) use ($kind) {
+                $sub->select(DB::raw(1))
+                    ->from('payouts')
+                    ->whereColumn('payouts.race_id', 'races.id')
+                    ->where('payouts.kind', $kind);
             })
             ->select('races.id', 'races.horses_count');
         $applyFilters($rq);
-        $races = $rq->distinct()->get();
+        $races = $rq->get();
         $raceCount = $races->count();
 
         // 1レースあたりの購入点数
@@ -636,14 +642,21 @@ class AnalyticsController extends Controller
         ")->groupByRaw($groupBy)->get();
 
         // レース母集団(各軸の C(N,k)*100 を計算)
+        // payouts は 1 レースに対し複数行(着順別など)あるので、
+        // races.id でユニーク化してから集計する
         $rq = DB::table('races')
-            ->join('payouts', function ($join) use ($kind) {
-                $join->on('payouts.race_id', '=', 'races.id')
-                     ->where('payouts.kind', '=', $kind);
-            })
-            ->leftJoin('venues', 'venues.id', '=', 'races.venue_id');
+            ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
+            ->whereExists(function ($sub) use ($kind) {
+                $sub->select(DB::raw(1))
+                    ->from('payouts')
+                    ->whereColumn('payouts.race_id', 'races.id')
+                    ->where('payouts.kind', $kind);
+            });
         $applyFilters($rq);
-        $raceRows = $rq->selectRaw("{$select}, races.horses_count as hc")->distinct()->get();
+        $raceRows = $rq->selectRaw("{$select}, races.id as race_id, races.horses_count as hc")
+            ->groupBy('races.id', 'races.horses_count')
+            ->groupByRaw($groupBy)
+            ->get();
 
         $combosPerRace = match ($kind) {
             'uma-ren', 'wide' => fn(int $n) => max(0, intdiv($n * ($n-1), 2)),
@@ -753,5 +766,41 @@ class AnalyticsController extends Controller
         $order = ['1倍台','2倍台','3-4倍','5-9倍','10-19倍','20-49倍','50倍〜'];
         usort($out, fn($a,$b) => array_search($a['label'],$order) - array_search($b['label'],$order));
         return $out;
+    }
+
+    /**
+     * クロージャを安全に実行し、例外時はログ出力してデフォルト値を返す
+     * (1個のSQL失敗でページ全体が500にならないようにするための保険)
+     */
+    private function safe(\Closure $fn, $default = null)
+    {
+        try {
+            return $fn();
+        } catch (\Throwable $e) {
+            Log::error('AnalyticsController safe() caught exception', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+            ]);
+            return $default;
+        }
+    }
+
+    /**
+     * シミュレーション結果のゼロ埋めデフォルト値
+     */
+    private function emptySimulation(): array
+    {
+        return [
+            'kind_basis' => 'odds',
+            'races'      => 0,
+            'bets'       => 0,
+            'hits'       => 0,
+            'stake'      => 0,
+            'winnings'   => 0,
+            'profit'     => 0,
+            'roi'        => 0,
+            'hit_rate'   => 0,
+        ];
     }
 }
