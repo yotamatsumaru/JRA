@@ -56,9 +56,12 @@ Route::middleware('auth')->group(function () {
     // 出馬表 予想ボード
     Route::prefix('shutuba')->name('shutuba.')->group(function () {
         Route::get('/',                      [ShutubaController::class, 'index'])->name('index');
+        Route::post('/favorite',             [ShutubaController::class, 'toggleFavorite'])->name('favorite');
         Route::get('/{race}',                [ShutubaController::class, 'show'])->name('show');
         Route::post('/{race}/mark',          [ShutubaController::class, 'mark'])->name('mark');
+        Route::post('/{race}/auto-mark',     [ShutubaController::class, 'autoMark'])->name('auto-mark');
         Route::post('/{race}/memo',          [ShutubaController::class, 'memo'])->name('memo');
+        Route::post('/{race}/race-note',     [ShutubaController::class, 'raceNote'])->name('race-note');
         Route::post('/{race}/generate-bets', [ShutubaController::class, 'generateBets'])->name('generate-bets');
     });
 

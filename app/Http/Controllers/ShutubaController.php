@@ -179,19 +179,34 @@ class ShutubaController extends Controller
                 $sireHint = $this->buildSireCourseHint($result->horse->father, $cond);
             }
 
+            // 脚質推定 (Phase 1-A) — 過去走から
+            $runningStyle = $this->estimateRunningStyle($recent);
+
+            // 期待値計算 (Phase 1-B)
+            $ev = null;
+            if ($result->win_odds && $mark?->score_total !== null) {
+                $ev = $this->calcExpectedValue((float) $mark->score_total, (float) $result->win_odds);
+            }
+
             $rows[] = (object) [
-                'result'    => $result,
-                'horse'     => $result->horse,
-                'jockey'    => $result->jockey,
-                'trainer'   => $result->trainer,
-                'mark_obj'  => $mark,           // RaceMark or null
-                'mark'      => $mark?->mark,
-                'memo'      => $mark?->memo,
-                'eval'      => $eval,           // 直近で再計算した場合のみ
-                'recent'    => $recent,
-                'sire_hint' => $sireHint,
+                'result'        => $result,
+                'horse'         => $result->horse,
+                'jockey'        => $result->jockey,
+                'trainer'       => $result->trainer,
+                'mark_obj'      => $mark,
+                'mark'          => $mark?->mark,
+                'memo'          => $mark?->memo,
+                'eval'          => $eval,
+                'recent'        => $recent,
+                'sire_hint'     => $sireHint,
+                'running_style' => $runningStyle,    // 脚質: 逃/先/差/追/不
+                'ev'            => $ev,              // 期待値 + 推定勝率
+                'is_favorite'   => false,            // M で更新
             ];
         }
+
+        // ペース予想 (Phase 1-A): 出走馬全体の脚質構成から推定
+        $paceForecast = $this->forecastPace($rows);
 
         // 並び替え
         $sort = $request->get('sort', 'horse_no');
@@ -238,6 +253,21 @@ class ShutubaController extends Controller
             sort($markSummary[$k]);
         }
 
+        // お気に入り判定 (Phase 1-M)
+        $favHorseIds   = \App\Models\Favorite::userKey($userId, 'horse');
+        $favJockeyIds  = \App\Models\Favorite::userKey($userId, 'jockey');
+        $favTrainerIds = \App\Models\Favorite::userKey($userId, 'trainer');
+        foreach ($rows as $r) {
+            $r->is_favorite = ($r->horse && in_array($r->horse->id, $favHorseIds, true))
+                || ($r->jockey && in_array($r->jockey->id, $favJockeyIds, true))
+                || ($r->trainer && in_array($r->trainer->id, $favTrainerIds, true));
+        }
+
+        // レース全体メモ (Phase 1-T)
+        $raceNote = \App\Models\RaceUserNote::where('user_id', $userId)
+            ->where('race_id', $race->id)
+            ->first();
+
         return view('shutuba.show', [
             'race'             => $race,
             'rows'             => $rows,
@@ -247,6 +277,8 @@ class ShutubaController extends Controller
             'filter_mark'      => $filterMark,
             'recommended_bets' => $recommendedBets,
             'mark_summary'     => $markSummary,
+            'pace_forecast'    => $paceForecast,
+            'race_note'        => $raceNote,
         ]);
     }
 
@@ -288,6 +320,117 @@ class ShutubaController extends Controller
             'ok'   => true,
             'mark' => $rm->mark,
             'id'   => $rm->id,
+        ]);
+    }
+
+    /**
+     * 印を自動提案して一括保存 (Phase 1-C)
+     *
+     * POST /shutuba/{race}/auto-mark
+     * body: { overwrite: bool }
+     *
+     * スコアランクに応じて ◎○▲△☆ を自動付与:
+     *   1位 & total>=70 → ◎
+     *   2位 & total>=60 → ○
+     *   3位 & total>=55 → ▲
+     *   4-5位 & total>=50 → △
+     *   ROI≥50 でTOP外でも → ☆
+     */
+    public function autoMark(Race $race, Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'overwrite' => ['nullable', 'boolean'],
+        ]);
+        $overwrite = (bool) ($validated['overwrite'] ?? false);
+        $userId = $request->user()->id;
+
+        $race->load(['venue', 'results.horse']);
+
+        $cond = [
+            'venue_id'         => $race->venue_id,
+            'track_type'       => $race->track_type,
+            'distance'         => $race->distance,
+            'course_condition' => $race->course_condition,
+        ];
+
+        $settings = $this->svc->getSettings();
+        $weights  = $settings['weights'];
+        $minRuns  = $settings['min_runs'];
+
+        $existingMarks = RaceMark::where('user_id', $userId)
+            ->where('race_id', $race->id)
+            ->get()
+            ->keyBy('race_result_id');
+
+        $scored = [];
+        foreach ($race->results as $rr) {
+            if (!$rr->horse) continue;
+            $eval = $this->svc->evaluateHorse(
+                horse:    [
+                    'id'            => $rr->horse->id,
+                    'father'        => $rr->horse->father,
+                    'mother_father' => $rr->horse->mother_father,
+                ],
+                jockeyId: $rr->jockey_id ? (int) $rr->jockey_id : null,
+                cond:     $cond,
+                weights:  $weights,
+                minRuns:  $minRuns,
+            );
+            $scored[] = (object) [
+                'rr'      => $rr,
+                'total'   => (float) $eval['total'],
+                'roi_sub' => (float) $eval['sub']['roi'],
+                'eval'    => $eval,
+            ];
+        }
+
+        usort($scored, fn($a, $b) => $b->total <=> $a->total);
+
+        $applied = ['◎' => 0, '○' => 0, '▲' => 0, '△' => 0, '☆' => 0];
+        $skipped = 0;
+
+        DB::transaction(function () use ($scored, $existingMarks, $overwrite, $race, $userId, &$applied, &$skipped) {
+            foreach ($scored as $i => $s) {
+                $rank = $i + 1;
+                $proposedMark = $this->svc->decideMark($s->total, $rank, $s->roi_sub);
+
+                $existing = $existingMarks->get($s->rr->id);
+                if (!$overwrite && $existing && $existing->mark) {
+                    $skipped++;
+                    continue;
+                }
+
+                $newMark = $proposedMark !== '' ? $proposedMark : null;
+
+                RaceMark::updateOrCreate(
+                    ['user_id' => $userId, 'race_result_id' => $s->rr->id],
+                    [
+                        'race_id'        => $race->id,
+                        'mark'           => $newMark,
+                        'score_total'    => round($s->total, 2),
+                        'score_pedigree' => round((float) $s->eval['sub']['pedigree'], 2),
+                        'score_jockey'   => round((float) $s->eval['sub']['jockey'], 2),
+                        'score_horse'    => round((float) $s->eval['sub']['horse'], 2),
+                        'score_roi'      => round((float) $s->eval['sub']['roi'], 2),
+                        'scored_at'      => now(),
+                    ]
+                );
+
+                if ($newMark && isset($applied[$newMark])) {
+                    $applied[$newMark]++;
+                }
+            }
+        });
+
+        return response()->json([
+            'ok'      => true,
+            'applied' => $applied,
+            'skipped' => $skipped,
+            'message' => sprintf(
+                '◎%d ○%d ▲%d △%d ☆%d を提案しました(スキップ: %d)',
+                $applied['◎'], $applied['○'], $applied['▲'], $applied['△'], $applied['☆'],
+                $skipped
+            ),
         ]);
     }
 
@@ -397,9 +540,197 @@ class ShutubaController extends Controller
             ->with('status', $msg);
     }
 
+    /**
+     * レース全体メモを更新 (Phase 1-T)
+     *
+     * POST /shutuba/{race}/race-note
+     */
+    public function raceNote(Race $race, Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'note'      => ['nullable', 'string', 'max:5000'],
+            'watch_next'=> ['nullable', 'boolean'],
+        ]);
+        $userId = $request->user()->id;
+
+        $note = \App\Models\RaceUserNote::updateOrCreate(
+            ['user_id' => $userId, 'race_id' => $race->id],
+            [
+                'note'       => $validated['note'] ?? null,
+                'watch_next' => (bool) ($validated['watch_next'] ?? false),
+            ]
+        );
+
+        return response()->json(['ok' => true, 'id' => $note->id]);
+    }
+
+    /**
+     * お気に入りトグル (Phase 1-M)
+     *
+     * POST /shutuba/favorite
+     * body: { type: 'horse'|'jockey'|'trainer', target_id: int }
+     *
+     * 内部的には Polymorphic 関連 (favoritable_type + favoritable_id) として保存。
+     */
+    public function toggleFavorite(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'type'      => ['required', 'string', 'in:horse,jockey,trainer'],
+            'target_id' => ['required', 'integer'],
+        ]);
+        $userId = $request->user()->id;
+        $cls    = \App\Models\Favorite::classFor($validated['type']);
+        if (!$cls) {
+            return response()->json(['ok' => false, 'error' => 'invalid type'], 422);
+        }
+
+        $existing = \App\Models\Favorite::where('user_id', $userId)
+            ->where('favoritable_type', $cls)
+            ->where('favoritable_id', $validated['target_id'])
+            ->first();
+
+        if ($existing) {
+            $existing->delete();
+            return response()->json(['ok' => true, 'state' => 'off']);
+        }
+
+        \App\Models\Favorite::create([
+            'user_id'          => $userId,
+            'favoritable_type' => $cls,
+            'favoritable_id'   => $validated['target_id'],
+        ]);
+        return response()->json(['ok' => true, 'state' => 'on']);
+    }
+
     // ======================================================================
     // 内部ヘルパ
     // ======================================================================
+
+    /**
+     * 脚質を推定 (Phase 1-A)
+     *
+     * 過去走の corner_positions と当該レースの頭数から
+     * RaceResult::detectRunningStyle() で判定し、最頻値を返す。
+     *
+     * @return string '逃'|'先'|'差'|'追'|'不'
+     */
+    private function estimateRunningStyle($recent): string
+    {
+        if (empty($recent) || count($recent) === 0) return '不';
+
+        $styles = [];
+        foreach ($recent as $past) {
+            $cp = $past->corner_positions ?? null;
+            // 過去レースの出走頭数が不明な場合は推定: corner_positions の最大値などから推測
+            $count = null;
+            // 取れる情報が無い場合は 16 で代替(主要レース想定)
+            if (method_exists($past, 'getRelation') && $past->relationLoaded('race') && $past->race) {
+                $count = $past->race->results_count ?? null;
+            }
+            $count = $count ?: 16;
+
+            $style = \App\Models\RaceResult::detectRunningStyle($cp, $count);
+            if ($style) $styles[] = $style;
+        }
+
+        if (empty($styles)) {
+            // フォールバック: finish_position から大雑把に
+            $finishes = [];
+            foreach ($recent as $past) {
+                if ($past->finish_position_int !== null) {
+                    $finishes[] = (int) $past->finish_position_int;
+                }
+            }
+            if (!empty($finishes)) {
+                $avg = array_sum($finishes) / count($finishes);
+                if ($avg <= 3.0) return '先';
+                if ($avg <= 7.0) return '差';
+                return '追';
+            }
+            return '不';
+        }
+
+        // 最頻値
+        $counts = array_count_values($styles);
+        arsort($counts);
+        return (string) array_key_first($counts);
+    }
+
+    /**
+     * ペース予想 (Phase 1-A)
+     *
+     * 出馬全体の脚質構成からペースを予想する。
+     * 逃げ馬が多ければハイペース、少なければスロー。
+     *
+     * @return array{pace:string, label:string, note:string, counts:array}
+     */
+    private function forecastPace(array $rows): array
+    {
+        $counts = ['逃' => 0, '先' => 0, '差' => 0, '追' => 0, '不' => 0];
+        foreach ($rows as $r) {
+            $s = $r->running_style ?? '不';
+            if (isset($counts[$s])) $counts[$s]++;
+        }
+
+        $front = $counts['逃'] + $counts['先'];
+        $back  = $counts['差'] + $counts['追'];
+        $total = max(1, count($rows));
+        $frontRate = $front / $total;
+
+        if ($counts['逃'] >= 3 || $frontRate >= 0.5) {
+            return [
+                'pace'   => 'H',
+                'label'  => 'ハイペース予想',
+                'note'   => '逃げ・先行型が多く、後方からの差し・追込が決まりやすい展開',
+                'counts' => $counts,
+            ];
+        }
+        if ($counts['逃'] <= 1 && $frontRate <= 0.25) {
+            return [
+                'pace'   => 'S',
+                'label'  => 'スローペース予想',
+                'note'   => '前残りが期待でき、先行・好位差し有利の展開',
+                'counts' => $counts,
+            ];
+        }
+        return [
+            'pace'   => 'M',
+            'label'  => 'ミドルペース予想',
+            'note'   => '展開の偏りは少なく、力勝負になりやすい',
+            'counts' => $counts,
+        ];
+    }
+
+    /**
+     * 期待値(EV)を計算 (Phase 1-B)
+     *
+     * total スコアを推定勝率に変換し、オッズと掛けて EV を出す。
+     *   推定勝率 = total / 100 * (基準勝率係数)
+     *   EV       = 推定勝率 * オッズ - 1
+     * EV>0 が「お得」、EV<0 が「過大評価」。
+     *
+     * @return array{prob:float, ev:float, label:string}
+     */
+    private function calcExpectedValue(float $total, float $winOdds): array
+    {
+        // total を 0〜100 → 0.02〜0.5 程度の勝率に圧縮
+        // total=70 で 21%、total=85 で 33% 程度
+        $prob = max(0.01, min(0.5, ($total / 100) * 0.42));
+        $ev   = $prob * $winOdds - 1.0;
+
+        $label = '中';
+        if ($ev >= 0.30) $label = '◎お得';
+        elseif ($ev >= 0.10) $label = '○妙味';
+        elseif ($ev >= -0.10) $label = '中';
+        elseif ($ev >= -0.30) $label = '△やや過大';
+        else $label = '✕過大評価';
+
+        return [
+            'prob'  => round($prob * 100, 1),     // %
+            'ev'    => round($ev, 3),
+            'label' => $label,
+        ];
+    }
 
     /**
      * 行の並び替え
