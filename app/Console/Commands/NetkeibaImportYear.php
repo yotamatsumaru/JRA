@@ -19,14 +19,19 @@ use Illuminate\Support\Facades\Storage;
  *   - 月単位・日単位で進捗表示
  *   - dry-run で件数だけ事前確認可能
  *
+ * デフォルト動作:
+ *   - DB に既に存在する race_id は API を叩かずスキップ（重複取得を防止）
+ *   - 進捗ファイル(storage/app/netkeiba_year_{YYYY}.json)も併用してスキップ
+ *   - 同時に「払戻データが無いレース」だけは自動で再取得対象に（払戻補完）
+ *
  * 使い方:
- *   php artisan netkeiba:year                          # 今年の頭から本日まで
+ *   php artisan netkeiba:year                          # 今年の頭から本日まで（重複自動スキップ）
  *   php artisan netkeiba:year 2026                     # 2026年すべて(本日まで)
  *   php artisan netkeiba:year 2026 --from-month=1 --to-month=5
  *   php artisan netkeiba:year 2026 --dry-run           # 件数のみ確認
- *   php artisan netkeiba:year 2026 --resume            # 進捗ファイルから再開
  *   php artisan netkeiba:year 2026 --reset             # 進捗ファイルを削除して最初から
- *   php artisan netkeiba:year 2026 --skip-existing     # DB既存race_idはAPI叩かずスキップ
+ *   php artisan netkeiba:year 2026 --force             # DB既存も含めて全レース再取得
+ *   php artisan netkeiba:year 2026 --missing-payouts-only  # 払戻が無いレースだけ再取得
  *   php artisan netkeiba:year 2026 --day-sleep=10      # 1日処理ごとに追加スリープ(秒)
  */
 class NetkeibaImportYear extends Command
@@ -36,13 +41,13 @@ class NetkeibaImportYear extends Command
                             {--from-month=1 : 開始月 (1-12)}
                             {--to-month= : 終了月 (1-12)。省略時は今年なら現在月、過去年なら12}
                             {--dry-run : 実際には取込まず件数のみ表示}
-                            {--resume : 進捗ファイルから再開（処理済みrace_idはスキップ）}
                             {--reset : 進捗ファイルを削除して最初から}
-                            {--skip-existing : DBに既存のrace_idはAPI呼び出しをスキップ}
+                            {--force : DB既存race_idも全て再取得（デフォルトはスキップ）}
+                            {--missing-payouts-only : 払戻データが無い既存レースだけ再取得}
                             {--day-sleep=0 : 1日処理ごとに追加で待機する秒数}
                             {--limit-per-day=200 : 1日あたりの最大処理レース数}';
 
-    protected $description = 'netkeibaから指定年の全レースを一括インポート（進捗保存・再開対応）';
+    protected $description = 'netkeibaから指定年の全レースを一括インポート（重複自動スキップ・進捗保存・再開対応）';
 
     public function handle(NetkeibaScraper $scraper, RaceImportService $importer): int
     {
@@ -57,11 +62,17 @@ class NetkeibaImportYear extends Command
             : $defaultToMonth;
 
         $dryRun = (bool) $this->option('dry-run');
-        $resume = (bool) $this->option('resume');
         $reset = (bool) $this->option('reset');
-        $skipExisting = (bool) $this->option('skip-existing');
+        $force = (bool) $this->option('force');
+        $missingPayoutsOnly = (bool) $this->option('missing-payouts-only');
         $daySleep = max(0, (int) $this->option('day-sleep'));
         $limitPerDay = max(1, (int) $this->option('limit-per-day'));
+
+        // --force と --missing-payouts-only は同時指定不可
+        if ($force && $missingPayoutsOnly) {
+            $this->error('--force と --missing-payouts-only は同時指定できません');
+            return self::FAILURE;
+        }
 
         $progressPath = "netkeiba_year_{$year}.json";
         if ($reset && Storage::exists($progressPath)) {
@@ -70,15 +81,26 @@ class NetkeibaImportYear extends Command
         }
 
         $progress = $this->loadProgress($progressPath);
-        if ($resume && !empty($progress['done'])) {
-            $this->info('再開モード: 既処理 ' . count($progress['done']) . ' レースをスキップします');
+        if (!empty($progress['done'])) {
+            $this->info('進捗ファイル検出: ' . count($progress['done']) . ' レース処理済み（自動スキップ）');
         }
         $doneSet = array_flip($progress['done'] ?? []);
 
+        // 払戻データが無いレースのrace_idセット（--missing-payouts-only用）
+        $missingPayoutSet = [];
+        if ($missingPayoutsOnly) {
+            $missingPayoutSet = $this->buildMissingPayoutsSet($year);
+            $this->info('払戻データ無しレース: ' . count($missingPayoutSet) . ' 件が再取得対象');
+        }
+
+        $mode = $force
+            ? 'FORCE（DB既存も全て再取得）'
+            : ($missingPayoutsOnly ? 'MISSING-PAYOUTS-ONLY（払戻無しのみ再取得）' : 'SKIP-DUPLICATES（重複自動スキップ）');
+
         $this->info("=================================================");
         $this->info(" netkeiba 年次取込: {$year}年 {$fromMonth}月〜{$toMonth}月");
+        $this->info(" モード         : {$mode}");
         $this->info(" dry-run        : " . ($dryRun ? 'YES' : 'no'));
-        $this->info(" skip-existing  : " . ($skipExisting ? 'YES' : 'no'));
         $this->info(" day-sleep      : {$daySleep}s / limit-per-day: {$limitPerDay}");
         $this->info(" 進捗ファイル   : storage/app/{$progressPath}");
         $this->info("=================================================");
@@ -150,23 +172,42 @@ class NetkeibaImportYear extends Command
                             break;
                         }
 
-                        // 進捗ファイルに記録済み → スキップ
+                        // ===== 重複判定 =====
+                        // 1) 進捗ファイルに記録済み → 常にスキップ（--force でも進捗を消さない限りスキップ）
                         if (isset($doneSet[$raceId])) {
                             $totalSkipped++;
                             continue;
                         }
 
-                        // DBに既存 → スキップ（オプション）
-                        if ($skipExisting && Race::where('netkeiba_id', $raceId)->exists()) {
-                            $doneSet[$raceId] = true;
-                            $progress['done'][] = $raceId;
-                            $totalSkipped++;
-                            $countDay++;
-                            // 100件ごとに進捗保存
-                            if (count($progress['done']) % 100 === 0) {
-                                $this->saveProgress($progressPath, $progress, $totalSuccess, $totalFailed);
+                        // 2) DBに既存？
+                        $exists = Race::where('netkeiba_id', $raceId)->exists();
+
+                        if ($exists) {
+                            if ($missingPayoutsOnly) {
+                                // 払戻無しのレースだけ再取得
+                                if (!isset($missingPayoutSet[$raceId])) {
+                                    $doneSet[$raceId] = true;
+                                    $progress['done'][] = $raceId;
+                                    $totalSkipped++;
+                                    $countDay++;
+                                    if (count($progress['done']) % 100 === 0) {
+                                        $this->saveProgress($progressPath, $progress, $totalSuccess, $totalFailed);
+                                    }
+                                    continue;
+                                }
+                                // missingに該当 → 再取得へ進む
+                            } elseif (!$force) {
+                                // デフォルト: DB既存はスキップ
+                                $doneSet[$raceId] = true;
+                                $progress['done'][] = $raceId;
+                                $totalSkipped++;
+                                $countDay++;
+                                if (count($progress['done']) % 100 === 0) {
+                                    $this->saveProgress($progressPath, $progress, $totalSuccess, $totalFailed);
+                                }
+                                continue;
                             }
-                            continue;
+                            // --force の場合は再取得へ進む
                         }
 
                         $countDay++;
@@ -243,9 +284,28 @@ class NetkeibaImportYear extends Command
                 'finished_at'   => now(),
             ]);
             $this->error("致命的エラー: " . $e->getMessage());
-            $this->error("進捗は保存済み。--resume で再開できます");
+            $this->error("進捗は保存済み。再実行すれば自動でスキップして続きから処理されます");
             return self::FAILURE;
         }
+    }
+
+    /**
+     * 指定年のうち「payouts レコードが1件も無いレース」のrace_idセットを構築
+     * --missing-payouts-only モード用
+     */
+    protected function buildMissingPayoutsSet(int $year): array
+    {
+        $rows = Race::query()
+            ->whereYear('race_date', $year)
+            ->whereNotNull('netkeiba_id')
+            ->leftJoin('payouts', 'races.id', '=', 'payouts.race_id')
+            ->whereNull('payouts.id')
+            ->select('races.netkeiba_id')
+            ->distinct()
+            ->pluck('netkeiba_id')
+            ->all();
+
+        return array_flip($rows);
     }
 
     protected function loadProgress(string $path): array
