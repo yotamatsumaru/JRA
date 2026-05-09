@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Horse;
 use App\Models\Venue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -1080,5 +1081,215 @@ class AnalyticsController extends Controller
             'roi'        => 0,
             'hit_rate'   => 0,
         ];
+    }
+
+    /**
+     * 馬別コース優位性分析
+     * - 競馬場別 / トラック別 / 距離別 / 馬場状態別の成績を一覧化
+     * - 馬を選ぶと右サイドパネルで詳細表示
+     */
+    public function horse(Request $request): View
+    {
+        $keyword   = trim((string) $request->get('keyword', ''));
+        $minRuns   = max(1, (int) $request->get('min_runs', 3));
+        $sort      = $request->get('sort', 'show_rate'); // win_rate / show_rate / runs / wins / avg_finish
+        $from      = $request->get('from');
+        $to        = $request->get('to');
+        $horseName = $request->get('horse');
+
+        // ============ 馬別サマリ（一覧用） ============
+        $rowsQuery = DB::table('race_results')
+            ->join('races', 'races.id', '=', 'race_results.race_id')
+            ->join('horses', 'horses.id', '=', 'race_results.horse_id')
+            ->whereNotNull('race_results.finish_position_int');
+
+        if ($keyword !== '') {
+            $rowsQuery->where('horses.name', 'like', '%' . $keyword . '%');
+        }
+        if ($from) {
+            $rowsQuery->whereDate('races.race_date', '>=', $from);
+        }
+        if ($to) {
+            $rowsQuery->whereDate('races.race_date', '<=', $to);
+        }
+
+        $rows = $rowsQuery
+            ->selectRaw('
+                horses.id as horse_id,
+                horses.name as name,
+                horses.sex as sex,
+                horses.father as father,
+                COUNT(*) as runs,
+                SUM(CASE WHEN race_results.finish_position_int = 1 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN race_results.finish_position_int <= 2 THEN 1 ELSE 0 END) as places,
+                SUM(CASE WHEN race_results.finish_position_int <= 3 THEN 1 ELSE 0 END) as shows,
+                AVG(race_results.finish_position_int) as avg_finish,
+                MAX(races.race_date) as last_run
+            ')
+            ->groupBy('horses.id', 'horses.name', 'horses.sex', 'horses.father')
+            ->having('runs', '>=', $minRuns)
+            ->get()
+            ->map(function ($r) {
+                $r->win_rate   = $r->runs > 0 ? round($r->wins   / $r->runs * 100, 1) : 0;
+                $r->place_rate = $r->runs > 0 ? round($r->places / $r->runs * 100, 1) : 0;
+                $r->show_rate  = $r->runs > 0 ? round($r->shows  / $r->runs * 100, 1) : 0;
+                $r->avg_finish = $r->avg_finish !== null ? round($r->avg_finish, 2) : null;
+                return $r;
+            });
+
+        // ソート
+        $rows = match ($sort) {
+            'runs'       => $rows->sortByDesc('runs'),
+            'wins'       => $rows->sortByDesc('wins'),
+            'win_rate'   => $rows->sortByDesc('win_rate'),
+            'place_rate' => $rows->sortByDesc('place_rate'),
+            'avg_finish' => $rows->sortBy(fn($r) => $r->avg_finish ?? 99),
+            'name'       => $rows->sortBy('name'),
+            default      => $rows->sortByDesc('show_rate'),
+        };
+        $rows = $rows->values();
+
+        // KPIサマリ
+        $summary = [
+            'total_horses' => $rows->count(),
+            'avg_runs'     => $rows->count() > 0 ? round($rows->avg('runs'), 1) : 0,
+            'avg_show'     => $rows->count() > 0 ? round($rows->avg('show_rate'), 1) : 0,
+            'best_horse'   => $rows->sortByDesc('show_rate')->first(),
+        ];
+
+        // ============ 選択された馬の詳細 ============
+        $horseModel = null;
+        $byVenue    = collect();
+        $byTrack    = collect();
+        $byDistance = collect();
+        $byCondition = collect();
+        $recentRuns = collect();
+
+        if ($horseName) {
+            $horseModel = Horse::where('name', $horseName)->first();
+        }
+
+        if ($horseModel) {
+            $detailBase = function () use ($horseModel, $from, $to) {
+                $q = DB::table('race_results')
+                    ->join('races', 'races.id', '=', 'race_results.race_id')
+                    ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
+                    ->where('race_results.horse_id', $horseModel->id)
+                    ->whereNotNull('race_results.finish_position_int');
+                if ($from) $q->whereDate('races.race_date', '>=', $from);
+                if ($to)   $q->whereDate('races.race_date', '<=', $to);
+                return $q;
+            };
+
+            // 競馬場別
+            $byVenue = (clone $detailBase())
+                ->selectRaw('
+                    venues.name as venue,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN race_results.finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN race_results.finish_position_int<=3 THEN 1 ELSE 0 END) as shows,
+                    AVG(race_results.finish_position_int) as avg_finish
+                ')
+                ->groupBy('venues.name')
+                ->orderByDesc('runs')
+                ->get();
+
+            // トラック別（芝/ダート × 右/左 など簡易に track_type のみ）
+            $byTrack = (clone $detailBase())
+                ->selectRaw('
+                    races.track_type as track,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN race_results.finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN race_results.finish_position_int<=3 THEN 1 ELSE 0 END) as shows,
+                    AVG(race_results.finish_position_int) as avg_finish
+                ')
+                ->groupBy('races.track_type')
+                ->orderByDesc('runs')
+                ->get();
+
+            // 距離別（カテゴリ化）
+            $byDistance = (clone $detailBase())
+                ->selectRaw("
+                    CASE
+                        WHEN races.distance < 1400 THEN '短距離(〜1399)'
+                        WHEN races.distance < 1800 THEN 'マイル(1400-1799)'
+                        WHEN races.distance < 2200 THEN '中距離(1800-2199)'
+                        WHEN races.distance < 2600 THEN '中長(2200-2599)'
+                        ELSE '長距離(2600〜)'
+                    END as dist_cat,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN race_results.finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN race_results.finish_position_int<=3 THEN 1 ELSE 0 END) as shows,
+                    AVG(race_results.finish_position_int) as avg_finish
+                ")
+                ->groupByRaw("
+                    CASE
+                        WHEN races.distance < 1400 THEN '短距離(〜1399)'
+                        WHEN races.distance < 1800 THEN 'マイル(1400-1799)'
+                        WHEN races.distance < 2200 THEN '中距離(1800-2199)'
+                        WHEN races.distance < 2600 THEN '中長(2200-2599)'
+                        ELSE '長距離(2600〜)'
+                    END
+                ")
+                ->orderByDesc('runs')
+                ->get();
+
+            // 馬場状態別
+            $byCondition = (clone $detailBase())
+                ->whereNotNull('races.course_condition')
+                ->selectRaw('
+                    races.course_condition as cond,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN race_results.finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN race_results.finish_position_int<=3 THEN 1 ELSE 0 END) as shows
+                ')
+                ->groupBy('races.course_condition')
+                ->orderByDesc('runs')
+                ->get();
+
+            // 直近10走
+            $recentRuns = (clone $detailBase())
+                ->selectRaw('
+                    races.id as race_id,
+                    races.race_date,
+                    races.race_name,
+                    venues.name as venue,
+                    races.track_type,
+                    races.distance,
+                    races.course_condition,
+                    race_results.finish_position_int as finish,
+                    race_results.popularity,
+                    race_results.win_odds,
+                    race_results.last_3f
+                ')
+                ->orderByDesc('races.race_date')
+                ->limit(10)
+                ->get();
+        }
+
+        // 最終的に整形した行をビューに渡す
+        $rows = $rows->map(function ($r) {
+            $r->show_score = $r->show_rate; // ヒートマップ用
+            return $r;
+        });
+
+        return view('analytics.horse', [
+            'rows'        => $rows,
+            'summary'     => $summary,
+            'horseName'   => $horseName,
+            'horseModel'  => $horseModel,
+            'byVenue'     => $byVenue,
+            'byTrack'     => $byTrack,
+            'byDistance'  => $byDistance,
+            'byCondition' => $byCondition,
+            'recentRuns'  => $recentRuns,
+            'filters'     => [
+                'keyword' => $keyword,
+                'minRuns' => $minRuns,
+                'sort'    => $sort,
+                'from'    => $from,
+                'to'      => $to,
+            ],
+        ]);
     }
 }

@@ -204,7 +204,7 @@
         @endif
     </div>
 
-    {{-- ============ 個別騎手の詳細 (モーダル) ============ --}}
+    {{-- ============ 個別騎手の詳細 (右サイドパネル) ============ --}}
     @if ($jockeyName)
         @php
             $closeUrl = route('analytics.jockey', array_filter([
@@ -221,84 +221,86 @@
             id="jockey-detail"
             x-data="{ open: true, closeUrl: @js($closeUrl) }"
             x-show="open"
-            x-transition.opacity
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="translate-x-full opacity-0"
+            x-transition:enter-end="translate-x-0 opacity-100"
             x-cloak
             @keydown.escape.window="open = false; window.location.href = closeUrl;"
-            class="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/60 overflow-y-auto"
+            class="fixed top-0 right-0 h-screen w-full sm:w-[480px] lg:w-[560px] z-40 bg-white shadow-2xl ring-2 ring-emerald-300 flex flex-col"
         >
-            {{-- 背景クリックで閉じる --}}
-            <div class="absolute inset-0" @click="window.location.href = closeUrl;"></div>
-
-            {{-- モーダル本体 --}}
-            <div
-                class="relative bg-white rounded-lg shadow-2xl ring-2 ring-emerald-300 w-full max-w-5xl mt-12 max-h-[85vh] overflow-y-auto"
-                @click.stop
-            >
-                {{-- ヘッダー (sticky) --}}
-                <div class="sticky top-0 bg-white border-b px-5 py-3 flex items-center justify-between flex-wrap gap-2 z-10">
-                    <h2 class="font-semibold text-gray-700 text-lg">
-                        <span class="text-emerald-700">▼</span>
-                        {{ $jockeyName }} の競馬場 × トラック相性
-                    </h2>
-                    <div class="flex items-center gap-2">
-                        <a href="{{ route('jockeys.show', ['jockey' => $jockeyName]) }}"
-                           class="text-xs px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">
-                            個別ページ →
-                        </a>
-                        <a href="{{ $closeUrl }}"
-                           class="text-xs px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">× 閉じる</a>
-                    </div>
-                </div>
-
-                {{-- 本文 --}}
-                <div class="p-5">
-                    @if ($stats->isEmpty())
-                        <p class="text-sm text-gray-500">データがありません</p>
-                    @else
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-100 text-xs text-gray-600">
-                                <tr>
-                                    <th class="text-left px-3 py-2">競馬場</th>
-                                    <th class="px-3 py-2">トラック</th>
-                                    <th class="px-3 py-2">騎乗</th>
-                                    <th class="px-3 py-2">勝</th>
-                                    <th class="px-3 py-2">複勝</th>
-                                    <th class="px-3 py-2">勝率</th>
-                                    <th class="px-3 py-2">複勝率</th>
-                                    <th class="px-3 py-2 w-1/4">複勝率ヒートマップ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($stats as $s)
-                                    @php
-                                        $winRate  = $s->runs > 0 ? round($s->wins  / $s->runs * 100, 1) : 0;
-                                        $showRate = $s->runs > 0 ? round($s->shows / $s->runs * 100, 1) : 0;
-                                        $intensity = min(100, $showRate * 1.5);
-                                    @endphp
-                                    <tr class="border-b">
-                                        <td class="px-3 py-2">{{ $s->venue }}</td>
-                                        <td class="px-3 py-2 text-center">{{ $s->track_type }}</td>
-                                        <td class="px-3 py-2 text-center">{{ $s->runs }}</td>
-                                        <td class="px-3 py-2 text-center text-yellow-600 font-bold">{{ $s->wins }}</td>
-                                        <td class="px-3 py-2 text-center text-emerald-600">{{ $s->shows }}</td>
-                                        <td class="px-3 py-2 text-center">{{ $winRate }}%</td>
-                                        <td class="px-3 py-2 text-center font-bold">{{ $showRate }}%</td>
-                                        <td class="px-3 py-2">
-                                            <div class="h-5 rounded relative overflow-hidden bg-gray-100">
-                                                <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-300 via-blue-600 to-red-500" style="width: {{ $intensity }}%;"></div>
-                                                <div class="relative z-10 flex items-center justify-center h-full text-xs font-bold text-gray-800">{{ $showRate }}%</div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                    @endif
+            {{-- ヘッダー (sticky) --}}
+            <div class="bg-emerald-50 border-b px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+                <h2 class="font-semibold text-gray-700 text-base">
+                    <span class="text-emerald-700">▶</span>
+                    {{ $jockeyName }}
+                    <span class="text-xs text-gray-500">の競馬場 × トラック相性</span>
+                </h2>
+                <div class="flex items-center gap-2">
+                    <a href="{{ route('jockeys.show', ['jockey' => $jockeyName]) }}"
+                       class="text-xs px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">
+                        個別ページ →
+                    </a>
+                    <a href="{{ $closeUrl }}"
+                       class="text-xs px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">× 閉じる</a>
                 </div>
             </div>
+
+            {{-- 本文 (スクロール可能) --}}
+            <div class="flex-1 overflow-y-auto p-4">
+                @if ($stats->isEmpty())
+                    <p class="text-sm text-gray-500">データがありません</p>
+                @else
+                <table class="w-full text-xs">
+                    <thead class="bg-gray-100 text-gray-600">
+                        <tr>
+                            <th class="text-left px-2 py-1.5">競馬場</th>
+                            <th class="px-2 py-1.5">トラック</th>
+                            <th class="px-2 py-1.5">騎乗</th>
+                            <th class="px-2 py-1.5">勝</th>
+                            <th class="px-2 py-1.5">複</th>
+                            <th class="px-2 py-1.5">勝率</th>
+                            <th class="px-2 py-1.5">複勝率</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($stats as $s)
+                            @php
+                                $winRate  = $s->runs > 0 ? round($s->wins  / $s->runs * 100, 1) : 0;
+                                $showRate = $s->runs > 0 ? round($s->shows / $s->runs * 100, 1) : 0;
+                                $intensity = min(100, $showRate * 1.5);
+                            @endphp
+                            <tr class="border-b">
+                                <td class="px-2 py-1.5">{{ $s->venue }}</td>
+                                <td class="px-2 py-1.5 text-center">{{ $s->track_type }}</td>
+                                <td class="px-2 py-1.5 text-center">{{ $s->runs }}</td>
+                                <td class="px-2 py-1.5 text-center text-yellow-600 font-bold">{{ $s->wins }}</td>
+                                <td class="px-2 py-1.5 text-center text-emerald-600">{{ $s->shows }}</td>
+                                <td class="px-2 py-1.5 text-center">{{ $winRate }}%</td>
+                                <td class="px-2 py-1.5 text-center font-bold">{{ $showRate }}%</td>
+                            </tr>
+                            <tr class="border-b">
+                                <td colspan="7" class="px-2 pb-2">
+                                    <div class="h-3 rounded relative overflow-hidden bg-gray-100">
+                                        <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-300 via-blue-600 to-red-500" style="width: {{ $intensity }}%;"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+                @endif
+            </div>
         </div>
+
+        {{-- ページ本体に右余白を追加して被らないように --}}
+        <style>
+            @media (min-width: 640px) {
+                body { padding-right: 480px; }
+            }
+            @media (min-width: 1024px) {
+                body { padding-right: 560px; }
+            }
+        </style>
     @endif
 </div>
 

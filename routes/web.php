@@ -75,6 +75,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/pace', [AnalyticsController::class, 'pace'])->name('pace');
         Route::get('/pedigree', [AnalyticsController::class, 'pedigree'])->name('pedigree');
         Route::get('/jockey', [AnalyticsController::class, 'jockey'])->name('jockey');
+        Route::get('/horse', [AnalyticsController::class, 'horse'])->name('horse');
         Route::get('/stats', [AnalyticsController::class, 'stats'])->name('stats');
         Route::get('/roi', [AnalyticsController::class, 'roi'])->name('roi');
     });

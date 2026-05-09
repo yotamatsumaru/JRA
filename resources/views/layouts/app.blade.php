@@ -226,6 +226,7 @@
                                 <a href="{{ route('analytics.pace') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="bolt" class="w-4 h-4 text-amber-500" /><span>ペース分析</span></a>
                                 <a href="{{ route('analytics.pedigree') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="dna" class="w-4 h-4 text-purple-500" /><span>血統傾向</span></a>
                                 <a href="{{ route('analytics.jockey') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="user" class="w-4 h-4 text-sky-500" /><span>騎手×コース</span></a>
+                                <a href="{{ route('analytics.horse') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-rose-500" /><span>馬×コース優位性</span></a>
                                 <a href="{{ route('analytics.stats') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-gold-500" /><span>通算成績スタッツ</span></a>
                                 <a href="{{ route('analytics.roi') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-gold-500" /><span>回収率シミュ</span></a>
                             </div>
