@@ -82,7 +82,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/pedigree/broodmares',  [AnalyticsController::class, 'pedigreeBroodmares'])->name('pedigree.broodmares');
         Route::get('/pedigree/heatmap',     [AnalyticsController::class, 'pedigreeHeatmap'])->name('pedigree.heatmap');
 
-        // 推奨(Phase 1: トップ + 重み設定 / Phase 2: 条件指定 + 全件スキャン)
+        // 推奨(Phase 1: トップ+重み設定 / Phase 2: 条件指定+全件スキャン / Phase 3: 出馬表ベース推奨)
         Route::prefix('recommend')->name('recommend.')->group(function () {
             Route::get('/',                [PedigreeRecommendController::class, 'index'])->name('index');
             Route::get('/settings',        [PedigreeRecommendController::class, 'settings'])->name('settings');
@@ -90,6 +90,8 @@ Route::middleware('auth')->group(function () {
             Route::post('/settings/reset', [PedigreeRecommendController::class, 'settingsReset'])->name('settings.reset');
             Route::get('/conditions',      [PedigreeRecommendController::class, 'conditions'])->name('conditions');
             Route::get('/scan',            [PedigreeRecommendController::class, 'scan'])->name('scan');
+            Route::get('/race',            [PedigreeRecommendController::class, 'race'])->name('race');
+            Route::get('/race/{race}',     [PedigreeRecommendController::class, 'raceShow'])->name('race.show');
         });
         Route::get('/jockey', [AnalyticsController::class, 'jockey'])->name('jockey');
         Route::get('/horse', [AnalyticsController::class, 'horse'])->name('horse');

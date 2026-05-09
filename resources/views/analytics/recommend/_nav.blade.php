@@ -5,7 +5,7 @@
 @php
     $tabs = [
         ['key' => 'index',      'route' => 'analytics.recommend.index',      'label' => '🏠 推奨トップ',       'enabled' => true],
-        ['key' => 'race',       'route' => 'analytics.recommend.index',      'label' => '🐎 出馬表推奨(A)',     'enabled' => false, 'badge' => 'Phase 3'],
+        ['key' => 'race',       'route' => 'analytics.recommend.race',       'label' => '🐎 出馬表推奨(A)',     'enabled' => true],
         ['key' => 'conditions', 'route' => 'analytics.recommend.conditions', 'label' => '🎯 条件指定(B)',       'enabled' => true],
         ['key' => 'scan',       'route' => 'analytics.recommend.scan',       'label' => '🔍 全条件スキャン(C)', 'enabled' => true],
         ['key' => 'settings',   'route' => 'analytics.recommend.settings',   'label' => '⚙️ 重み設定',           'enabled' => true],

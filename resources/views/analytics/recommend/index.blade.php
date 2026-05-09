@@ -59,23 +59,24 @@
 
     {{-- 3つの入口の案内カード --}}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {{-- A: 出馬表ベース (Phase 3 — 未実装) --}}
-        <div class="bg-white rounded-lg shadow border-l-4 border-rose-400 p-5 opacity-60">
+        {{-- A: 出馬表ベース (有効) --}}
+        <a href="{{ route('analytics.recommend.race') }}"
+           class="block bg-white rounded-lg shadow border-l-4 border-rose-500 p-5 hover:shadow-lg hover:bg-rose-50 transition group">
             <div class="flex items-start justify-between mb-2">
-                <h3 class="font-bold text-gray-800">🐎 出馬表ベース推奨</h3>
-                <span class="text-[10px] bg-gray-300 text-white px-1.5 py-0.5 rounded">Phase 3</span>
+                <h3 class="font-bold text-gray-800 group-hover:text-rose-700">🐎 出馬表ベース推奨</h3>
+                <span class="text-[10px] bg-rose-500 text-white px-1.5 py-0.5 rounded">利用可</span>
             </div>
             <p class="text-xs text-gray-600 mb-3">
-                これから走るレースを選択すると、各馬を血統・騎手・過去走でスコアリングし
+                レースを選択すると、各出走馬を血統・騎手・過去走でスコアリングし
                 <strong>◎○▲△☆</strong>の印を自動付与します。
             </p>
             <ul class="text-xs text-gray-500 space-y-0.5 list-disc list-inside">
                 <li>馬ごとのサブスコア内訳バー</li>
-                <li>推奨馬券組み合わせ(◎-○、◎-○-▲)</li>
+                <li>推奨馬券組み合わせ(馬連・馬単・3連複・ワイド)</li>
                 <li>推奨理由の根拠表示</li>
             </ul>
-            <div class="mt-3 text-xs text-gray-400">準備中(Phase 3で実装予定)</div>
-        </div>
+            <div class="mt-3 text-xs text-rose-600 font-bold">レース選択を開く →</div>
+        </a>
 
         {{-- B: 条件指定 (有効) --}}
         <a href="{{ route('analytics.recommend.conditions') }}"
