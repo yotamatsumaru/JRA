@@ -71,9 +71,27 @@ class RaceController extends Controller
             'results.jockey',
             'results.trainer',
             'notes.user',
+            'payouts',
+            'bets',
         ]);
 
-        return view('races.show', compact('race'));
+        // 払戻を券種別にまとめる
+        $payoutsByKind = $race->payouts->groupBy('kind');
+
+        // 自分の馬券（このレースに対するもの）
+        $myBets = $race->bets()->where('user_id', auth()->id())->orderBy('id')->get();
+        $myBetSummary = [
+            'count'   => $myBets->count(),
+            'stake'   => (int) $myBets->sum('total_stake'),
+            'payout'  => (int) $myBets->sum('total_return'),
+            'hit'     => (int) $myBets->where('hit_count', '>', 0)->count(),
+        ];
+        $myBetSummary['profit'] = $myBetSummary['payout'] - $myBetSummary['stake'];
+        $myBetSummary['roi']    = $myBetSummary['stake'] > 0
+            ? round($myBetSummary['payout'] / $myBetSummary['stake'] * 100, 1)
+            : null;
+
+        return view('races.show', compact('race', 'payoutsByKind', 'myBets', 'myBetSummary'));
     }
 
     public function edit(Race $race): View

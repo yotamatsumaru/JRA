@@ -46,6 +46,8 @@
                             <th class="px-2 py-2">性齢</th>
                             <th class="px-2 py-2">斤量</th>
                             <th class="text-left px-2 py-2">騎手</th>
+                            <th class="text-left px-2 py-2">厩舎</th>
+                            <th class="px-2 py-2">馬体重</th>
                             <th class="px-2 py-2">タイム</th>
                             <th class="px-2 py-2">着差</th>
                             <th class="px-2 py-2">通過</th>
@@ -63,13 +65,32 @@
                             <td class="px-2 py-2 text-center">{{ $r->frame_number }}</td>
                             <td class="px-2 py-2 text-center">{{ $r->horse_number }}</td>
                             <td class="px-2 py-2">
-                                <a href="{{ route('horses.show', $r->horse) }}" class="text-primary-600 hover:underline">{{ $r->horse?->name }}</a>
+                                @if ($r->horse)
+                                    <a href="{{ route('horses.show', $r->horse) }}" class="text-primary-600 hover:underline">{{ $r->horse->name }}</a>
+                                @else
+                                    <span class="text-gray-400">-</span>
+                                @endif
                             </td>
                             <td class="px-2 py-2 text-center text-xs">{{ $r->sex }}{{ $r->age }}</td>
                             <td class="px-2 py-2 text-center">{{ $r->weight_carried }}</td>
                             <td class="px-2 py-2">
                                 @if ($r->jockey)
                                     <a href="{{ route('jockeys.show', $r->jockey) }}" class="text-primary-600 hover:underline">{{ $r->jockey->name }}</a>
+                                @else
+                                    <span class="text-gray-400 text-xs">-</span>
+                                @endif
+                            </td>
+                            <td class="px-2 py-2 text-xs text-gray-700">
+                                {{ $r->trainer?->name ?? '-' }}
+                            </td>
+                            <td class="px-2 py-2 text-center text-xs">
+                                @if ($r->horse_weight)
+                                    {{ $r->horse_weight }}
+                                    @if ($r->horse_weight_diff !== null)
+                                        <span class="text-gray-500">({{ $r->horse_weight_diff > 0 ? '+' : '' }}{{ $r->horse_weight_diff }})</span>
+                                    @endif
+                                @else
+                                    -
                                 @endif
                             </td>
                             <td class="px-2 py-2 text-center font-mono">{{ $r->time }}</td>
@@ -93,6 +114,27 @@
                         @endforeach
                     </tbody>
                 </table>
+            </div>
+        @endif
+
+        {{-- ラップタイム --}}
+        @if (!empty($race->lap_times))
+            <div class="mt-6">
+                <h3 class="text-sm font-semibold text-gray-700 mb-2">ラップタイム</h3>
+                <div class="flex flex-wrap gap-2 text-xs font-mono">
+                    @foreach ($race->lap_times as $i => $lap)
+                        <span class="bg-gray-100 border rounded px-2 py-1">
+                            <span class="text-gray-500">{{ ($i + 1) * 200 }}m</span>
+                            <span class="ml-1 text-gray-800 font-bold">{{ $lap }}</span>
+                        </span>
+                    @endforeach
+                </div>
+                @if ($race->first_3f || $race->last_3f)
+                    <div class="mt-2 text-xs text-gray-600">
+                        @if ($race->first_3f) <span class="mr-3">前3F: <span class="font-mono font-bold text-gray-800">{{ $race->first_3f }}</span></span> @endif
+                        @if ($race->last_3f) <span>上り3F: <span class="font-mono font-bold text-gray-800">{{ $race->last_3f }}</span></span> @endif
+                    </div>
+                @endif
             </div>
         @endif
 
@@ -183,6 +225,140 @@
             </form>
         </details>
     </div>
+
+    {{-- 公式払戻 --}}
+    @if ($race->payouts->isNotEmpty())
+    <div class="bg-white rounded-lg shadow p-6">
+        <h2 class="font-semibold text-gray-700 mb-3">公式払戻</h2>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+                    <tr>
+                        <th class="text-left px-3 py-2">券種</th>
+                        <th class="text-left px-3 py-2">組合せ</th>
+                        <th class="text-right px-3 py-2">払戻金</th>
+                        <th class="text-right px-3 py-2">人気</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @php
+                        $kindOrder = ['tan','fuku','waku-ren','uma-ren','uma-tan','wide','san-fuku','san-tan'];
+                        $sortedKinds = collect($kindOrder)->filter(fn($k) => $payoutsByKind->has($k));
+                    @endphp
+                    @foreach ($sortedKinds as $kind)
+                        @foreach ($payoutsByKind[$kind] as $i => $p)
+                            <tr class="border-b hover:bg-gray-50">
+                                <td class="px-3 py-2">
+                                    @if ($i === 0)
+                                        <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold">{{ $p->kind_label }}</span>
+                                    @endif
+                                </td>
+                                <td class="px-3 py-2 font-mono">{{ $p->combination }}</td>
+                                <td class="px-3 py-2 text-right font-bold {{ $p->amount >= 10000 ? 'text-rose-600' : 'text-gray-800' }}">
+                                    ¥{{ number_format($p->amount) }}
+                                    @if ($p->amount >= 1000000)
+                                        <span class="ml-1 text-xs bg-purple-600 text-white px-1 rounded">百万</span>
+                                    @elseif ($p->amount >= 100000)
+                                        <span class="ml-1 text-xs bg-rose-600 text-white px-1 rounded">十万</span>
+                                    @elseif ($p->amount >= 10000)
+                                        <span class="ml-1 text-xs bg-amber-500 text-white px-1 rounded">万馬</span>
+                                    @endif
+                                </td>
+                                <td class="px-3 py-2 text-right text-xs text-gray-600">{{ $p->popularity ? $p->popularity.'人気' : '-' }}</td>
+                            </tr>
+                        @endforeach
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
+
+    {{-- 自分の馬券 --}}
+    @if ($myBets->isNotEmpty())
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="font-semibold text-gray-700">このレースの自分の馬券</h2>
+            <a href="{{ route('bets.create', ['race_id' => $race->id]) }}" class="text-xs text-primary-600 hover:underline">＋ 追加</a>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 text-sm">
+            <div class="bg-gray-50 rounded p-3">
+                <div class="text-xs text-gray-500">点数</div>
+                <div class="font-bold text-gray-800">{{ $myBetSummary['count'] }}件</div>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <div class="text-xs text-gray-500">投資</div>
+                <div class="font-bold text-gray-800">¥{{ number_format($myBetSummary['stake']) }}</div>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <div class="text-xs text-gray-500">払戻</div>
+                <div class="font-bold text-emerald-600">¥{{ number_format($myBetSummary['payout']) }}</div>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <div class="text-xs text-gray-500">収支</div>
+                <div class="font-bold {{ $myBetSummary['profit'] >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
+                    {{ $myBetSummary['profit'] >= 0 ? '+' : '' }}¥{{ number_format($myBetSummary['profit']) }}
+                </div>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <div class="text-xs text-gray-500">回収率</div>
+                <div class="font-bold {{ ($myBetSummary['roi'] ?? 0) >= 100 ? 'text-emerald-600' : 'text-gray-800' }}">
+                    {{ $myBetSummary['roi'] !== null ? $myBetSummary['roi'].'%' : '-' }}
+                </div>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+                    <tr>
+                        <th class="text-left px-3 py-2">券種</th>
+                        <th class="text-left px-3 py-2">買い方</th>
+                        <th class="text-right px-3 py-2">点数</th>
+                        <th class="text-right px-3 py-2">投資</th>
+                        <th class="text-right px-3 py-2">払戻</th>
+                        <th class="text-right px-3 py-2">収支</th>
+                        <th class="text-center px-3 py-2">状態</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach ($myBets as $b)
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="px-3 py-2">{{ $b->kind_label }}</td>
+                        <td class="px-3 py-2 text-xs text-gray-600">{{ $b->method_label }}</td>
+                        <td class="px-3 py-2 text-right">{{ $b->points }}</td>
+                        <td class="px-3 py-2 text-right">¥{{ number_format($b->total_stake) }}</td>
+                        <td class="px-3 py-2 text-right text-emerald-600">¥{{ number_format($b->total_return) }}</td>
+                        <td class="px-3 py-2 text-right font-bold {{ $b->profit >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
+                            {{ $b->profit >= 0 ? '+' : '' }}¥{{ number_format($b->profit) }}
+                        </td>
+                        <td class="px-3 py-2 text-center">
+                            @if (!$b->is_settled)
+                                <span class="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded">未確定</span>
+                            @elseif ($b->hit_count > 0)
+                                <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">的中</span>
+                            @else
+                                <span class="text-xs bg-rose-100 text-rose-700 px-2 py-0.5 rounded">不的中</span>
+                            @endif
+                        </td>
+                        <td class="px-3 py-2 text-right">
+                            <a href="{{ route('bets.show', $b) }}" class="text-xs text-primary-600 hover:underline">詳細</a>
+                        </td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @else
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center justify-between">
+            <div class="text-sm text-gray-500">このレースの馬券はまだ登録されていません。</div>
+            <a href="{{ route('bets.create', ['race_id' => $race->id]) }}" class="text-sm bg-primary-600 hover:bg-primary-700 text-white px-3 py-1 rounded">＋ 馬券を登録</a>
+        </div>
+    </div>
+    @endif
 
     {{-- メモ --}}
     @if ($race->notes->isNotEmpty())
