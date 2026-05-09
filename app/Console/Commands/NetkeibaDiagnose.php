@@ -31,22 +31,63 @@ class NetkeibaDiagnose extends Command
         $userAgent = config('services.netkeiba.user_agent',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36');
 
-        // ============ ベースクライアント (現在の UA / 最小ヘッダ) ============
-        $client = new Client([
+        // ============ プロキシ設定の確認 ============
+        $proxyRaw     = config('services.netkeiba.proxy');
+        $proxyHttps   = config('services.netkeiba.proxy_https');
+        $proxyNo      = config('services.netkeiba.proxy_no');
+        $proxyVerify  = (bool) config('services.netkeiba.proxy_verify', true);
+        $cookie       = config('services.netkeiba.cookie');
+        $proxyEnabled = !empty($proxyRaw) || !empty($proxyHttps);
+
+        // 共通ヘッダ
+        $baseHeaders = [
+            'User-Agent'      => $userAgent,
+            'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language' => 'ja,en;q=0.8',
+        ];
+        if (is_string($cookie) && trim($cookie) !== '') {
+            $baseHeaders['Cookie'] = trim($cookie);
+        }
+
+        // クライアントオプション (プロキシ有効時のみ proxy/verify を付与)
+        $clientOptions = [
             'timeout' => 30,
             'http_errors' => false,
-            'headers' => [
-                'User-Agent'      => $userAgent,
-                'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language' => 'ja,en;q=0.8',
-            ],
-        ]);
+            'headers' => $baseHeaders,
+        ];
+        if ($proxyEnabled) {
+            if (!empty($proxyRaw) && empty($proxyHttps) && empty($proxyNo)) {
+                $clientOptions['proxy'] = $proxyRaw;
+            } else {
+                $proxyArr = [];
+                if (!empty($proxyRaw))   $proxyArr['http']  = $proxyRaw;
+                $proxyArr['https'] = !empty($proxyHttps) ? $proxyHttps : ($proxyRaw ?: '');
+                if (!empty($proxyNo)) {
+                    $proxyArr['no'] = array_values(array_filter(array_map('trim', explode(',', $proxyNo))));
+                }
+                $clientOptions['proxy'] = $proxyArr;
+            }
+            $clientOptions['verify'] = $proxyVerify;
+        }
+
+        // ============ ベースクライアント (現在の UA / 最小ヘッダ) ============
+        $client = new Client($clientOptions);
 
         $this->line('');
         $this->line("=== netkeiba.com 接続診断 ===");
         $this->line("date    : {$date}  (ymd={$ymd})");
         $this->line("race_id : {$raceId}");
         $this->line("UA      : " . mb_substr($userAgent, 0, 80) . '...');
+        if ($proxyEnabled) {
+            $masked = preg_replace('#(://)([^:@/]+):([^@/]+)@#', '$1***:***@', (string) ($proxyRaw ?: $proxyHttps));
+            $this->line("proxy   : <fg=green>ENABLED</> {$masked}  (verify=" . ($proxyVerify ? 'true' : 'false') . ')');
+            if (!empty($proxyNo)) {
+                $this->line("proxy_no: {$proxyNo}");
+            }
+        } else {
+            $this->line("proxy   : <fg=yellow>DISABLED</> (.env の NETKEIBA_PROXY が未設定)");
+        }
+        $this->line("cookie  : " . (!empty($cookie) ? '<fg=green>SET</> (' . strlen($cookie) . ' chars)' : '<fg=yellow>NOT SET</>'));
         $this->line('');
 
         // ============ STEP 1: 各エンドポイントを通常ヘッダでテスト ============
@@ -67,26 +108,27 @@ class NetkeibaDiagnose extends Command
         // ============ STEP 2: 「ブラウザ完全模倣」ヘッダで race トップを再テスト ============
         $this->line('');
         $this->info('--- STEP 2: race.netkeiba.com トップを「完全ブラウザ模倣」ヘッダで再テスト ---');
-        $clientBrowser = new Client([
-            'timeout' => 30,
-            'http_errors' => false,
-            'headers' => [
-                'User-Agent'                => $userAgent,
-                'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language'           => 'ja,en-US;q=0.9,en;q=0.8',
-                'Accept-Encoding'           => 'gzip, deflate, br',
-                'Cache-Control'             => 'no-cache',
-                'Pragma'                    => 'no-cache',
-                'Sec-Ch-Ua'                 => '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                'Sec-Ch-Ua-Mobile'          => '?0',
-                'Sec-Ch-Ua-Platform'        => '"Windows"',
-                'Sec-Fetch-Dest'            => 'document',
-                'Sec-Fetch-Mode'            => 'navigate',
-                'Sec-Fetch-Site'            => 'none',
-                'Sec-Fetch-User'            => '?1',
-                'Upgrade-Insecure-Requests' => '1',
-            ],
-        ]);
+        $browserHeaders = [
+            'User-Agent'                => $userAgent,
+            'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language'           => 'ja,en-US;q=0.9,en;q=0.8',
+            'Accept-Encoding'           => 'gzip, deflate, br',
+            'Cache-Control'             => 'no-cache',
+            'Pragma'                    => 'no-cache',
+            'Sec-Ch-Ua'                 => '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile'          => '?0',
+            'Sec-Ch-Ua-Platform'        => '"Windows"',
+            'Sec-Fetch-Dest'            => 'document',
+            'Sec-Fetch-Mode'            => 'navigate',
+            'Sec-Fetch-Site'            => 'none',
+            'Sec-Fetch-User'            => '?1',
+            'Upgrade-Insecure-Requests' => '1',
+        ];
+        if (isset($baseHeaders['Cookie'])) {
+            $browserHeaders['Cookie'] = $baseHeaders['Cookie'];
+        }
+        $browserOptions = array_merge($clientOptions, ['headers' => $browserHeaders]);
+        $clientBrowser = new Client($browserOptions);
         $this->testUrl($clientBrowser, 'race top (full)', 'https://race.netkeiba.com/');
         $this->testUrl($clientBrowser, 'race list (full)', "https://race.netkeiba.com/top/race_list_sub.html?kaisai_date={$ymd}");
 
@@ -111,7 +153,9 @@ class NetkeibaDiagnose extends Command
         $this->line('');
         $this->line('対処:');
         $this->line(' 1. STEP2 で 200 が出る → Scraper にヘッダ追加して恒久対策');
-        $this->line(' 2. IP が原因 → XServer 別ホストで再試行 / VPN 経由 / netkeiba プレミアム会員');
+        $this->line(' 2. IP が原因 → .env に NETKEIBA_PROXY=http://user:pass@host:port を設定 (本コマンドで proxy: ENABLED と表示されること)');
+        $this->line('               → プロキシ候補: Bright Data / Oxylabs / Webshare / IPRoyal、もしくは VPS+Squid 自前');
+        $this->line(' 3. 認証が必要 → ブラウザで netkeiba にログイン後、DevTools で Cookie をコピーし NETKEIBA_COOKIE に貼る');
 
         return Command::SUCCESS;
     }

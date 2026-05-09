@@ -36,20 +36,91 @@ class NetkeibaScraper
             'Accept-Language' => 'ja,en;q=0.8',
         ];
 
-        $this->http = new Client([
-            'base_uri' => config('services.netkeiba.base_url'),
+        // 任意 Cookie (会員ログイン Cookie 等) があればヘッダに付与
+        $cookie = config('services.netkeiba.cookie');
+        if (is_string($cookie) && trim($cookie) !== '') {
+            $headers['Cookie'] = trim($cookie);
+        }
+
+        // プロキシ設定を組み立て
+        $clientOptions = [
             'timeout' => config('services.netkeiba.timeout', 30),
             'headers' => $headers,
             'http_errors' => false,
-        ]);
+        ];
+
+        $proxyConfig = $this->buildProxyConfig();
+        if ($proxyConfig !== null) {
+            $clientOptions['proxy'] = $proxyConfig;
+            // プロキシが自己署名証明書を使う場合は verify=false に
+            $clientOptions['verify'] = (bool) config('services.netkeiba.proxy_verify', true);
+            Log::info('NetkeibaScraper: proxy enabled', [
+                'proxy' => $this->maskProxy(is_array($proxyConfig) ? ($proxyConfig['http'] ?? '') : $proxyConfig),
+                'verify' => $clientOptions['verify'],
+            ]);
+        }
+
+        $this->http = new Client(array_merge($clientOptions, [
+            'base_uri' => config('services.netkeiba.base_url'),
+        ]));
 
         // race.netkeiba.com (新DB) フォールバック用
-        $this->httpRace = new Client([
+        $this->httpRace = new Client(array_merge($clientOptions, [
             'base_uri' => 'https://race.netkeiba.com',
-            'timeout' => config('services.netkeiba.timeout', 30),
-            'headers' => $headers,
-            'http_errors' => false,
-        ]);
+        ]));
+    }
+
+    /**
+     * env / config からプロキシ設定を構築。
+     * 未設定なら null を返す（=プロキシ未使用、直結）。
+     *
+     * @return string|array|null
+     */
+    protected function buildProxyConfig()
+    {
+        $proxy      = config('services.netkeiba.proxy');
+        $proxyHttps = config('services.netkeiba.proxy_https');
+        $proxyNo    = config('services.netkeiba.proxy_no');
+
+        if (empty($proxy) && empty($proxyHttps)) {
+            return null;
+        }
+
+        // https専用や除外ホストの指定がない場合は単純な文字列で返す
+        if (!empty($proxy) && empty($proxyHttps) && empty($proxyNo)) {
+            return $proxy;
+        }
+
+        $config = [];
+        if (!empty($proxy)) {
+            $config['http'] = $proxy;
+            // proxy_https 未指定なら http と共用
+            $config['https'] = !empty($proxyHttps) ? $proxyHttps : $proxy;
+        } elseif (!empty($proxyHttps)) {
+            $config['https'] = $proxyHttps;
+        }
+
+        if (!empty($proxyNo)) {
+            $config['no'] = array_values(array_filter(array_map('trim', explode(',', $proxyNo))));
+        }
+
+        return $config;
+    }
+
+    /**
+     * ログ出力用にプロキシURLの user:pass 部分をマスク
+     */
+    protected function maskProxy(string $url): string
+    {
+        return preg_replace('#(://)([^:@/]+):([^@/]+)@#', '$1***:***@', $url) ?? $url;
+    }
+
+    /**
+     * プロキシが設定されているか
+     */
+    public function isProxyEnabled(): bool
+    {
+        return $this->buildProxyConfig() !== null;
     }
 
     /**
