@@ -245,6 +245,131 @@
     </div>
 
     @endif {{-- count > 0 --}}
+
+    {{-- ============================================================ --}}
+    {{-- 払戻データ概況（自分の馬券に関係なく、取込済の全レース母集団から） --}}
+    {{-- ============================================================ --}}
+    <div class="mt-8">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-semibold text-gray-800 dark:text-gray-100 flex items-center space-x-2">
+                <x-icon name="cash" class="w-5 h-5 text-gold-500" />
+                <span>払戻データ概況</span>
+                <span class="text-xs font-normal text-gray-400">取込済全レースの公式払戻</span>
+            </h2>
+            <div class="flex items-center space-x-2">
+                <a href="{{ route('betting.payouts.list', ['from' => $from, 'to' => $to]) }}"
+                   class="inline-flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded text-xs">
+                    <x-icon name="list" class="w-4 h-4" /><span>払戻金一覧</span>
+                </a>
+                <a href="{{ route('betting.payouts') }}"
+                   class="inline-flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded text-xs">
+                    <x-icon name="chart" class="w-4 h-4" /><span>傾向分析</span>
+                </a>
+            </div>
+        </div>
+
+        @if ($payoutOverview['total_payouts'] === 0)
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 text-center text-sm text-gray-500">
+                払戻データがまだ取り込まれていません。<br>
+                <code class="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">php artisan netkeiba:year</code> でレース＋払戻を一括取込できます。
+            </div>
+        @else
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <x-kpi-card
+                label="取込レース数"
+                :value="number_format($payoutOverview['total_races'])"
+                subtext="レース"
+                icon="list" color="turf" />
+            <x-kpi-card
+                label="払戻レコード数"
+                :value="number_format($payoutOverview['total_payouts'])"
+                subtext="件"
+                icon="cash" color="gold" />
+            <x-kpi-card
+                label="平均配当"
+                :value="'¥'.number_format($payoutOverview['avg_amount'])"
+                subtext="100円あたり"
+                icon="chart" color="sand" />
+            <x-kpi-card
+                label="最高配当（直近）"
+                :value="$payoutOverview['top_recent']->isNotEmpty() ? '¥'.number_format($payoutOverview['top_recent']->first()->amount) : '-'"
+                :subtext="$payoutOverview['top_recent']->isNotEmpty() ? (\App\Models\Bet::KIND_LABELS[$payoutOverview['top_recent']->first()->kind] ?? '') : ''"
+                icon="trophy" color="purple" />
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {{-- 券種別 取込状況 --}}
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">券種別 取込状況</h3>
+                @if ($payoutOverview['by_kind']->isEmpty())
+                    <p class="text-sm text-gray-400">データなし</p>
+                @else
+                <table class="w-full text-sm">
+                    <thead class="text-xs text-gray-500">
+                        <tr>
+                            <th class="text-left py-1.5">券種</th>
+                            <th class="text-right">件数</th>
+                            <th class="text-right">平均配当</th>
+                            <th class="text-right">最高配当</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                    @foreach ($payoutOverview['by_kind'] as $r)
+                    <tr>
+                        <td class="py-1.5">
+                            <a href="{{ route('betting.payouts.list', ['kind' => $r['kind'], 'from' => $from, 'to' => $to]) }}"
+                               class="text-turf-600 hover:underline font-medium">{{ $r['kind_label'] }}</a>
+                        </td>
+                        <td class="py-1.5 text-right tabular-nums text-xs">{{ number_format($r['cnt']) }}</td>
+                        <td class="py-1.5 text-right tabular-nums">¥{{ number_format($r['avg']) }}</td>
+                        <td class="py-1.5 text-right tabular-nums text-gold-600 font-bold">¥{{ number_format($r['max']) }}</td>
+                    </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+                @endif
+            </div>
+
+            {{-- 直近高額配当TOP5 --}}
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3 flex items-center space-x-1">
+                    <x-icon name="trophy" class="w-4 h-4 text-gold-500" /><span>高額配当 TOP5</span>
+                </h3>
+                @if ($payoutOverview['top_recent']->isEmpty())
+                    <p class="text-sm text-gray-400">データなし</p>
+                @else
+                <table class="w-full text-sm">
+                    <thead class="text-xs text-gray-500">
+                        <tr>
+                            <th class="text-left py-1.5">日付 / レース</th>
+                            <th class="text-left">券種</th>
+                            <th class="text-left">組合せ</th>
+                            <th class="text-right">配当</th>
+                            <th class="text-right">人気</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                    @foreach ($payoutOverview['top_recent'] as $p)
+                    <tr>
+                        <td class="py-1.5 text-xs">
+                            <div class="text-gray-500">{{ $p->race?->race_date?->format('Y/m/d') }}</div>
+                            <a href="{{ route('races.show', $p->race) }}" class="text-turf-600 hover:underline">
+                                {{ $p->race?->venue?->name }} {{ $p->race?->race_number }}R
+                            </a>
+                        </td>
+                        <td class="py-1.5 text-xs font-medium">{{ \App\Models\Bet::KIND_LABELS[$p->kind] ?? $p->kind }}</td>
+                        <td class="py-1.5 font-mono text-xs text-gray-700 dark:text-gray-300">{{ $p->combination }}</td>
+                        <td class="py-1.5 text-right tabular-nums text-gold-600 font-bold">¥{{ number_format($p->amount) }}</td>
+                        <td class="py-1.5 text-right tabular-nums text-xs text-gray-500">{{ $p->popularity ? $p->popularity.'番人気' : '-' }}</td>
+                    </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+                @endif
+            </div>
+        </div>
+        @endif
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>

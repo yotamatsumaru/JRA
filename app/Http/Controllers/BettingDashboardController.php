@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Bet;
 use App\Models\BetLeg;
 use App\Models\Payout;
+use App\Models\Race;
 use App\Models\Venue;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -258,11 +260,74 @@ class BettingDashboardController extends Controller
         // ===== 月次目標 vs 実績 =====
         $monthlyTarget = $this->monthlyTargetVsActual($userId);
 
+        // ===== 払戻データ概況（自分の馬券に関係なく、取込済の全レース母集団から） =====
+        $payoutOverview = $this->buildPayoutOverview($from, $to);
+
         return view('bets.dashboard', compact(
             'kpi', 'monthly', 'cumulative', 'byKind', 'byVenue', 'byTrack',
             'byJockey', 'byHorse', 'bestPayouts', 'streaks', 'monthlyTarget',
+            'payoutOverview',
             'from', 'to'
         ));
+    }
+
+    /**
+     * 払戻データ概況の集計
+     *  - 取込レース数 / 払戻レコード数
+     *  - 券種別取込件数・平均/最大配当
+     *  - 直近高額配当TOP5
+     */
+    protected function buildPayoutOverview(?string $from, ?string $to): array
+    {
+        // 期間で絞る場合は races 経由
+        $payoutBase = Payout::query()
+            ->when($from || $to, function ($q) use ($from, $to) {
+                $q->whereHas('race', function ($r) use ($from, $to) {
+                    if ($from) $r->whereDate('race_date', '>=', $from);
+                    if ($to)   $r->whereDate('race_date', '<=', $to);
+                });
+            });
+
+        $totalPayouts = (clone $payoutBase)->count();
+        $totalRaces = (clone $payoutBase)->distinct('race_id')->count('race_id');
+
+        // 券種別の集計
+        $byKind = (clone $payoutBase)
+            ->selectRaw('
+                kind,
+                COUNT(*) as cnt,
+                AVG(amount) as avg_amount,
+                MAX(amount) as max_amount
+            ')
+            ->groupBy('kind')
+            ->get()
+            ->map(fn($r) => [
+                'kind'       => $r->kind,
+                'kind_label' => Bet::KIND_LABELS[$r->kind] ?? $r->kind,
+                'cnt'        => (int) $r->cnt,
+                'avg'        => (int) round($r->avg_amount),
+                'max'        => (int) $r->max_amount,
+            ])
+            ->sortBy(fn($r) => array_search($r['kind'], array_keys(Bet::KIND_LABELS)))
+            ->values();
+
+        // 直近の高額配当TOP5（券種混合）
+        $topRecent = (clone $payoutBase)
+            ->with('race.venue')
+            ->orderByDesc('amount')
+            ->limit(5)
+            ->get();
+
+        // 全体の平均配当（参考値）
+        $avgAll = (clone $payoutBase)->avg('amount');
+
+        return [
+            'total_payouts' => $totalPayouts,
+            'total_races'   => $totalRaces,
+            'avg_amount'    => (int) round($avgAll ?? 0),
+            'by_kind'       => $byKind,
+            'top_recent'    => $topRecent,
+        ];
     }
 
     /**
@@ -329,6 +394,117 @@ class BettingDashboardController extends Controller
             ])->toArray(),
             'avg_roi'    => round($avgRoi, 1),
         ];
+    }
+
+    /**
+     * 払戻金一覧（フィルタ・ソート・ページネーション）
+     *  - 期間/券種/競馬場/金額帯/人気でフィルタ
+     *  - 日付・金額・人気でソート
+     *  - CSVエクスポート対応（?export=csv）
+     */
+    public function payoutsList(Request $request)
+    {
+        $kind        = $request->input('kind');
+        $venueId     = $request->input('venue_id');
+        $from        = $request->input('from');
+        $to          = $request->input('to');
+        $minAmount   = $request->input('min_amount');
+        $maxAmount   = $request->input('max_amount');
+        $popularity  = $request->input('popularity');
+        $sort        = $request->input('sort', 'date_desc');
+
+        $q = Payout::query()
+            ->join('races', 'payouts.race_id', '=', 'races.id')
+            ->leftJoin('venues', 'races.venue_id', '=', 'venues.id')
+            ->select(
+                'payouts.*',
+                'races.race_date',
+                'races.race_number',
+                'races.name as race_name',
+                'races.netkeiba_id',
+                'venues.name as venue_name',
+                'venues.id as vid'
+            );
+
+        if ($kind)       $q->where('payouts.kind', $kind);
+        if ($venueId)    $q->where('races.venue_id', $venueId);
+        if ($from)       $q->whereDate('races.race_date', '>=', $from);
+        if ($to)         $q->whereDate('races.race_date', '<=', $to);
+        if ($minAmount)  $q->where('payouts.amount', '>=', (int) $minAmount);
+        if ($maxAmount)  $q->where('payouts.amount', '<=', (int) $maxAmount);
+        if ($popularity) $q->where('payouts.popularity', (int) $popularity);
+
+        match ($sort) {
+            'amount_desc' => $q->orderByDesc('payouts.amount'),
+            'amount_asc'  => $q->orderBy('payouts.amount'),
+            'pop_desc'    => $q->orderByDesc('payouts.popularity'),
+            'pop_asc'     => $q->orderBy('payouts.popularity'),
+            'date_asc'    => $q->orderBy('races.race_date')->orderBy('races.race_number'),
+            default       => $q->orderByDesc('races.race_date')->orderByDesc('races.race_number')->orderBy('payouts.kind'),
+        };
+
+        // CSVエクスポート
+        if ($request->input('export') === 'csv') {
+            return $this->exportPayoutsCsv($q);
+        }
+
+        // 集計サマリ（フィルタ後）
+        $sumQuery = clone $q;
+        $sumQuery->reorder();
+        $summaryRow = $sumQuery->selectRaw('
+                COUNT(*) as cnt,
+                COALESCE(AVG(payouts.amount), 0) as avg_amt,
+                COALESCE(MAX(payouts.amount), 0) as max_amt,
+                COALESCE(MIN(payouts.amount), 0) as min_amt
+            ')->first();
+        $summary = [
+            'cnt' => (int) ($summaryRow->cnt ?? 0),
+            'avg' => (int) round($summaryRow->avg_amt ?? 0),
+            'max' => (int) ($summaryRow->max_amt ?? 0),
+            'min' => (int) ($summaryRow->min_amt ?? 0),
+        ];
+
+        $payouts = $q->paginate(50)->withQueryString();
+
+        $kinds  = Bet::KIND_LABELS;
+        $venues = Venue::orderBy('code')->get();
+
+        return view('bets.payouts_list', compact(
+            'payouts', 'summary', 'kinds', 'venues',
+            'kind', 'venueId', 'from', 'to',
+            'minAmount', 'maxAmount', 'popularity', 'sort'
+        ));
+    }
+
+    /**
+     * 払戻一覧をCSVでストリームダウンロード
+     */
+    protected function exportPayoutsCsv($q): Response
+    {
+        $rows = (clone $q)->limit(50000)->get();
+
+        $csv = "日付,競馬場,R,レース名,券種,組合せ,払戻金額,人気\n";
+        foreach ($rows as $r) {
+            $row = [
+                $r->race_date,
+                $r->venue_name,
+                $r->race_number,
+                str_replace([',', '"', "\n"], ['、', '”', ' '], $r->race_name ?? ''),
+                Bet::KIND_LABELS[$r->kind] ?? $r->kind,
+                $r->combination,
+                $r->amount,
+                $r->popularity ?? '',
+            ];
+            $csv .= implode(',', $row) . "\n";
+        }
+        // Excel互換のためBOM付きUTF-8
+        $body = "\xEF\xBB\xBF" . $csv;
+
+        $filename = 'payouts_' . now()->format('Ymd_His') . '.csv';
+        return response($body, 200, [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
     }
 
     /**

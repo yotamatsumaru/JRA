@@ -65,6 +65,7 @@ Route::middleware('auth')->group(function () {
     // 馬券（収支管理）
     Route::get('/betting', [BettingDashboardController::class, 'index'])->name('betting.dashboard');
     Route::get('/betting/payouts', [BettingDashboardController::class, 'payouts'])->name('betting.payouts');
+    Route::get('/betting/payouts/list', [BettingDashboardController::class, 'payoutsList'])->name('betting.payouts.list');
     Route::resource('bets', BetController::class);
     Route::post('bets/{bet}/settle', [BetController::class, 'settle'])->name('bets.settle');
 

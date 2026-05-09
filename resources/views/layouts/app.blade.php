@@ -254,7 +254,9 @@
                                 <a href="{{ route('betting.dashboard') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="chart" class="w-4 h-4 text-gold-500" /><span>収支ダッシュボード</span></a>
                                 <a href="{{ route('bets.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="list" class="w-4 h-4 text-turf-600" /><span>買い目一覧</span></a>
                                 <a href="{{ route('bets.create') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="plus" class="w-4 h-4 text-emerald-500" /><span>馬券を登録</span></a>
-                                <a href="{{ route('betting.payouts') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-amber-500" /><span>払戻傾向</span></a>
+                                <div class="border-t border-gray-100 dark:border-gray-700 my-1"></div>
+                                <a href="{{ route('betting.payouts.list') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-gold-500" /><span>払戻金一覧</span></a>
+                                <a href="{{ route('betting.payouts') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="chart" class="w-4 h-4 text-amber-500" /><span>払戻傾向</span></a>
                             </div>
                         </div>
 
