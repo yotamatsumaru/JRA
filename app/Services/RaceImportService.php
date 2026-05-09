@@ -19,6 +19,21 @@ use Illuminate\Support\Facades\Log;
 class RaceImportService
 {
     /**
+     * 取込中に出走馬の血統を同期取得するか
+     * false (デフォルト) なら血統補完はスキップし、後から netkeiba:fill-pedigree で一括補完する。
+     * netkeiba:year / netkeiba:date など大量取込で1レースあたり馬数分の追加HTTPが発生して激重になるため。
+     */
+    protected bool $fetchPedigreeOnImport = false;
+
+    /**
+     * 血統同期取得モードを切替
+     */
+    public function setFetchPedigreeOnImport(bool $enabled): void
+    {
+        $this->fetchPedigreeOnImport = $enabled;
+    }
+
+    /**
      * netkeibaから取得した整形済データをDBに保存
      */
     public function importFromNetkeiba(array $data): Race
@@ -250,7 +265,10 @@ class RaceImportService
             if ($horse->isDirty()) $horse->save();
 
             // 血統が空なら netkeiba から取得して補完
-            if (empty($horse->father) || empty($horse->mother)) {
+            // ※ 大量取込時(netkeiba:year 等)では出走馬数分の追加HTTPが発生して激重になるため
+            //   デフォルトではスキップ。後から netkeiba:fill-pedigree で一括補完する。
+            if ($this->fetchPedigreeOnImport
+                && (empty($horse->father) || empty($horse->mother))) {
                 $this->fillHorsePedigree($horse);
             }
 

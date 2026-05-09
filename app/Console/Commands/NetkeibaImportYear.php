@@ -47,7 +47,8 @@ class NetkeibaImportYear extends Command
                             {--include-nar : 地方競馬(NAR)も対象に含める（デフォルトはJRA中央のみ）}
                             {--day-sleep=0 : 1日処理ごとに追加で待機する秒数}
                             {--limit-per-day=200 : 1日あたりの最大処理レース数}
-                            {--interval= : リクエスト間隔(秒)。デフォルトは config(services.netkeiba.request_interval)。0で待機なし(自己責任)}';
+                            {--interval= : リクエスト間隔(秒)。デフォルトは config(services.netkeiba.request_interval)。0で待機なし(自己責任)}
+                            {--with-pedigree : 取込時に新規馬の血統も同期取得(激重。デフォルトはOFF、後から netkeiba:fill-pedigree 推奨)}';
 
     protected $description = 'netkeibaから指定年の全レースを一括インポート（重複自動スキップ・進捗保存・再開対応）';
 
@@ -77,6 +78,15 @@ class NetkeibaImportYear extends Command
             $iv = max(0, (int) $intervalOpt);
             $scraper->setRequestInterval($iv);
             $this->info("リクエスト間隔: {$iv}秒");
+        }
+
+        // 血統同期取得モード(デフォルトOFF — 大量取込時の激重を防ぐ)
+        $withPedigree = (bool) $this->option('with-pedigree');
+        $importer->setFetchPedigreeOnImport($withPedigree);
+        if ($withPedigree) {
+            $this->warn('--with-pedigree: 出走馬1頭ごとに追加HTTPが発生します(激重)');
+        } else {
+            $this->info('血統取得はスキップ(後で `php artisan netkeiba:fill-pedigree` を実行してください)');
         }
 
         // JRA中央競馬の venue_code（race_id の5-6文字目）: 01〜10
