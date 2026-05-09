@@ -25,16 +25,29 @@ class NetkeibaScraper
     /** リクエストインターバル(秒)。null の場合 config を参照 */
     protected ?int $intervalOverride = null;
 
+    /** race.netkeiba.com 用の HTTP クライアント (フォールバック先) */
+    protected Client $httpRace;
+
     public function __construct()
     {
+        $headers = [
+            'User-Agent' => config('services.netkeiba.user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
+            'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language' => 'ja,en;q=0.8',
+        ];
+
         $this->http = new Client([
             'base_uri' => config('services.netkeiba.base_url'),
             'timeout' => config('services.netkeiba.timeout', 30),
-            'headers' => [
-                'User-Agent' => config('services.netkeiba.user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language' => 'ja,en;q=0.8',
-            ],
+            'headers' => $headers,
+            'http_errors' => false,
+        ]);
+
+        // race.netkeiba.com (新DB) フォールバック用
+        $this->httpRace = new Client([
+            'base_uri' => 'https://race.netkeiba.com',
+            'timeout' => config('services.netkeiba.timeout', 30),
+            'headers' => $headers,
             'http_errors' => false,
         ]);
     }
@@ -178,31 +191,68 @@ class NetkeibaScraper
 
     /**
      * race_id (12桁) からレース結果を取得
+     *
+     * 取得先:
+     *   1) https://db.netkeiba.com/race/{id}/                              (旧DB; 古いレース向け)
+     *   2) https://race.netkeiba.com/race/result.html?race_id={id}         (新DB; 最近のレース向け)
+     * 1) が 200 以外を返した場合、自動で 2) にフォールバックする。
      */
     public function fetchRace(string $raceId): array
     {
+        // ============ 1) db.netkeiba.com を試す ============
         $this->respectInterval();
+        $dbUrl = "/race/{$raceId}/";
+        Log::info("Netkeiba fetch (db): {$dbUrl}");
 
-        $url = "/race/{$raceId}/";
-        Log::info("Netkeiba fetch: {$url}");
+        $dbStatus = null;
+        try {
+            $response = $this->http->get($dbUrl);
+            $dbStatus = $response->getStatusCode();
+            if ($dbStatus === 200) {
+                $contentType = $response->getHeaderLine('Content-Type');
+                $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
 
-        $response = $this->http->get($url);
+                if (env('NETKEIBA_DEBUG_SAVE')) {
+                    $path = storage_path("logs/netkeiba_{$raceId}_db.html");
+                    @file_put_contents($path, $html);
+                }
+
+                $data = $this->parseRaceHtml($raceId, $html);
+                // db ページが返っても結果テーブルが空なら新DBにもチャレンジする
+                if (!empty($data['results'])) {
+                    return $data;
+                }
+                Log::info("Netkeiba: db page had no results, falling back to race.netkeiba.com for {$raceId}");
+            } else {
+                Log::info("Netkeiba: db returned HTTP {$dbStatus} for {$raceId}, falling back to race.netkeiba.com");
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba: db fetch error for {$raceId}: " . $e->getMessage());
+        }
+
+        // ============ 2) race.netkeiba.com にフォールバック ============
+        $this->respectInterval();
+        $raceUrl = "/race/result.html?race_id={$raceId}";
+        Log::info("Netkeiba fetch (race): {$raceUrl}");
+
+        $response = $this->httpRace->get($raceUrl);
         $status = $response->getStatusCode();
         if ($status !== 200) {
-            throw new \RuntimeException("netkeiba HTTP {$status} for race_id={$raceId}");
+            // 両方ダメなときだけ例外。db の最終ステータスも併記
+            throw new \RuntimeException(
+                "netkeiba HTTP {$status} (db={$dbStatus}) for race_id={$raceId}"
+            );
         }
 
         $contentType = $response->getHeaderLine('Content-Type');
         $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
 
-        // デバッグ用: 取得HTMLを保存（環境変数で有効化）
         if (env('NETKEIBA_DEBUG_SAVE')) {
-            $path = storage_path("logs/netkeiba_{$raceId}.html");
+            $path = storage_path("logs/netkeiba_{$raceId}_race.html");
             @file_put_contents($path, $html);
-            Log::info("Netkeiba HTML saved: {$path}");
         }
 
-        return $this->parseRaceHtml($raceId, $html);
+        return $this->parseRaceResultHtml($raceId, $html);
     }
 
     /**
@@ -552,6 +602,312 @@ class NetkeibaScraper
         $data['payouts'] = $this->parsePayoutTables($crawler);
 
         return $data;
+    }
+
+    /**
+     * race.netkeiba.com (新DB) のレース結果ページをパース
+     *
+     * URL: https://race.netkeiba.com/race/result.html?race_id={id}
+     * DOM:
+     *   - h1.RaceName               : レース名
+     *   - .RaceData01               : "12:10発走 / 芝1600m / 天候:曇 / 馬場:稍"
+     *   - .RaceData02               : "4回 中山 3日目 サラ系2歳 新馬 ..."
+     *   - table#All_Result_Table    : 結果テーブル (tr.HorseList)
+     *   - table.Payout_Detail_Table : 払戻テーブル
+     */
+    protected function parseRaceResultHtml(string $raceId, string $html): array
+    {
+        $html = preg_replace('/<!--.*?-->/su', '', $html);
+        $crawler = new Crawler($html);
+
+        $data = ['netkeiba_id' => $raceId];
+
+        // race_id 構造分解
+        $year = substr($raceId, 0, 4);
+        $data['venue_code'] = substr($raceId, 4, 2);
+        $data['kaisai_kai'] = (int) substr($raceId, 6, 2);
+        $data['kaisai_day'] = (int) substr($raceId, 8, 2);
+        $data['race_number'] = (int) substr($raceId, 10, 2);
+
+        // ============ レース名 ============
+        $name = $this->extractText($crawler, 'h1.RaceName, .RaceName');
+        if ($name) {
+            $name = preg_replace('/\s+/u', ' ', $name);
+            $data['name'] = trim($name);
+        } else {
+            $data['name'] = "Race {$raceId}";
+        }
+
+        // ============ RaceData01 から距離・トラック・天候・馬場 ============
+        $data01 = '';
+        try {
+            $data01 = $this->cleanText($crawler->filter('.RaceData01')->text(''));
+        } catch (\Throwable $e) {}
+
+        // 「芝1600m (右 外 B)」「ダ1200m」「障2910m」
+        if (preg_match('/(芝|ダート|ダ|障害|障)\s*(?:\(?(右|左|直線)\)?)?\s*(\d+)\s*m/u', $data01, $m)) {
+            $data['track_type'] = match ($m[1]) {
+                '芝'             => '芝',
+                'ダ', 'ダート'   => 'ダート',
+                '障', '障害'     => '障害',
+                default          => $m[1],
+            };
+            $data['direction'] = $m[2] ?: null;
+            $data['distance']  = (int) $m[3];
+        }
+        // 「天候:曇」「天候 曇」
+        if (preg_match('/天候\s*[:：]?\s*(晴|曇|小雨|雨|小雪|雪)/u', $data01, $m)) {
+            $data['weather'] = $m[1];
+        }
+        // 「馬場:稍」(良/稍/重/不) — 1文字略記の場合あり
+        if (preg_match('/馬場\s*[:：]?\s*(稍重|不良|良|稍|重|不)/u', $data01, $m)) {
+            $cond = $m[1];
+            $data['course_condition'] = match ($cond) {
+                '稍'    => '稍重',
+                '不'    => '不良',
+                default => $cond,
+            };
+        }
+
+        // ============ RaceData02 から開催日・場名 ============
+        // 開催日は body 全体テキストから「YYYY年MM月DD日」を拾うのが確実
+        try {
+            $bodyText = $this->cleanText($crawler->filter('body')->text(''));
+        } catch (\Throwable $e) {
+            $bodyText = '';
+        }
+        if (preg_match('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $bodyText, $m)) {
+            $data['race_date'] = sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
+        }
+
+        // ============ 結果テーブル ============
+        $data['results'] = $this->parseResultTableNew($crawler);
+        $data['horses_count'] = count($data['results']);
+
+        // ============ 払戻テーブル ============
+        $data['payouts'] = $this->parsePayoutTablesNew($crawler);
+
+        return $data;
+    }
+
+    /**
+     * race.netkeiba.com の結果テーブル (table#All_Result_Table > tr.HorseList) をパース
+     *
+     * 列構成 (header):
+     *   着 / 枠 / 馬番 / 馬名 / 性齢 / 斤量 / 騎手 / タイム / 着差 / 人気 / 単勝オッズ / 後3F / 通過順 / 厩舎 / 馬体重(増減)
+     */
+    protected function parseResultTableNew(Crawler $crawler): array
+    {
+        $results = [];
+        $rows = null;
+        try {
+            $rows = $crawler->filter('table#All_Result_Table tr.HorseList');
+            if ($rows->count() === 0) {
+                $rows = $crawler->filter('table.RaceTable01 tr.HorseList');
+            }
+        } catch (\Throwable $e) {}
+
+        if (!$rows || $rows->count() === 0) {
+            Log::warning("Netkeiba(new): result table not found");
+            return [];
+        }
+
+        $rows->each(function (Crawler $tr) use (&$results) {
+            $tds = $tr->filter('td');
+            if ($tds->count() < 10) return;
+
+            $row = [];
+
+            // 着順 (td[0])
+            try { $row['finish_position'] = $this->cleanText($tds->eq(0)->text('')); } catch (\Throwable $e) {}
+
+            // 枠番 (td[1])
+            try { $row['frame_number'] = $this->parseInt($this->cleanText($tds->eq(1)->text(''))); } catch (\Throwable $e) {}
+
+            // 馬番 (td[2])
+            try { $row['horse_number'] = $this->parseInt($this->cleanText($tds->eq(2)->text(''))); } catch (\Throwable $e) {}
+
+            // 馬名 + horse_netkeiba_id (td[3])
+            try {
+                $a = $tds->eq(3)->filter('a')->first();
+                if ($a->count() > 0) {
+                    $row['horse_name'] = $this->cleanText($a->text(''));
+                    $href = $a->attr('href') ?: '';
+                    if (preg_match('#/horse/(\d+)#', $href, $m)) {
+                        $row['horse_netkeiba_id'] = $m[1];
+                    }
+                } else {
+                    $row['horse_name'] = $this->cleanText($tds->eq(3)->text(''));
+                }
+            } catch (\Throwable $e) {}
+
+            // 性齢 (td[4])
+            try {
+                $sa = $this->cleanText($tds->eq(4)->text(''));
+                if (preg_match('/(牡|牝|セ)\s*(\d+)/u', $sa, $m)) {
+                    $row['sex'] = $m[1];
+                    $row['age'] = (int) $m[2];
+                }
+            } catch (\Throwable $e) {}
+
+            // 斤量 (td[5])
+            try {
+                $w = $this->cleanText($tds->eq(5)->text(''));
+                if (is_numeric($w)) $row['weight_carried'] = (float) $w;
+            } catch (\Throwable $e) {}
+
+            // 騎手 (td[6]) + jockey_netkeiba_id
+            try {
+                $a = $tds->eq(6)->filter('a')->first();
+                if ($a->count() > 0) {
+                    $row['jockey_name'] = $this->cleanText($a->text(''));
+                    $href = $a->attr('href') ?: '';
+                    if (preg_match('#/jockey/(?:result/(?:recent/)?)?(\d+)#', $href, $m)) {
+                        $row['jockey_netkeiba_id'] = $m[1];
+                    }
+                } else {
+                    $row['jockey_name'] = $this->cleanText($tds->eq(6)->text(''));
+                }
+            } catch (\Throwable $e) {}
+
+            // タイム (td[7])
+            try {
+                $t = $this->cleanText($tds->eq(7)->text(''));
+                if ($t !== '') $row['time'] = mb_substr($t, 0, 10);
+            } catch (\Throwable $e) {}
+
+            // 着差 (td[8])
+            try {
+                $m = $this->cleanText($tds->eq(8)->text(''));
+                if ($m !== '') $row['margin'] = mb_substr($m, 0, 10);
+            } catch (\Throwable $e) {}
+
+            // 人気 (td[9])
+            try {
+                $p = $this->cleanText($tds->eq(9)->text(''));
+                if (is_numeric($p)) $row['popularity'] = (int) $p;
+            } catch (\Throwable $e) {}
+
+            // 単勝オッズ (td[10])
+            if ($tds->count() > 10) {
+                try {
+                    $o = $this->cleanText($tds->eq(10)->text(''));
+                    if (is_numeric($o)) $row['win_odds'] = (float) $o;
+                } catch (\Throwable $e) {}
+            }
+
+            // 上り3F (td[11])
+            if ($tds->count() > 11) {
+                try {
+                    $l = $this->cleanText($tds->eq(11)->text(''));
+                    if ($l !== '') $row['last_3f'] = mb_substr($l, 0, 6);
+                } catch (\Throwable $e) {}
+            }
+
+            // 通過順 (td[12])
+            if ($tds->count() > 12) {
+                try {
+                    $cp = $this->cleanText($tds->eq(12)->text(''));
+                    if ($cp !== '') $row['corner_positions'] = mb_substr($cp, 0, 30);
+                } catch (\Throwable $e) {}
+            }
+
+            // 厩舎 (td[13]) + trainer_netkeiba_id
+            if ($tds->count() > 13) {
+                try {
+                    $a = $tds->eq(13)->filter('a')->first();
+                    if ($a->count() > 0) {
+                        $row['trainer_name'] = $this->cleanText($a->text(''));
+                        $href = $a->attr('href') ?: '';
+                        if (preg_match('#/trainer/(?:result/(?:recent/)?)?(\d+)#', $href, $m)) {
+                            $row['trainer_netkeiba_id'] = $m[1];
+                        }
+                    } else {
+                        $row['trainer_name'] = $this->cleanText($tds->eq(13)->text(''));
+                    }
+                } catch (\Throwable $e) {}
+            }
+
+            // 馬体重(増減) (td[14])  例: "442(0)" / "480(+2)"
+            if ($tds->count() > 14) {
+                try {
+                    $hw = $this->cleanText($tds->eq(14)->text(''));
+                    if (preg_match('/(\d+)\s*\(\s*([+\-]?\d+)\s*\)/', $hw, $m)) {
+                        $row['horse_weight'] = (int) $m[1];
+                        $row['horse_weight_diff'] = (int) $m[2];
+                    } elseif (preg_match('/(\d+)/', $hw, $m)) {
+                        $row['horse_weight'] = (int) $m[1];
+                    }
+                } catch (\Throwable $e) {}
+            }
+
+            if (!empty($row)) {
+                $results[] = $this->normalizeRow($row);
+            }
+        });
+
+        return $results;
+    }
+
+    /**
+     * race.netkeiba.com の払戻テーブル (table.Payout_Detail_Table) をパース
+     */
+    protected function parsePayoutTablesNew(Crawler $crawler): array
+    {
+        $payouts = [];
+
+        try {
+            $tables = $crawler->filter('table.Payout_Detail_Table');
+        } catch (\Throwable $e) {
+            return [];
+        }
+        if ($tables->count() === 0) return [];
+
+        $tables->each(function (Crawler $table) use (&$payouts) {
+            $table->filter('tr')->each(function (Crawler $tr) use (&$payouts) {
+                try {
+                    $th = $tr->filter('th')->first();
+                    if ($th->count() === 0) return;
+
+                    $kindLabel = $this->cleanText($th->text(''));
+                    $kind = $this->normalizeKindLabel($kindLabel);
+                    if (!$kind) return;
+
+                    $tds = $tr->filter('td');
+                    if ($tds->count() < 2) return;
+
+                    $combos   = $this->extractBrLines($tds->eq(0));
+                    $amounts  = $tds->count() > 1 ? $this->extractBrLines($tds->eq(1)) : [];
+                    $populars = $tds->count() > 2 ? $this->extractBrLines($tds->eq(2)) : [];
+
+                    foreach ($combos as $i => $rawCombo) {
+                        $combo = $this->normalizePayoutCombination($rawCombo, $kind);
+                        if ($combo === '') continue;
+
+                        $amountRaw = $amounts[$i] ?? null;
+                        $amount = $amountRaw !== null
+                            ? (int) preg_replace('/[^\d]/', '', $amountRaw)
+                            : null;
+                        if (!$amount) continue;
+
+                        $popRaw = $populars[$i] ?? null;
+                        $pop = ($popRaw !== null && preg_match('/(\d+)/', $popRaw, $mm))
+                            ? (int) $mm[1] : null;
+
+                        $payouts[] = [
+                            'kind'        => $kind,
+                            'combination' => $combo,
+                            'amount'      => $amount,
+                            'popularity'  => $pop,
+                        ];
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Netkeiba(new) payout row parse failed: ' . $e->getMessage());
+                }
+            });
+        });
+
+        return $payouts;
     }
 
     /**
