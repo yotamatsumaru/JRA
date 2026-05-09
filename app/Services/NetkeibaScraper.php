@@ -508,10 +508,14 @@ class NetkeibaScraper
             $data['direction'] = $m[2] ?: null;
             $data['distance'] = (int) $m[3];
         }
-        if (preg_match('/天候\s*[:：]\s*(\S+?)\s/u', $diaryText, $m)) {
+        // 天候: 「天候:晴」「天候 : 曇」「天候/晴」「天候 晴」など。
+        // 値の直後が空白/全角空白/スラッシュ/行末のいずれでもマッチ。
+        if (preg_match('/天候\s*[:：\/]?\s*(晴|曇|小雨|雨|小雪|雪)/u', $diaryText, $m)) {
             $data['weather'] = $m[1];
         }
-        if (preg_match('/馬場\s*[:：]\s*(\S+?)\s/u', $diaryText, $m)) {
+        // 馬場(コンディション): 良/稍重/重/不良。
+        // 「馬場:良」「芝 : 稍重」「ダ : 重」「馬場/良」など。
+        if (preg_match('/(?:馬場|芝|ダート|ダ)\s*[:：\/]?\s*(稍重|不良|良|重)/u', $diaryText, $m)) {
             $data['course_condition'] = $m[1];
         }
 
