@@ -20,7 +20,8 @@ class NetkeibaImportDate extends Command
                             {date : 開始日 (YYYY-MM-DD)}
                             {--to= : 終了日 (YYYY-MM-DD)。指定なしなら開始日のみ}
                             {--include-nar : 地方競馬(NAR)も対象に含める（デフォルトはJRA中央のみ）}
-                            {--limit=200 : 1日あたり最大取込レース数}';
+                            {--limit=200 : 1日あたり最大取込レース数}
+                            {--interval= : リクエスト間隔(秒)。デフォルトは config(services.netkeiba.request_interval)。0で待機なし(自己責任)}';
 
     protected $description = 'netkeibaから指定日(範囲)の全レースをインポート';
 
@@ -30,6 +31,14 @@ class NetkeibaImportDate extends Command
         $end = $this->option('to') ?: $start;
         $limit = (int) $this->option('limit');
         $includeNar = (bool) $this->option('include-nar');
+
+        // インターバル上書き(指定があれば)
+        $intervalOpt = $this->option('interval');
+        if ($intervalOpt !== null && $intervalOpt !== '') {
+            $iv = max(0, (int) $intervalOpt);
+            $scraper->setRequestInterval($iv);
+            $this->info("リクエスト間隔: {$iv}秒");
+        }
 
         // JRA中央競馬の venue_code（race_id の5-6文字目）: 01〜10
         $jraVenueCodes = ['01','02','03','04','05','06','07','08','09','10'];

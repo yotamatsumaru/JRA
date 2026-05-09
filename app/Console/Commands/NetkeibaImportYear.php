@@ -46,7 +46,8 @@ class NetkeibaImportYear extends Command
                             {--missing-payouts-only : 払戻データが無い既存レースだけ再取得}
                             {--include-nar : 地方競馬(NAR)も対象に含める（デフォルトはJRA中央のみ）}
                             {--day-sleep=0 : 1日処理ごとに追加で待機する秒数}
-                            {--limit-per-day=200 : 1日あたりの最大処理レース数}';
+                            {--limit-per-day=200 : 1日あたりの最大処理レース数}
+                            {--interval= : リクエスト間隔(秒)。デフォルトは config(services.netkeiba.request_interval)。0で待機なし(自己責任)}';
 
     protected $description = 'netkeibaから指定年の全レースを一括インポート（重複自動スキップ・進捗保存・再開対応）';
 
@@ -69,6 +70,14 @@ class NetkeibaImportYear extends Command
         $includeNar = (bool) $this->option('include-nar');
         $daySleep = max(0, (int) $this->option('day-sleep'));
         $limitPerDay = max(1, (int) $this->option('limit-per-day'));
+
+        // インターバル上書き(指定があれば)
+        $intervalOpt = $this->option('interval');
+        if ($intervalOpt !== null && $intervalOpt !== '') {
+            $iv = max(0, (int) $intervalOpt);
+            $scraper->setRequestInterval($iv);
+            $this->info("リクエスト間隔: {$iv}秒");
+        }
 
         // JRA中央競馬の venue_code（race_id の5-6文字目）: 01〜10
         // 01:札幌 02:函館 03:福島 04:新潟 05:東京 06:中山 07:中京 08:京都 09:阪神 10:小倉

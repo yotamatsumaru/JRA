@@ -22,6 +22,9 @@ class NetkeibaScraper
 {
     protected Client $http;
 
+    /** リクエストインターバル(秒)。null の場合 config を参照 */
+    protected ?int $intervalOverride = null;
+
     public function __construct()
     {
         $this->http = new Client([
@@ -34,6 +37,16 @@ class NetkeibaScraper
             ],
             'http_errors' => false,
         ]);
+    }
+
+    /**
+     * リクエストインターバルをランタイムで上書き
+     * 0 を渡すと完全に待機なし（自己責任）
+     * null を渡すと config の値に戻す
+     */
+    public function setRequestInterval(?int $seconds): void
+    {
+        $this->intervalOverride = $seconds === null ? null : max(0, $seconds);
     }
 
     /**
@@ -433,8 +446,16 @@ class NetkeibaScraper
      */
     protected function respectInterval(): void
     {
+        $interval = $this->intervalOverride !== null
+            ? $this->intervalOverride
+            : (int) config('services.netkeiba.request_interval', 5);
+
+        if ($interval <= 0) {
+            Cache::put('netkeiba_last_request', time(), now()->addMinutes(10));
+            return;
+        }
+
         $last = Cache::get('netkeiba_last_request', 0);
-        $interval = (int) config('services.netkeiba.request_interval', 5);
         $diff = time() - $last;
         if ($diff < $interval) {
             sleep($interval - $diff);

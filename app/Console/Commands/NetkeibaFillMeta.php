@@ -27,7 +27,8 @@ class NetkeibaFillMeta extends Command
                             {--from= : 開始日 YYYY-MM-DD}
                             {--to= : 終了日 YYYY-MM-DD}
                             {--race= : netkeiba race_id (12桁)}
-                            {--sleep=0 : 1件ごとの追加待機秒}';
+                            {--sleep=0 : 1件ごとの追加待機秒}
+                            {--interval= : リクエスト間隔(秒)。デフォルトは config(services.netkeiba.request_interval)。0で待機なし(自己責任)}';
 
     protected $description = '既存レースの馬場状態・天候・方向・距離を netkeiba から補完';
 
@@ -48,6 +49,14 @@ class NetkeibaFillMeta extends Command
         $to          = $this->option('to');
         $raceFilter  = $this->option('race');
         $extraSleep  = (int) $this->option('sleep');
+
+        // インターバル上書き(指定があれば)
+        $intervalOpt = $this->option('interval');
+        if ($intervalOpt !== null && $intervalOpt !== '') {
+            $iv = max(0, (int) $intervalOpt);
+            $scraper->setRequestInterval($iv);
+            $this->info("リクエスト間隔: {$iv}秒");
+        }
 
         $query = Race::query()->whereNotNull('netkeiba_id');
 

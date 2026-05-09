@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Horse;
+use App\Services\NetkeibaScraper;
 use App\Services\RaceImportService;
 use Illuminate\Console\Command;
 
@@ -21,16 +22,25 @@ class NetkeibaFillPedigree extends Command
                             {--limit=0 : 処理上限頭数(0=全件)}
                             {--all : 血統が既に入っている馬も再取得}
                             {--horse= : 個別の netkeiba_id (10桁)を指定}
-                            {--sleep=0 : 1頭ごとの追加待機秒(scraper側のintervalに加算)}';
+                            {--sleep=0 : 1頭ごとの追加待機秒(scraper側のintervalに加算)}
+                            {--interval= : リクエスト間隔(秒)。デフォルトは config(services.netkeiba.request_interval)。0で待機なし(自己責任)}';
 
     protected $description = '既存の馬データの血統(父/母/母父)を netkeiba から補完';
 
-    public function handle(RaceImportService $importer): int
+    public function handle(RaceImportService $importer, NetkeibaScraper $scraper): int
     {
         $limit = (int) $this->option('limit');
         $all   = (bool) $this->option('all');
         $horseFilter = $this->option('horse');
         $extraSleep  = (int) $this->option('sleep');
+
+        // インターバル上書き(指定があれば)
+        $intervalOpt = $this->option('interval');
+        if ($intervalOpt !== null && $intervalOpt !== '') {
+            $iv = max(0, (int) $intervalOpt);
+            $scraper->setRequestInterval($iv);
+            $this->info("リクエスト間隔: {$iv}秒");
+        }
 
         $query = Horse::query()->whereNotNull('netkeiba_id');
 
