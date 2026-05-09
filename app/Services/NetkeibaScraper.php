@@ -66,6 +66,79 @@ class NetkeibaScraper
     }
 
     /**
+     * 指定月の開催日一覧を取得
+     *
+     * netkeibaのカレンダー（/top/calendar.html?year=YYYY&month=MM）と
+     * /race/sum/YYYYMM/ ページから開催日を抽出。
+     *
+     * @param int $year   西暦
+     * @param int $month  1-12
+     * @return string[]   ['YYYY-MM-DD', ...]
+     */
+    public function fetchOpenDatesByMonth(int $year, int $month): array
+    {
+        $this->respectInterval();
+
+        $ymd = sprintf('%04d%02d', $year, $month);
+        // 月別開催日カレンダー
+        $url = "/race/sum/{$ymd}/";
+
+        try {
+            $response = $this->http->get($url);
+            if ($response->getStatusCode() !== 200) {
+                Log::warning("Netkeiba calendar HTTP {$response->getStatusCode()} for {$ymd}");
+                return $this->fallbackOpenDatesByProbing($year, $month);
+            }
+            $contentType = $response->getHeaderLine('Content-Type');
+            $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba calendar fetch error: " . $e->getMessage());
+            return $this->fallbackOpenDatesByProbing($year, $month);
+        }
+
+        $crawler = new Crawler($html);
+        $dates = [];
+        // 開催日リンク: /race/list/YYYYMMDD/
+        $crawler->filter('a[href*="/race/list/"]')->each(function ($node) use (&$dates) {
+            $href = $node->attr('href');
+            if ($href && preg_match('|/race/list/(\d{8})/?|', $href, $m)) {
+                $d = $m[1];
+                $dates[sprintf('%s-%s-%s', substr($d, 0, 4), substr($d, 4, 2), substr($d, 6, 2))] = true;
+            }
+        });
+
+        $list = array_keys($dates);
+        sort($list);
+
+        // ページに開催情報が無い場合（古いページや形式変更時）は曜日ベースのフォールバック
+        if (empty($list)) {
+            return $this->fallbackOpenDatesByProbing($year, $month);
+        }
+
+        return $list;
+    }
+
+    /**
+     * カレンダーが取れなかった場合のフォールバック
+     * 月の土日＋祝月（≒月曜）を候補日として返す。実際にレースが無ければ後段でスキップされる。
+     */
+    protected function fallbackOpenDatesByProbing(int $year, int $month): array
+    {
+        $dates = [];
+        $first = mktime(0, 0, 0, $month, 1, $year);
+        $daysInMonth = (int) date('t', $first);
+        for ($d = 1; $d <= $daysInMonth; $d++) {
+            $ts = mktime(0, 0, 0, $month, $d, $year);
+            $w = (int) date('w', $ts); // 0=日,6=土
+            // 土日のみ（保守的）
+            if ($w === 0 || $w === 6) {
+                $dates[] = date('Y-m-d', $ts);
+            }
+        }
+        return $dates;
+    }
+
+    /**
      * 開催日からレースID一覧を取得
      */
     public function fetchRaceIdsByDate(string $date): array
