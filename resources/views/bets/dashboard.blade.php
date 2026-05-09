@@ -370,6 +370,215 @@
         </div>
         @endif
     </div>
+
+    {{-- ============================================================ --}}
+    {{-- 拡張: 払戻データの多次元分析                                --}}
+    {{-- ============================================================ --}}
+    @if ($payoutOverview['total_payouts'] > 0)
+    <div class="mt-8">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-semibold text-gray-800 dark:text-gray-100 flex items-center space-x-2">
+                <x-icon name="chart" class="w-5 h-5 text-purple-500" />
+                <span>払戻データ詳細分析</span>
+                <span class="text-xs font-normal text-gray-400">配当帯・人気・曜日・競馬場別</span>
+            </h2>
+        </div>
+
+        {{-- 万馬券系KPI --}}
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div class="bg-gradient-to-br from-amber-50 to-yellow-100 dark:from-amber-900/20 dark:to-yellow-900/30 rounded-lg p-4 ring-1 ring-amber-200 dark:ring-amber-700">
+                <div class="text-xs text-amber-700 dark:text-amber-300 font-bold flex items-center gap-1"><x-icon name="sparkles" class="w-3 h-3" />万馬券</div>
+                <div class="text-3xl font-bold text-amber-700 dark:text-amber-300">{{ number_format($payoutAnalytics['manbaken_count']) }}<span class="text-sm font-normal">件</span></div>
+                <div class="text-xs text-gray-500">¥10,000以上の払戻</div>
+            </div>
+            <div class="bg-gradient-to-br from-orange-50 to-red-100 dark:from-orange-900/20 dark:to-red-900/30 rounded-lg p-4 ring-1 ring-orange-200 dark:ring-orange-700">
+                <div class="text-xs text-orange-700 dark:text-orange-300 font-bold flex items-center gap-1"><x-icon name="bolt" class="w-3 h-3" />十万馬券</div>
+                <div class="text-3xl font-bold text-orange-700 dark:text-orange-300">{{ number_format($payoutAnalytics['hyaku_count']) }}<span class="text-sm font-normal">件</span></div>
+                <div class="text-xs text-gray-500">¥100,000以上の払戻</div>
+            </div>
+            <div class="bg-gradient-to-br from-rose-50 to-pink-100 dark:from-rose-900/20 dark:to-pink-900/30 rounded-lg p-4 ring-1 ring-rose-200 dark:ring-rose-700">
+                <div class="text-xs text-rose-700 dark:text-rose-300 font-bold flex items-center gap-1"><x-icon name="trophy" class="w-3 h-3" />百万馬券</div>
+                <div class="text-3xl font-bold text-rose-700 dark:text-rose-300">{{ number_format($payoutAnalytics['million_count']) }}<span class="text-sm font-normal">件</span></div>
+                <div class="text-xs text-gray-500">¥1,000,000以上の払戻</div>
+            </div>
+            <div class="bg-gradient-to-br from-purple-50 to-indigo-100 dark:from-purple-900/20 dark:to-indigo-900/30 rounded-lg p-4 ring-1 ring-purple-200 dark:ring-purple-700">
+                <div class="text-xs text-purple-700 dark:text-purple-300 font-bold">期間中最高配当</div>
+                <div class="text-2xl font-bold text-purple-700 dark:text-purple-300">¥{{ $payoutAnalytics['top10']->isNotEmpty() ? number_format($payoutAnalytics['top10']->first()->amount) : '-' }}</div>
+                <div class="text-xs text-gray-500">{{ $payoutAnalytics['top10']->isNotEmpty() ? (\App\Models\Bet::KIND_LABELS[$payoutAnalytics['top10']->first()->kind] ?? '') : '' }}</div>
+            </div>
+        </div>
+
+        {{-- 配当帯ヒストグラム + 券種別平均配当 --}}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">配当帯別 件数分布（券種別積み上げ）</h3>
+                <div id="chart-payout-band" style="height: 320px"></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">券種別 平均配当</h3>
+                <div id="chart-kind-avg" style="height: 320px"></div>
+            </div>
+        </div>
+
+        {{-- 人気別 + 月別万馬券 --}}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">単勝人気別 平均配当</h3>
+                <div id="chart-popularity" style="height: 320px"></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">月別 万馬券発生件数</h3>
+                <div id="chart-manbaken-monthly" style="height: 320px"></div>
+            </div>
+        </div>
+
+        {{-- 曜日別 + 競馬場別 --}}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">曜日別 平均配当 / 件数</h3>
+                <div id="chart-weekday" style="height: 320px"></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">競馬場別 平均配当 / 万馬券回数</h3>
+                <div id="chart-venue-payout" style="height: 320px"></div>
+            </div>
+        </div>
+
+        {{-- 期間中の歴代TOP10高額配当 --}}
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-1">
+                <x-icon name="trophy" class="w-4 h-4 text-gold-500" /><span>期間中の歴代TOP10高額配当</span>
+            </h3>
+            @if ($payoutAnalytics['top10']->isEmpty())
+                <p class="text-sm text-gray-400">データなし</p>
+            @else
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-xs text-gray-500 bg-gray-50 dark:bg-gray-700/50">
+                        <tr>
+                            <th class="text-right py-2 px-2">#</th>
+                            <th class="text-left px-2">日付</th>
+                            <th class="text-left px-2">レース</th>
+                            <th class="text-left px-2">券種</th>
+                            <th class="text-left px-2">組合せ</th>
+                            <th class="text-right px-2">配当</th>
+                            <th class="text-right px-2">倍率</th>
+                            <th class="text-right px-2">人気</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                    @foreach ($payoutAnalytics['top10'] as $i => $p)
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                        <td class="px-2 py-1.5 text-right text-xs text-gray-400 tabular-nums">{{ $i+1 }}</td>
+                        <td class="px-2 py-1.5 text-xs text-gray-500 whitespace-nowrap">{{ $p->race?->race_date?->format('Y/m/d') }}</td>
+                        <td class="px-2 py-1.5 whitespace-nowrap">
+                            <a href="{{ route('races.show', $p->race) }}" class="text-turf-600 hover:underline">
+                                {{ $p->race?->venue?->name }} {{ $p->race?->race_number }}R {{ $p->race?->name }}
+                            </a>
+                        </td>
+                        <td class="px-2 py-1.5 text-xs font-medium">{{ \App\Models\Bet::KIND_LABELS[$p->kind] ?? $p->kind }}</td>
+                        <td class="px-2 py-1.5 font-mono text-xs text-gray-700 dark:text-gray-300">{{ $p->combination }}</td>
+                        <td class="px-2 py-1.5 text-right tabular-nums font-bold {{ $p->amount >= 100000 ? 'text-rose-600' : ($p->amount >= 10000 ? 'text-gold-600' : 'text-gray-700 dark:text-gray-200') }}">
+                            ¥{{ number_format($p->amount) }}
+                        </td>
+                        <td class="px-2 py-1.5 text-right tabular-nums text-xs text-gray-500">{{ number_format($p->amount/100, 1) }}倍</td>
+                        <td class="px-2 py-1.5 text-right tabular-nums text-xs text-gray-500">{{ $p->popularity ? $p->popularity.'番' : '-' }}</td>
+                    </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+    </div>
+    @endif
+
+    {{-- ============================================================ --}}
+    {{-- 拡張: 自分の馬券のさらなる分析                              --}}
+    {{-- ============================================================ --}}
+    @if ($kpi['count'] > 0)
+    <div class="mt-8">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-semibold text-gray-800 dark:text-gray-100 flex items-center space-x-2">
+                <x-icon name="user" class="w-5 h-5 text-turf-500" />
+                <span>自分の馬券 詳細分析</span>
+                <span class="text-xs font-normal text-gray-400">曜日・投資額・グレード別</span>
+            </h2>
+        </div>
+
+        {{-- 曜日別収支 + 投資額帯分布 --}}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">曜日別 自分の収支・的中率</h3>
+                <div id="chart-my-weekday" style="height: 320px"></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">投資額帯別 購入分布</h3>
+                <div id="chart-stake-dist" style="height: 320px"></div>
+            </div>
+        </div>
+
+        {{-- 直近30日推移 + 投資vs払戻散布 --}}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">直近30日 日次収支</h3>
+                <div id="chart-recent30" style="height: 320px"></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">投資 vs 払戻 散布図（直近200件）</h3>
+                <div id="chart-scatter" style="height: 320px"></div>
+            </div>
+        </div>
+
+        {{-- グレード別 --}}
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">グレード別 収支</h3>
+            @if ($myAnalytics['by_grade']->isEmpty())
+                <p class="text-sm text-gray-400">データなし</p>
+            @else
+            <table class="w-full text-sm">
+                <thead class="text-xs text-gray-500 bg-gray-50 dark:bg-gray-700/50">
+                    <tr>
+                        <th class="text-left px-2 py-2">グレード</th>
+                        <th class="text-right px-2">購入数</th>
+                        <th class="text-right px-2">投資</th>
+                        <th class="text-right px-2">払戻</th>
+                        <th class="text-right px-2">収支</th>
+                        <th class="text-right px-2">回収率</th>
+                        <th class="text-right px-2">的中率</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                @foreach ($myAnalytics['by_grade'] as $r)
+                <tr>
+                    <td class="px-2 py-1.5 font-medium">
+                        @php
+                            $gradeColors = [
+                                'GI'   => 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+                                'GII'  => 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+                                'GIII' => 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+                                'OP'   => 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
+                            ];
+                            $gc = $gradeColors[$r['grade']] ?? 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200';
+                        @endphp
+                        <span class="inline-block px-2 py-0.5 rounded text-xs font-bold {{ $gc }}">{{ $r['grade'] }}</span>
+                    </td>
+                    <td class="px-2 py-1.5 text-right tabular-nums">{{ number_format($r['cnt']) }}</td>
+                    <td class="px-2 py-1.5 text-right tabular-nums">¥{{ number_format($r['stake']) }}</td>
+                    <td class="px-2 py-1.5 text-right tabular-nums">¥{{ number_format($r['return']) }}</td>
+                    <td class="px-2 py-1.5 text-right tabular-nums font-bold {{ $r['profit'] >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
+                        {{ $r['profit'] >= 0 ? '+' : '' }}¥{{ number_format($r['profit']) }}
+                    </td>
+                    <td class="px-2 py-1.5 text-right tabular-nums font-bold {{ $r['roi'] >= 100 ? 'text-emerald-600' : 'text-rose-600' }}">{{ $r['roi'] }}%</td>
+                    <td class="px-2 py-1.5 text-right tabular-nums">{{ $r['hit_rate'] }}%</td>
+                </tr>
+                @endforeach
+                </tbody>
+            </table>
+            @endif
+        </div>
+    </div>
+    @endif
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
@@ -416,6 +625,199 @@ document.addEventListener('DOMContentLoaded', () => {
         grid: { borderColor: grid },
         legend: { labels: { colors: fg } },
         tooltip: { theme: isDark ? 'dark' : 'light', y: { formatter: v => '¥' + (v|0).toLocaleString() } },
+    }).render();
+    @endif
+
+    // ==================================================
+    // 拡張: 払戻データ詳細分析チャート
+    // ==================================================
+    @if ($payoutOverview['total_payouts'] > 0)
+
+    // ----- 配当帯別 件数分布（券種別積み上げ） -----
+    new ApexCharts(document.querySelector('#chart-payout-band'), {
+        chart: { type: 'bar', stacked: true, height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: @json(collect($payoutAnalytics['band_counts_by_kind'])->map(fn($r) => [
+            'name' => $r['kind_label'],
+            'data' => collect($r['bands'])->pluck('cnt')->all(),
+        ])->all()),
+        plotOptions: { bar: { columnWidth: '60%' } },
+        xaxis: { categories: @json($payoutAnalytics['band_labels']), labels: { style: { colors: fg }, rotate: -25 } },
+        yaxis: { labels: { style: { colors: fg } } },
+        colors: ['#dc2626','#10b981','#f59e0b','#3b82f6','#6366f1','#06b6d4','#a855f7','#ec4899'],
+        grid: { borderColor: grid },
+        legend: { labels: { colors: fg } },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+    }).render();
+
+    // ----- 券種別 平均配当 -----
+    new ApexCharts(document.querySelector('#chart-kind-avg'), {
+        chart: { type: 'bar', height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: [{ name: '平均配当', data: @json(collect($payoutAnalytics['kind_avg'])->pluck('avg')->all()) }],
+        plotOptions: { bar: { columnWidth: '55%', borderRadius: 4, dataLabels: { position: 'top' } } },
+        dataLabels: {
+            enabled: true,
+            formatter: v => '¥' + (v|0).toLocaleString(),
+            offsetY: -18, style: { colors: [fg], fontSize: '10px' },
+        },
+        xaxis: { categories: @json(collect($payoutAnalytics['kind_avg'])->pluck('label')->all()), labels: { style: { colors: fg } } },
+        yaxis: { labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+        colors: ['#eab308'],
+        grid: { borderColor: grid },
+        tooltip: { theme: isDark ? 'dark' : 'light', y: { formatter: v => '¥' + (v|0).toLocaleString() } },
+    }).render();
+
+    @if ($payoutAnalytics['by_popularity']->isNotEmpty())
+    // ----- 単勝人気別 平均配当 -----
+    new ApexCharts(document.querySelector('#chart-popularity'), {
+        chart: { type: 'line', height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: [
+            { name: '平均配当(円)', type: 'column', data: @json($payoutAnalytics['by_popularity']->pluck('avg')) },
+            { name: '件数', type: 'line', data: @json($payoutAnalytics['by_popularity']->pluck('cnt')) },
+        ],
+        stroke: { curve: 'smooth', width: [0, 3] },
+        plotOptions: { bar: { columnWidth: '50%', borderRadius: 4 } },
+        xaxis: { categories: @json($payoutAnalytics['by_popularity']->map(fn($r) => $r['pop'].'人気')), labels: { style: { colors: fg } } },
+        yaxis: [
+            { title: { text: '平均配当(円)', style: { color: fg } }, labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+            { opposite: true, title: { text: '件数', style: { color: fg } }, labels: { style: { colors: fg } } },
+        ],
+        colors: ['#3b82f6', '#dc2626'],
+        grid: { borderColor: grid },
+        legend: { labels: { colors: fg } },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+    }).render();
+    @endif
+
+    @if ($payoutAnalytics['manbaken_monthly']->isNotEmpty())
+    // ----- 月別 万馬券発生件数 -----
+    new ApexCharts(document.querySelector('#chart-manbaken-monthly'), {
+        chart: { type: 'area', height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: [{ name: '万馬券件数', data: @json($payoutAnalytics['manbaken_monthly']->pluck('cnt')) }],
+        stroke: { curve: 'smooth', width: 2 },
+        fill: { type: 'gradient', gradient: { shadeIntensity: 0.7, opacityFrom: 0.5, opacityTo: 0.05 } },
+        xaxis: { categories: @json($payoutAnalytics['manbaken_monthly']->pluck('ym')), labels: { style: { colors: fg } } },
+        yaxis: { labels: { style: { colors: fg } } },
+        colors: ['#f59e0b'],
+        grid: { borderColor: grid },
+        markers: { size: 4 },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+    }).render();
+    @endif
+
+    @if ($payoutAnalytics['by_weekday']->isNotEmpty())
+    // ----- 曜日別 平均配当 / 件数 -----
+    new ApexCharts(document.querySelector('#chart-weekday'), {
+        chart: { type: 'bar', height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: [
+            { name: '平均配当(円)', type: 'column', data: @json($payoutAnalytics['by_weekday']->pluck('avg')) },
+            { name: '件数',         type: 'line',   data: @json($payoutAnalytics['by_weekday']->pluck('cnt')) },
+        ],
+        stroke: { curve: 'smooth', width: [0, 3] },
+        plotOptions: { bar: { columnWidth: '50%', borderRadius: 6 } },
+        xaxis: { categories: @json($payoutAnalytics['by_weekday']->pluck('label')), labels: { style: { colors: fg } } },
+        yaxis: [
+            { title: { text: '平均配当(円)', style: { color: fg } }, labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+            { opposite: true, title: { text: '件数', style: { color: fg } }, labels: { style: { colors: fg } } },
+        ],
+        colors: ['#06b6d4', '#a855f7'],
+        grid: { borderColor: grid },
+        legend: { labels: { colors: fg } },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+    }).render();
+    @endif
+
+    @if ($payoutAnalytics['by_venue']->isNotEmpty())
+    // ----- 競馬場別 平均配当 / 万馬券回数 -----
+    new ApexCharts(document.querySelector('#chart-venue-payout'), {
+        chart: { type: 'bar', height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: [
+            { name: '平均配当(円)', type: 'column', data: @json($payoutAnalytics['by_venue']->pluck('avg')) },
+            { name: '万馬券回数',   type: 'line',   data: @json($payoutAnalytics['by_venue']->pluck('manbaken_cnt')) },
+        ],
+        stroke: { curve: 'straight', width: [0, 3] },
+        plotOptions: { bar: { columnWidth: '60%', borderRadius: 4 } },
+        xaxis: { categories: @json($payoutAnalytics['by_venue']->pluck('name')), labels: { style: { colors: fg }, rotate: -25 } },
+        yaxis: [
+            { title: { text: '平均配当(円)', style: { color: fg } }, labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+            { opposite: true, title: { text: '万馬券回数', style: { color: fg } }, labels: { style: { colors: fg } } },
+        ],
+        colors: ['#10b981', '#f59e0b'],
+        grid: { borderColor: grid },
+        legend: { labels: { colors: fg } },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+    }).render();
+    @endif
+    @endif
+
+    // ==================================================
+    // 拡張: 自分の馬券詳細分析チャート
+    // ==================================================
+    @if ($kpi['count'] > 0)
+
+    @if ($myAnalytics['by_weekday']->isNotEmpty())
+    // ----- 曜日別 自分の収支・的中率 -----
+    new ApexCharts(document.querySelector('#chart-my-weekday'), {
+        chart: { type: 'bar', height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: [
+            { name: '投資', type: 'column', data: @json($myAnalytics['by_weekday']->pluck('stake')) },
+            { name: '払戻', type: 'column', data: @json($myAnalytics['by_weekday']->pluck('return')) },
+            { name: '回収率(%)', type: 'line', data: @json($myAnalytics['by_weekday']->pluck('roi')) },
+        ],
+        stroke: { curve: 'smooth', width: [0, 0, 3] },
+        plotOptions: { bar: { columnWidth: '60%', borderRadius: 4 } },
+        xaxis: { categories: @json($myAnalytics['by_weekday']->pluck('label')), labels: { style: { colors: fg } } },
+        yaxis: [
+            { title: { text: '金額(円)', style: { color: fg } }, labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+            { show: false },
+            { opposite: true, title: { text: '回収率(%)', style: { color: fg } }, labels: { style: { colors: fg } } },
+        ],
+        colors: ['#94a3b8', '#eab308', '#16a34a'],
+        grid: { borderColor: grid },
+        legend: { labels: { colors: fg } },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+    }).render();
+    @endif
+
+    // ----- 投資額帯別 購入分布 -----
+    new ApexCharts(document.querySelector('#chart-stake-dist'), {
+        chart: { type: 'donut', height: 320, foreColor: fg, animations: { enabled: false } },
+        series: @json(collect($myAnalytics['stake_dist'])->pluck('cnt')->all()),
+        labels: @json(collect($myAnalytics['stake_dist'])->pluck('label')->all()),
+        colors: ['#22d3ee','#3b82f6','#6366f1','#a855f7','#ec4899','#dc2626'],
+        legend: { position: 'bottom', labels: { colors: fg } },
+        plotOptions: { pie: { donut: { size: '60%', labels: { show: true, total: { show: true, label: '購入総数' } } } } },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+        dataLabels: { formatter: (v, o) => o.w.config.series[o.seriesIndex] + '件' },
+    }).render();
+
+    @if ($myAnalytics['recent30']->isNotEmpty())
+    // ----- 直近30日 日次収支 -----
+    new ApexCharts(document.querySelector('#chart-recent30'), {
+        chart: { type: 'bar', height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: [
+            { name: '収支', data: @json($myAnalytics['recent30']->map(fn($r) => ['x' => $r['d'], 'y' => $r['profit']])) },
+        ],
+        plotOptions: { bar: { columnWidth: '70%', colors: { ranges: [
+            { from: -99999999, to: -1, color: '#dc2626' },
+            { from: 0, to: 99999999, color: '#16a34a' },
+        ] } } },
+        xaxis: { type: 'datetime', labels: { style: { colors: fg } } },
+        yaxis: { labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+        grid: { borderColor: grid },
+        tooltip: { theme: isDark ? 'dark' : 'light', y: { formatter: v => '¥' + (v|0).toLocaleString() } },
+    }).render();
+    @endif
+
+    // ----- 投資 vs 払戻 散布図 -----
+    new ApexCharts(document.querySelector('#chart-scatter'), {
+        chart: { type: 'scatter', height: 320, toolbar: { show: false }, foreColor: fg, animations: { enabled: false }, zoom: { enabled: true, type: 'xy' } },
+        series: [{ name: '馬券', data: @json($myAnalytics['scatter']) }],
+        xaxis: { title: { text: '投資(円)', style: { color: fg } }, labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() }, tickAmount: 6 },
+        yaxis: { title: { text: '払戻(円)', style: { color: fg } }, labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+        colors: ['#a855f7'],
+        markers: { size: 5, strokeWidth: 0, opacity: 0.55 },
+        grid: { borderColor: grid },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
     }).render();
     @endif
 });

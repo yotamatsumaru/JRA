@@ -263,12 +263,268 @@ class BettingDashboardController extends Controller
         // ===== 払戻データ概況（自分の馬券に関係なく、取込済の全レース母集団から） =====
         $payoutOverview = $this->buildPayoutOverview($from, $to);
 
+        // ===== 拡張: 払戻系の詳細分析 =====
+        $payoutAnalytics = $this->buildPayoutAnalytics($from, $to);
+
+        // ===== 拡張: 自分の馬券のさらなる分析 =====
+        $myAnalytics = $this->buildMyAnalytics($userId, $from, $to);
+
         return view('bets.dashboard', compact(
             'kpi', 'monthly', 'cumulative', 'byKind', 'byVenue', 'byTrack',
             'byJockey', 'byHorse', 'bestPayouts', 'streaks', 'monthlyTarget',
-            'payoutOverview',
+            'payoutOverview', 'payoutAnalytics', 'myAnalytics',
             'from', 'to'
         ));
+    }
+
+    /**
+     * 拡張: 払戻データの多次元分析
+     *  - 配当帯別ヒストグラム（券種別）
+     *  - 人気別の平均配当・件数
+     *  - 月別 高額配当発生回数
+     *  - 曜日別の平均配当
+     *  - 競馬場別の平均配当・最高配当
+     *  - 万馬券（10000円以上）発生レース数
+     */
+    protected function buildPayoutAnalytics(?string $from, ?string $to): array
+    {
+        $base = Payout::query()
+            ->join('races', 'payouts.race_id', '=', 'races.id')
+            ->when($from, fn($q) => $q->whereDate('races.race_date', '>=', $from))
+            ->when($to,   fn($q) => $q->whereDate('races.race_date', '<=', $to));
+
+        // ===== 配当帯別ヒストグラム（券種別） =====
+        // 配当を 1000円帯/3000円帯/10000円帯/30000円帯/100000円帯/それ以上 に分類
+        $bands = [
+            ['min' => 0,      'max' => 1000,     'label' => '〜1,000'],
+            ['min' => 1000,   'max' => 3000,     'label' => '1,000〜3,000'],
+            ['min' => 3000,   'max' => 10000,    'label' => '3,000〜10,000'],
+            ['min' => 10000,  'max' => 30000,    'label' => '10,000〜30,000'],
+            ['min' => 30000,  'max' => 100000,   'label' => '30,000〜100,000'],
+            ['min' => 100000, 'max' => 99999999, 'label' => '100,000〜'],
+        ];
+
+        $bandCountsByKind = [];
+        foreach (array_keys(Bet::KIND_LABELS) as $kindKey) {
+            $kindData = (clone $base)->where('payouts.kind', $kindKey)->pluck('payouts.amount');
+            $row = ['kind' => $kindKey, 'kind_label' => Bet::KIND_LABELS[$kindKey], 'bands' => []];
+            foreach ($bands as $b) {
+                $cnt = $kindData->filter(fn($a) => $a >= $b['min'] && $a < $b['max'])->count();
+                $row['bands'][] = ['label' => $b['label'], 'cnt' => $cnt];
+            }
+            $row['total'] = $kindData->count();
+            $bandCountsByKind[] = $row;
+        }
+        $bandLabels = array_map(fn($b) => $b['label'], $bands);
+
+        // ===== 人気別の平均配当・件数（単勝のみで集計） =====
+        $byPopularity = (clone $base)
+            ->whereNotNull('payouts.popularity')
+            ->where('payouts.kind', 'tan')   // 単勝で人気の意味が明確
+            ->selectRaw('payouts.popularity as pop, COUNT(*) as cnt, AVG(payouts.amount) as avg_amt, MAX(payouts.amount) as max_amt')
+            ->groupBy('pop')
+            ->orderBy('pop')
+            ->get()
+            ->map(fn($r) => [
+                'pop'      => (int) $r->pop,
+                'cnt'      => (int) $r->cnt,
+                'avg'      => (int) round($r->avg_amt),
+                'max'      => (int) $r->max_amt,
+            ]);
+
+        // ===== 月別 万馬券（10000円以上）発生数 =====
+        $manbakenMonthly = (clone $base)
+            ->where('payouts.amount', '>=', 10000)
+            ->selectRaw("DATE_FORMAT(races.race_date, '%Y-%m') as ym, COUNT(*) as cnt")
+            ->groupBy('ym')
+            ->orderBy('ym')
+            ->get()
+            ->map(fn($r) => ['ym' => $r->ym, 'cnt' => (int) $r->cnt]);
+
+        // ===== 曜日別の平均配当（券種混合） =====
+        $byWeekday = (clone $base)
+            ->selectRaw('DAYOFWEEK(races.race_date) as dow, COUNT(*) as cnt, AVG(payouts.amount) as avg_amt, MAX(payouts.amount) as max_amt')
+            ->groupBy('dow')
+            ->orderBy('dow')
+            ->get()
+            ->map(function ($r) {
+                $names = ['', '日', '月', '火', '水', '木', '金', '土'];
+                return [
+                    'dow'   => (int) $r->dow,
+                    'label' => $names[(int) $r->dow] ?? '?',
+                    'cnt'   => (int) $r->cnt,
+                    'avg'   => (int) round($r->avg_amt),
+                    'max'   => (int) $r->max_amt,
+                ];
+            });
+
+        // ===== 競馬場別の払戻サマリ =====
+        $byVenue = (clone $base)
+            ->join('venues', 'venues.id', '=', 'races.venue_id')
+            ->selectRaw('venues.id, venues.name, COUNT(*) as cnt, AVG(payouts.amount) as avg_amt, MAX(payouts.amount) as max_amt,
+                SUM(CASE WHEN payouts.amount >= 10000 THEN 1 ELSE 0 END) as manbaken_cnt')
+            ->groupBy('venues.id', 'venues.name')
+            ->orderByDesc('avg_amt')
+            ->get()
+            ->map(fn($r) => [
+                'name'         => $r->name,
+                'cnt'          => (int) $r->cnt,
+                'avg'          => (int) round($r->avg_amt),
+                'max'          => (int) $r->max_amt,
+                'manbaken_cnt' => (int) $r->manbaken_cnt,
+            ]);
+
+        // ===== 全体サマリ =====
+        $manbakenAll = (clone $base)->where('payouts.amount', '>=', 10000)->count();
+        $hyaku = (clone $base)->where('payouts.amount', '>=', 100000)->count();   // 10万円以上
+        $millionPayout = (clone $base)->where('payouts.amount', '>=', 1000000)->count();   // 100万円以上
+
+        // ===== 期間中の歴代TOP10高額配当 =====
+        $top10 = (clone $base)
+            ->select('payouts.*', 'races.race_date', 'races.race_number', 'races.name as race_name', 'races.venue_id')
+            ->orderByDesc('payouts.amount')
+            ->limit(10)
+            ->with('race.venue')
+            ->get();
+
+        // ===== 券種別 平均配当（バーチャート用） =====
+        $kindAvg = (clone $base)
+            ->selectRaw('payouts.kind, AVG(payouts.amount) as avg_amt, COUNT(*) as cnt')
+            ->groupBy('payouts.kind')
+            ->get()
+            ->map(fn($r) => [
+                'kind'  => $r->kind,
+                'label' => Bet::KIND_LABELS[$r->kind] ?? $r->kind,
+                'avg'   => (int) round($r->avg_amt),
+                'cnt'   => (int) $r->cnt,
+            ])
+            ->sortBy(fn($r) => array_search($r['kind'], array_keys(Bet::KIND_LABELS)))
+            ->values();
+
+        return [
+            'band_labels'           => $bandLabels,
+            'band_counts_by_kind'   => $bandCountsByKind,
+            'by_popularity'         => $byPopularity,
+            'manbaken_monthly'      => $manbakenMonthly,
+            'by_weekday'            => $byWeekday,
+            'by_venue'              => $byVenue,
+            'manbaken_count'        => $manbakenAll,
+            'hyaku_count'           => $hyaku,
+            'million_count'         => $millionPayout,
+            'top10'                 => $top10,
+            'kind_avg'              => $kindAvg,
+        ];
+    }
+
+    /**
+     * 拡張: 自分の馬券のさらなる分析
+     *  - 投資額帯別の購入分布
+     *  - 曜日別の自分の収支
+     *  - 直近30日の収支推移
+     *  - 投資/払戻の散布図用データ
+     */
+    protected function buildMyAnalytics(int $userId, ?string $from, ?string $to): array
+    {
+        $base = Bet::where('user_id', $userId)->where('is_settled', true)
+            ->when($from, fn($q) => $q->whereHas('race', fn($r) => $r->whereDate('race_date', '>=', $from)))
+            ->when($to,   fn($q) => $q->whereHas('race', fn($r) => $r->whereDate('race_date', '<=', $to)));
+
+        // ===== 曜日別の自分の収支 =====
+        $myByWeekday = (clone $base)
+            ->join('races', 'bets.race_id', '=', 'races.id')
+            ->selectRaw('DAYOFWEEK(races.race_date) as dow, COUNT(*) as cnt,
+                SUM(bets.total_stake) as stake, SUM(bets.total_return) as ret,
+                SUM(CASE WHEN bets.hit_count > 0 THEN 1 ELSE 0 END) as hits')
+            ->groupBy('dow')
+            ->orderBy('dow')
+            ->get()
+            ->map(function ($r) {
+                $names = ['', '日', '月', '火', '水', '木', '金', '土'];
+                $stake = (int) $r->stake; $ret = (int) $r->ret;
+                return [
+                    'dow'      => (int) $r->dow,
+                    'label'    => $names[(int) $r->dow] ?? '?',
+                    'cnt'      => (int) $r->cnt,
+                    'stake'    => $stake,
+                    'return'   => $ret,
+                    'profit'   => $ret - $stake,
+                    'roi'      => $stake > 0 ? round($ret / $stake * 100, 1) : 0,
+                    'hit_rate' => $r->cnt > 0 ? round($r->hits / $r->cnt * 100, 1) : 0,
+                ];
+            });
+
+        // ===== 投資額帯別の購入分布 =====
+        $stakeBands = [
+            ['min' => 0,     'max' => 500,    'label' => '〜500'],
+            ['min' => 500,   'max' => 1000,   'label' => '500〜1,000'],
+            ['min' => 1000,  'max' => 3000,   'label' => '1,000〜3,000'],
+            ['min' => 3000,  'max' => 5000,   'label' => '3,000〜5,000'],
+            ['min' => 5000,  'max' => 10000,  'label' => '5,000〜10,000'],
+            ['min' => 10000, 'max' => 99999999, 'label' => '10,000〜'],
+        ];
+        $allStakes = (clone $base)->pluck('total_stake');
+        $stakeDist = [];
+        foreach ($stakeBands as $b) {
+            $cnt = $allStakes->filter(fn($s) => $s >= $b['min'] && $s < $b['max'])->count();
+            $stakeDist[] = ['label' => $b['label'], 'cnt' => $cnt];
+        }
+
+        // ===== 直近30日の日次収支 =====
+        $thirtyDaysAgo = now()->subDays(30)->toDateString();
+        $recent30 = Bet::where('user_id', $userId)->where('is_settled', true)
+            ->join('races', 'bets.race_id', '=', 'races.id')
+            ->whereDate('races.race_date', '>=', $thirtyDaysAgo)
+            ->selectRaw("races.race_date as d,
+                SUM(bets.total_stake) as stake, SUM(bets.total_return) as ret, COUNT(*) as cnt")
+            ->groupBy('d')
+            ->orderBy('d')
+            ->get()
+            ->map(fn($r) => [
+                'd'      => $r->d,
+                'stake'  => (int) $r->stake,
+                'return' => (int) $r->ret,
+                'profit' => (int) $r->ret - (int) $r->stake,
+                'cnt'    => (int) $r->cnt,
+            ]);
+
+        // ===== 投資 vs 払戻 散布図（最大200件） =====
+        $scatter = (clone $base)
+            ->select('total_stake', 'total_return', 'race_id')
+            ->limit(200)
+            ->get()
+            ->map(fn($b) => ['x' => (int) $b->total_stake, 'y' => (int) $b->total_return]);
+
+        // ===== グレード別の収支（GI/GII/GIII/OP/その他） =====
+        $byGrade = (clone $base)
+            ->join('races', 'bets.race_id', '=', 'races.id')
+            ->selectRaw("
+                COALESCE(races.grade, 'その他') as grade,
+                COUNT(*) as cnt,
+                SUM(bets.total_stake) as stake,
+                SUM(bets.total_return) as ret,
+                SUM(CASE WHEN bets.hit_count > 0 THEN 1 ELSE 0 END) as hits
+            ")
+            ->groupBy('grade')
+            ->get()
+            ->map(fn($r) => [
+                'grade'    => $r->grade ?: 'その他',
+                'cnt'      => (int) $r->cnt,
+                'stake'    => (int) $r->stake,
+                'return'   => (int) $r->ret,
+                'profit'   => (int) ($r->ret - $r->stake),
+                'roi'      => $r->stake > 0 ? round($r->ret / $r->stake * 100, 1) : 0,
+                'hit_rate' => $r->cnt > 0 ? round($r->hits / $r->cnt * 100, 1) : 0,
+            ])
+            ->sortByDesc('roi')
+            ->values();
+
+        return [
+            'by_weekday' => $myByWeekday,
+            'stake_dist' => $stakeDist,
+            'recent30'   => $recent30,
+            'scatter'    => $scatter,
+            'by_grade'   => $byGrade,
+        ];
     }
 
     /**
