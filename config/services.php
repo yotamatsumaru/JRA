@@ -42,7 +42,9 @@ return [
     'netkeiba' => [
         'base_url' => env('NETKEIBA_BASE_URL', 'https://db.netkeiba.com'),
         'request_interval' => (int) env('NETKEIBA_REQUEST_INTERVAL', 5),
-        'user_agent' => env('NETKEIBA_USER_AGENT', 'JRAAnalyzer/1.0 (Personal Use)'),
+        // ⚠ 'JRAAnalyzer/1.0' のような独自UAは netkeiba 側で 400 ブロックされるため、
+        //   実在ブラウザ風 UA をデフォルトに採用。.env で上書き可。
+        'user_agent' => env('NETKEIBA_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
         'timeout' => (int) env('NETKEIBA_TIMEOUT', 30),
     ],
 
