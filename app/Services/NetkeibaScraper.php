@@ -323,7 +323,165 @@ class NetkeibaScraper
         $data['results'] = $results;
         $data['horses_count'] = count($results);
 
+        // ============ 払戻データ ============
+        $data['payouts'] = $this->parsePayoutTables($crawler);
+
         return $data;
+    }
+
+    /**
+     * 払戻テーブルをパース
+     *
+     * netkeibaの払戻は通常 dl.pay_block 内の table.pay_table_01 などに格納される。
+     * 各行は: <th>券種</th><td>組合せ(<br>区切り複数)</td><td>払戻(<br>区切り複数)</td><td>人気(<br>区切り複数)</td>
+     *
+     * @return array  [['kind'=>'tan', 'combination'=>'5', 'amount'=>320, 'popularity'=>2], ...]
+     */
+    protected function parsePayoutTables(Crawler $crawler): array
+    {
+        $payouts = [];
+
+        // 候補セレクタ（複数バージョン対応）
+        $tables = null;
+        foreach (['table.pay_table_01', 'dl.pay_block table', 'table.race_payout_table', 'div.payout_block table'] as $sel) {
+            try {
+                $candidate = $crawler->filter($sel);
+                if ($candidate->count() > 0) {
+                    $tables = $candidate;
+                    break;
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (!$tables || $tables->count() === 0) {
+            return [];
+        }
+
+        $tables->each(function (Crawler $table) use (&$payouts) {
+            $table->filter('tr')->each(function (Crawler $tr) use (&$payouts) {
+                try {
+                    $th = $tr->filter('th')->first();
+                    if ($th->count() === 0) return;
+
+                    // 券種ラベル → kindコード
+                    $kindLabel = $this->cleanText($th->text(''));
+                    $kind = $this->normalizeKindLabel($kindLabel);
+                    if (!$kind) return;
+
+                    $tds = $tr->filter('td');
+                    if ($tds->count() < 2) return;
+
+                    // 組合せ・払戻金・人気を <br> 区切りで分割
+                    $combos    = $this->extractBrLines($tds->eq(0));
+                    $amounts   = $tds->count() > 1 ? $this->extractBrLines($tds->eq(1)) : [];
+                    $populars  = $tds->count() > 2 ? $this->extractBrLines($tds->eq(2)) : [];
+
+                    foreach ($combos as $i => $rawCombo) {
+                        $combo = $this->normalizePayoutCombination($rawCombo, $kind);
+                        if ($combo === '') continue;
+
+                        $amountRaw = $amounts[$i] ?? null;
+                        $amount = $amountRaw !== null
+                            ? (int) preg_replace('/[^\d]/', '', $amountRaw)
+                            : null;
+                        if (!$amount) continue;
+
+                        $popRaw = $populars[$i] ?? null;
+                        $pop = ($popRaw !== null && preg_match('/(\d+)/', $popRaw, $m))
+                            ? (int) $m[1] : null;
+
+                        $payouts[] = [
+                            'kind'        => $kind,
+                            'combination' => $combo,
+                            'amount'      => $amount,
+                            'popularity'  => $pop,
+                        ];
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Netkeiba payout row parse failed: ' . $e->getMessage());
+                }
+            });
+        });
+
+        return $payouts;
+    }
+
+    /**
+     * 払戻ラベル "単勝" "馬連" 等を kindコードへ正規化
+     */
+    protected function normalizeKindLabel(string $label): ?string
+    {
+        $label = trim(preg_replace('/\s+/u', '', $label));
+        return match ($label) {
+            '単勝'         => 'tan',
+            '複勝'         => 'fuku',
+            '枠連'         => 'waku-ren',
+            '馬連'         => 'uma-ren',
+            '馬単'         => 'uma-tan',
+            'ワイド'       => 'wide',
+            '三連複', '3連複' => 'san-fuku',
+            '三連単', '3連単' => 'san-tan',
+            default        => null,
+        };
+    }
+
+    /**
+     * <br>区切りで複数行を分解
+     *  netkeibaの組合せ列は "1 - 5<br>1 - 7<br>5 - 7" のような書式
+     */
+    protected function extractBrLines(Crawler $td): array
+    {
+        // <br>を改行に置換した上でcleanText相当の処理
+        try {
+            $html = $td->html();
+        } catch (\Throwable $e) {
+            return [];
+        }
+        $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
+        $html = preg_replace('/<!--.*?-->/su', '', $html);
+        $html = strip_tags($html);
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        $lines = preg_split('/\r?\n/', $html);
+        $out = [];
+        foreach ($lines as $l) {
+            $l = trim(preg_replace('/[\s\x{3000}]+/u', ' ', $l));
+            if ($l !== '') $out[] = $l;
+        }
+        return $out;
+    }
+
+    /**
+     * 払戻組合せ文字列を bet_legs.combination と同じ "-" 区切り正規化形式に変換
+     *
+     *  入力例:
+     *      "5"            → "5"           (単勝/複勝)
+     *      "1 - 5"        → "1-5"         (馬連/枠連/ワイド)
+     *      "5 → 1"        → "5-1"         (馬単・順序保持)
+     *      "5 → 1 → 7"    → "5-1-7"       (3連単・順序保持)
+     *      "1 - 5 - 7"    → "1-5-7"       (3連複・昇順ソート)
+     */
+    protected function normalizePayoutCombination(string $raw, string $kind): string
+    {
+        // 矢印・ハイフン・全角スペース等を統一
+        $s = preg_replace('/\s+/u', '', $raw);
+        // → や ⇒ などの矢印を "→" に統一
+        $s = preg_replace('/[→⇒>]/u', '→', $s);
+        // - や − を "-" に統一
+        $s = preg_replace('/[-－‐−]/u', '-', $s);
+
+        // 順序ありの券種は "→" で、順不同は "-" で分割
+        $orderedKinds = ['tan', 'fuku', 'uma-tan', 'san-tan'];
+        $isOrdered = in_array($kind, $orderedKinds, true);
+
+        // 区切り文字でsplit（→と-どちらも吸収）
+        $parts = preg_split('/[→\-]/', $s);
+        $parts = array_values(array_filter(array_map('intval', $parts), fn($n) => $n > 0));
+        if (empty($parts)) return '';
+
+        if (!$isOrdered) {
+            sort($parts);
+        }
+        return implode('-', $parts);
     }
 
     /**

@@ -3,6 +3,8 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\BetController;
+use App\Http\Controllers\BettingDashboardController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\HorseController;
@@ -59,6 +61,12 @@ Route::middleware('auth')->group(function () {
 
     // メモ
     Route::resource('notes', RaceNoteController::class)->except(['show']);
+
+    // 馬券（収支管理）
+    Route::get('/betting', [BettingDashboardController::class, 'index'])->name('betting.dashboard');
+    Route::get('/betting/payouts', [BettingDashboardController::class, 'payouts'])->name('betting.payouts');
+    Route::resource('bets', BetController::class);
+    Route::post('bets/{bet}/settle', [BetController::class, 'settle'])->name('bets.settle');
 
     // 分析
     Route::prefix('analytics')->name('analytics.')->group(function () {

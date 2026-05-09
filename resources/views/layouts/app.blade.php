@@ -244,6 +244,20 @@
                             </div>
                         </div>
 
+                        <div class="relative" x-data="{ open: false }">
+                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? $active : $inactive }} flex items-center space-x-1.5">
+                                <x-icon name="cash" class="w-4 h-4" />
+                                <span>馬券</span>
+                                <x-icon name="chevron-down" class="w-3 h-3" />
+                            </button>
+                            <div x-show="open" x-cloak x-transition class="absolute mt-2 w-52 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
+                                <a href="{{ route('betting.dashboard') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="chart" class="w-4 h-4 text-gold-500" /><span>収支ダッシュボード</span></a>
+                                <a href="{{ route('bets.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="list" class="w-4 h-4 text-turf-600" /><span>買い目一覧</span></a>
+                                <a href="{{ route('bets.create') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="plus" class="w-4 h-4 text-emerald-500" /><span>馬券を登録</span></a>
+                                <a href="{{ route('betting.payouts') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-amber-500" /><span>払戻傾向</span></a>
+                            </div>
+                        </div>
+
                         <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $active : $inactive }} flex items-center space-x-1.5">
                             <x-icon name="pencil" class="w-4 h-4" />
                             <span>メモ</span>
@@ -301,6 +315,7 @@
                 <a href="{{ route('jockeys.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">騎手</a>
                 <a href="{{ route('venues.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">競馬場</a>
                 <a href="{{ route('analytics.venue') }}" class="block px-3 py-2 rounded hover:bg-turf-600">分析</a>
+                <a href="{{ route('betting.dashboard') }}" class="block px-3 py-2 rounded hover:bg-turf-600">馬券・収支</a>
                 <a href="{{ route('import.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">取込</a>
                 <a href="{{ route('notes.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">メモ</a>
                 <button @click="darkMode = !darkMode" class="block w-full text-left px-3 py-2 rounded hover:bg-turf-600">

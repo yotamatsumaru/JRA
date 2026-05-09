@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Models\Horse;
 use App\Models\Jockey;
+use App\Models\Payout;
 use App\Models\Race;
 use App\Models\RaceResult;
 use App\Models\Trainer;
 use App\Models\Venue;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * レースデータ取込の共通サービス
@@ -55,8 +57,71 @@ class RaceImportService
                 $this->createResult($race, $row);
             }
 
+            // ============ 払戻データ ============
+            $this->savePayouts($race, $data['payouts'] ?? []);
+
+            // ============ 馬券の自動精算 ============
+            $this->autoSettleBets($race);
+
             return $race;
         });
+    }
+
+    /**
+     * 払戻データを保存（既存はクリアして再投入）
+     */
+    protected function savePayouts(Race $race, array $payouts): void
+    {
+        $race->payouts()->delete();
+
+        foreach ($payouts as $p) {
+            if (empty($p['kind']) || empty($p['combination']) || !isset($p['amount'])) {
+                continue;
+            }
+            try {
+                Payout::create([
+                    'race_id'     => $race->id,
+                    'kind'        => $p['kind'],
+                    'combination' => $p['combination'],
+                    'amount'      => (int) $p['amount'],
+                    'popularity'  => isset($p['popularity']) && is_numeric($p['popularity'])
+                        ? (int) $p['popularity']
+                        : null,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Payout保存失敗', [
+                    'race_id' => $race->id,
+                    'kind'    => $p['kind'] ?? null,
+                    'combo'   => $p['combination'] ?? null,
+                    'error'   => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * このレースに紐づく未確定の馬券を自動精算
+     * 結果と払戻が揃ったタイミングで呼ばれる
+     */
+    protected function autoSettleBets(Race $race): void
+    {
+        // 結果が無い場合は精算しない
+        if ($race->results()->count() === 0) {
+            return;
+        }
+
+        try {
+            $service = app(BetTicketService::class);
+            $bets = $race->bets()->with('legs')->get();
+            foreach ($bets as $bet) {
+                $service->settle($bet);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('馬券の自動精算に失敗', [
+                'race_id' => $race->id,
+                'error'   => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

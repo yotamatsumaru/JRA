@@ -73,6 +73,16 @@ class Race extends Model
         return $this->hasMany(RaceNote::class);
     }
 
+    public function bets(): HasMany
+    {
+        return $this->hasMany(Bet::class);
+    }
+
+    public function payouts(): HasMany
+    {
+        return $this->hasMany(Payout::class);
+    }
+
     public function winner(): ?RaceResult
     {
         return $this->results()->where('finish_position_int', 1)->first();
