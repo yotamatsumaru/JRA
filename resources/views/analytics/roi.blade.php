@@ -245,56 +245,84 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!el || !rows || rows.length === 0) return;
 
         const labels = rows.map(r => r.label);
-        const rois   = rows.map(r => r.roi);
-        const hits   = rows.map(r => r.hit_rate);
-        const colors = rois.map(colorFor);
+        const rois   = rows.map(r => Number(r.roi)   || 0);
+        const hits   = rows.map(r => Number(r.hit_rate) || 0);
+        const barColors = rois.map(colorFor);
 
         const options = {
             chart: {
-                type: 'bar',
-                height: opts.height || 320,
+                type: 'line',
+                height: opts.height || 340,
                 toolbar: { show: false },
                 fontFamily: 'inherit',
+                stacked: false,
             },
             series: [
-                { name: '回収率(%)', type: 'bar', data: rois },
-                { name: '的中率(%)', type: 'line', data: hits },
+                { name: '回収率(%)', type: 'column', data: rois },
+                { name: '的中率(%)', type: 'line',   data: hits },
             ],
-            stroke: { width: [0, 3], curve: 'smooth' },
+            // colors[0] は bar 系列のフォールバック、colors[1] は line 系列の色
+            colors: ['#f59e0b', '#0ea5e9'],
+            // bar 側はカテゴリごとの色を fill.colors のコールバックで個別指定
+            fill: {
+                opacity: [0.95, 1],
+                colors: [
+                    function ({ dataPointIndex, seriesIndex }) {
+                        if (seriesIndex === 0) {
+                            return barColors[dataPointIndex] || '#f59e0b';
+                        }
+                        return '#0ea5e9';
+                    },
+                    '#0ea5e9',
+                ],
+            },
+            stroke: {
+                width: [0, 3],
+                curve: 'smooth',
+            },
+            markers: {
+                size: [0, 5],
+                colors: ['#0ea5e9'],
+                strokeColors: '#fff',
+                strokeWidth: 2,
+            },
             plotOptions: {
                 bar: {
                     borderRadius: 4,
-                    columnWidth: '60%',
-                    distributed: true,
+                    columnWidth: '55%',
                     dataLabels: { position: 'top' },
                 },
             },
-            colors: colors,
             dataLabels: {
                 enabled: true,
                 enabledOnSeries: [0],
-                formatter: (val) => val + '%',
+                formatter: (val) => (val == null ? '' : val + '%'),
                 offsetY: -18,
                 style: { fontSize: '11px', colors: ['#374151'] },
             },
             xaxis: {
                 categories: labels,
-                labels: { style: { fontSize: '11px' } },
+                labels: { style: { fontSize: '11px' }, rotate: -20, hideOverlappingLabels: false },
             },
             yaxis: [
                 {
+                    seriesName: '回収率(%)',
                     title: { text: '回収率(%)' },
                     labels: { formatter: (v) => v + '%' },
+                    min: 0,
                 },
                 {
+                    seriesName: '的中率(%)',
                     opposite: true,
                     title: { text: '的中率(%)' },
                     labels: { formatter: (v) => v + '%' },
+                    min: 0,
                 },
             ],
             annotations: {
                 yaxis: [{
                     y: 100,
+                    yAxisIndex: 0,
                     borderColor: '#10b981',
                     strokeDashArray: 5,
                     label: {
@@ -308,8 +336,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 shared: true,
                 intersect: false,
                 y: [
-                    { formatter: (v) => v + '%' },
-                    { formatter: (v) => v + '%' },
+                    { formatter: (v) => (v == null ? '-' : v + '%') },
+                    { formatter: (v) => (v == null ? '-' : v + '%') },
                 ],
             },
             legend: { show: true, position: 'top' },
