@@ -75,7 +75,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/venue', [AnalyticsController::class, 'venue'])->name('venue');
         Route::get('/course-trends', [AnalyticsController::class, 'courseTrends'])->name('course-trends');
         Route::get('/pace', [AnalyticsController::class, 'pace'])->name('pace');
-        Route::get('/pedigree', [AnalyticsController::class, 'pedigree'])->name('pedigree');
+        Route::get('/pedigree',             [AnalyticsController::class, 'pedigree'])->name('pedigree');
+        Route::get('/pedigree/overview',    [AnalyticsController::class, 'pedigreeOverview'])->name('pedigree.overview');
+        Route::get('/pedigree/sires',       [AnalyticsController::class, 'pedigreeSires'])->name('pedigree.sires');
+        Route::get('/pedigree/broodmares',  [AnalyticsController::class, 'pedigreeBroodmares'])->name('pedigree.broodmares');
+        Route::get('/pedigree/heatmap',     [AnalyticsController::class, 'pedigreeHeatmap'])->name('pedigree.heatmap');
         Route::get('/jockey', [AnalyticsController::class, 'jockey'])->name('jockey');
         Route::get('/horse', [AnalyticsController::class, 'horse'])->name('horse');
         Route::get('/stats', [AnalyticsController::class, 'stats'])->name('stats');

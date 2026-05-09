@@ -313,6 +313,370 @@ class AnalyticsController extends Controller
         return view('analytics.pedigree', compact('fatherList', 'father', 'stats'));
     }
 
+    // =====================================================================
+    // 血統分析(拡張): overview / sires / broodmares / heatmap
+    // 共通ポリシー:
+    //   - 集計対象: race_results JOIN horses JOIN races (venues は全てJRAなので追加絞り込み不要)
+    //   - 最低出走数: 20回以上 (NOISE排除)
+    //   - 回収率: 単勝=win_odds*100、複勝=((place_odds_min+place_odds_max)/2)*100 (既存roi()と同じ)
+    // =====================================================================
+
+    /** 血統分析共通: 父別の集計クエリ */
+    private function pedigreeFatherAggQuery(?string $from = null, ?string $to = null, ?string $trackType = null)
+    {
+        $q = DB::table('race_results')
+            ->join('horses', 'horses.id', '=', 'race_results.horse_id')
+            ->join('races',  'races.id',  '=', 'race_results.race_id')
+            ->whereNotNull('horses.father')
+            ->whereNotNull('race_results.finish_position_int');
+        if ($from)      $q->whereDate('races.race_date', '>=', $from);
+        if ($to)        $q->whereDate('races.race_date', '<=', $to);
+        if ($trackType) $q->where('races.track_type', $trackType);
+        return $q;
+    }
+
+    /** 血統分析共通: 母父別の集計クエリ */
+    private function pedigreeBroodmareAggQuery(?string $from = null, ?string $to = null, ?string $trackType = null)
+    {
+        $q = DB::table('race_results')
+            ->join('horses', 'horses.id', '=', 'race_results.horse_id')
+            ->join('races',  'races.id',  '=', 'race_results.race_id')
+            ->whereNotNull('horses.mother_father')
+            ->whereNotNull('race_results.finish_position_int');
+        if ($from)      $q->whereDate('races.race_date', '>=', $from);
+        if ($to)        $q->whereDate('races.race_date', '<=', $to);
+        if ($trackType) $q->where('races.track_type', $trackType);
+        return $q;
+    }
+
+    /**
+     * 父・母父集計の共通 SELECT 句
+     *   - runs / wins / places(2着内) / shows(3着内)
+     *   - 単勝回収・複勝回収 (win_odds / place_odds_min/max ベース)
+     */
+    private const PEDIGREE_AGG_SELECT = "count(*) as runs,
+        SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+        SUM(CASE WHEN finish_position_int<=2 THEN 1 ELSE 0 END) as places,
+        SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows,
+        SUM(CASE WHEN finish_position_int=1 AND win_odds IS NOT NULL THEN win_odds*100 ELSE 0 END) as win_payout,
+        SUM(CASE WHEN win_odds IS NOT NULL THEN 100 ELSE 0 END) as win_stake,
+        SUM(CASE WHEN finish_position_int<=3
+                 THEN ((COALESCE(place_odds_min,0)+COALESCE(place_odds_max,0))/2)*100
+                 ELSE 0 END) as place_payout";
+
+    /**
+     * 父・母父集計の生レコードを「行ごとの指標」に整形
+     *
+     * @param iterable $rows  cnt系カラム + win_payout/win_stake/place_payout を含む行
+     * @return array          指標が付加された配列
+     */
+    private function decoratePedigreeRows($rows): array
+    {
+        $out = [];
+        foreach ($rows as $r) {
+            $runs   = (int)($r->runs   ?? 0);
+            $wins   = (int)($r->wins   ?? 0);
+            $places = (int)($r->places ?? 0);
+            $shows  = (int)($r->shows  ?? 0);
+            $winPayout   = (float)($r->win_payout   ?? 0);
+            $winStake    = (float)($r->win_stake    ?? 0);    // win_odds が記録された行のみ
+            $placePayout = (float)($r->place_payout ?? 0);
+            $placeStake  = $runs * 100;
+
+            $out[] = (object) [
+                'name'          => $r->name ?? null,
+                'runs'          => $runs,
+                'wins'          => $wins,
+                'places'        => $places,
+                'shows'         => $shows,
+                'win_rate'      => $runs > 0 ? round($wins  / $runs * 100, 1) : 0,
+                'place_rate'    => $runs > 0 ? round($places/ $runs * 100, 1) : 0,
+                'show_rate'     => $runs > 0 ? round($shows / $runs * 100, 1) : 0,
+                'roi_win'       => $winStake  > 0 ? round($winPayout   / $winStake  * 100, 1) : 0,
+                'roi_place'     => $placeStake> 0 ? round($placePayout / $placeStake* 100, 1) : 0,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * 血統分析トップ(KPI + 父TOP20 + 母父TOP20)
+     *
+     * クエリ:
+     *   ?from= ?to=  期間絞り込み (任意)
+     *   ?min_runs=   最小出走数 (default 20)
+     */
+    public function pedigreeOverview(Request $request): View
+    {
+        $from     = $request->get('from');
+        $to       = $request->get('to');
+        $minRuns  = max(1, (int) $request->get('min_runs', 20));
+
+        // KPI: 血統カバー率
+        $totalHorses    = (int) DB::table('horses')->count();
+        $fatherFilled   = (int) DB::table('horses')->whereNotNull('father')->count();
+        $motherFilled   = (int) DB::table('horses')->whereNotNull('mother')->count();
+        $mFatherFilled  = (int) DB::table('horses')->whereNotNull('mother_father')->count();
+        $uniqueFathers  = (int) DB::table('horses')->whereNotNull('father')->distinct()->count('father');
+        $uniqueMFathers = (int) DB::table('horses')->whereNotNull('mother_father')->distinct()->count('mother_father');
+
+        // 父TOP20 (出走数順)
+        $fatherRows = $this->pedigreeFatherAggQuery($from, $to)
+            ->selectRaw("horses.father as name, " . self::PEDIGREE_AGG_SELECT)
+            ->groupBy('horses.father')
+            ->havingRaw('runs >= ?', [$minRuns])
+            ->orderByDesc('runs')
+            ->limit(20)
+            ->get();
+        $topFathers = $this->decoratePedigreeRows($fatherRows);
+
+        // 母父TOP20 (出走数順)
+        $mFatherRows = $this->pedigreeBroodmareAggQuery($from, $to)
+            ->selectRaw("horses.mother_father as name, " . self::PEDIGREE_AGG_SELECT)
+            ->groupBy('horses.mother_father')
+            ->havingRaw('runs >= ?', [$minRuns])
+            ->orderByDesc('runs')
+            ->limit(20)
+            ->get();
+        $topBroodmares = $this->decoratePedigreeRows($mFatherRows);
+
+        return view('analytics.pedigree_overview', [
+            'kpi' => [
+                'total_horses'    => $totalHorses,
+                'father_filled'   => $fatherFilled,
+                'mother_filled'   => $motherFilled,
+                'm_father_filled' => $mFatherFilled,
+                'father_pct'      => $totalHorses > 0 ? round($fatherFilled  / $totalHorses * 100, 1) : 0,
+                'mother_pct'      => $totalHorses > 0 ? round($motherFilled  / $totalHorses * 100, 1) : 0,
+                'm_father_pct'    => $totalHorses > 0 ? round($mFatherFilled / $totalHorses * 100, 1) : 0,
+                'unique_fathers'  => $uniqueFathers,
+                'unique_m_fathers'=> $uniqueMFathers,
+            ],
+            'topFathers'    => $topFathers,
+            'topBroodmares' => $topBroodmares,
+            'from'          => $from,
+            'to'            => $to,
+            'minRuns'       => $minRuns,
+        ]);
+    }
+
+    /**
+     * 父別ランキング(全件・ソート/絞込)
+     *
+     * クエリ:
+     *   ?from= ?to=     期間
+     *   ?track_type=    芝/ダート/障害
+     *   ?min_runs=      最小出走数 (default 20)
+     *   ?sort=          runs|wins|win_rate|place_rate|show_rate|roi_win|roi_place (default runs)
+     *   ?keyword=       父名キーワード(部分一致)
+     */
+    public function pedigreeSires(Request $request): View
+    {
+        $from      = $request->get('from');
+        $to        = $request->get('to');
+        $trackType = $request->get('track_type');
+        $minRuns   = max(1, (int) $request->get('min_runs', 20));
+        $keyword   = trim((string) $request->get('keyword', ''));
+        $sort      = $request->get('sort', 'runs');
+
+        $allowedSort = ['runs','wins','win_rate','place_rate','show_rate','roi_win','roi_place'];
+        if (!in_array($sort, $allowedSort, true)) $sort = 'runs';
+
+        $q = $this->pedigreeFatherAggQuery($from, $to, $trackType)
+            ->selectRaw("horses.father as name, " . self::PEDIGREE_AGG_SELECT)
+            ->groupBy('horses.father')
+            ->havingRaw('runs >= ?', [$minRuns]);
+
+        if ($keyword !== '') {
+            $q->where('horses.father', 'like', '%' . $keyword . '%');
+        }
+
+        // SQL側で並べ替えできるのは生集計値のみ。比率系はPHP側でソートする。
+        $rawSortable = ['runs','wins'];
+        if (in_array($sort, $rawSortable, true)) {
+            $q->orderByDesc($sort);
+        } else {
+            $q->orderByDesc('runs'); // 一旦出走数で
+        }
+
+        $rows = $this->decoratePedigreeRows($q->limit(500)->get());
+
+        // 比率/ROIで指定されたら PHP側で並べ直す
+        if (!in_array($sort, $rawSortable, true)) {
+            usort($rows, fn($a, $b) => $b->{$sort} <=> $a->{$sort});
+        }
+
+        return view('analytics.pedigree_sires', [
+            'rows'      => $rows,
+            'from'      => $from,
+            'to'        => $to,
+            'trackType' => $trackType,
+            'minRuns'   => $minRuns,
+            'keyword'   => $keyword,
+            'sort'      => $sort,
+        ]);
+    }
+
+    /**
+     * 母父別ランキング(全件・ソート/絞込)
+     */
+    public function pedigreeBroodmares(Request $request): View
+    {
+        $from      = $request->get('from');
+        $to        = $request->get('to');
+        $trackType = $request->get('track_type');
+        $minRuns   = max(1, (int) $request->get('min_runs', 20));
+        $keyword   = trim((string) $request->get('keyword', ''));
+        $sort      = $request->get('sort', 'runs');
+
+        $allowedSort = ['runs','wins','win_rate','place_rate','show_rate','roi_win','roi_place'];
+        if (!in_array($sort, $allowedSort, true)) $sort = 'runs';
+
+        $q = $this->pedigreeBroodmareAggQuery($from, $to, $trackType)
+            ->selectRaw("horses.mother_father as name, " . self::PEDIGREE_AGG_SELECT)
+            ->groupBy('horses.mother_father')
+            ->havingRaw('runs >= ?', [$minRuns]);
+
+        if ($keyword !== '') {
+            $q->where('horses.mother_father', 'like', '%' . $keyword . '%');
+        }
+
+        $rawSortable = ['runs','wins'];
+        if (in_array($sort, $rawSortable, true)) {
+            $q->orderByDesc($sort);
+        } else {
+            $q->orderByDesc('runs');
+        }
+
+        $rows = $this->decoratePedigreeRows($q->limit(500)->get());
+
+        if (!in_array($sort, $rawSortable, true)) {
+            usort($rows, fn($a, $b) => $b->{$sort} <=> $a->{$sort});
+        }
+
+        return view('analytics.pedigree_broodmares', [
+            'rows'      => $rows,
+            'from'      => $from,
+            'to'        => $to,
+            'trackType' => $trackType,
+            'minRuns'   => $minRuns,
+            'keyword'   => $keyword,
+            'sort'      => $sort,
+        ]);
+    }
+
+    /**
+     * 父×距離 / 父×馬場 ヒートマップ
+     *
+     * クエリ:
+     *   ?axis=distance|condition|venue   (default distance)
+     *   ?track_type=芝|ダート (default 芝)
+     *   ?metric=show_rate|win_rate|roi_win|roi_place (default show_rate)
+     *   ?min_runs= (default 20、各セル単位)
+     *   ?top= 父TOP数(default 20)
+     */
+    public function pedigreeHeatmap(Request $request): View
+    {
+        $axis      = $request->get('axis', 'distance');
+        $trackType = $request->get('track_type', '芝');
+        $metric    = $request->get('metric', 'show_rate');
+        $minRuns   = max(1, (int) $request->get('min_runs', 20));
+        $top       = max(5, min(50, (int) $request->get('top', 20)));
+
+        if (!in_array($axis,   ['distance','condition','venue'], true)) $axis = 'distance';
+        if (!in_array($metric, ['show_rate','win_rate','roi_win','roi_place'], true)) $metric = 'show_rate';
+
+        // ===== 軸定義 =====
+        // 距離はカテゴリ化(短距離/マイル/中距離/中長距離/長距離)
+        $axisExpr  = null;
+        $axisOrder = [];
+        switch ($axis) {
+            case 'distance':
+                $axisExpr  = "CASE
+                    WHEN races.distance < 1400 THEN '短距離'
+                    WHEN races.distance < 1800 THEN 'マイル'
+                    WHEN races.distance < 2200 THEN '中距離'
+                    WHEN races.distance < 2600 THEN '中長距離'
+                    ELSE '長距離' END";
+                $axisOrder = ['短距離','マイル','中距離','中長距離','長距離'];
+                break;
+            case 'condition':
+                $axisExpr  = "races.course_condition";
+                $axisOrder = ['良','稍重','重','不良'];
+                break;
+            case 'venue':
+                $axisExpr  = "(SELECT v.name FROM venues v WHERE v.id = races.venue_id)";
+                $axisOrder = ['札幌','函館','福島','新潟','東京','中山','中京','京都','阪神','小倉'];
+                break;
+        }
+
+        // 父TOP N (該当トラックの出走数順)
+        $topFathers = $this->pedigreeFatherAggQuery(null, null, $trackType)
+            ->select('horses.father as name')
+            ->selectRaw('count(*) as runs')
+            ->groupBy('horses.father')
+            ->orderByDesc('runs')
+            ->limit($top)
+            ->pluck('name')
+            ->all();
+
+        if (empty($topFathers)) {
+            return view('analytics.pedigree_heatmap', [
+                'axis'       => $axis,
+                'trackType'  => $trackType,
+                'metric'     => $metric,
+                'minRuns'    => $minRuns,
+                'top'        => $top,
+                'fathers'    => [],
+                'columns'    => $axisOrder,
+                'matrix'     => [],
+            ]);
+        }
+
+        // セル集計
+        $cells = $this->pedigreeFatherAggQuery(null, null, $trackType)
+            ->whereIn('horses.father', $topFathers)
+            ->selectRaw("horses.father as father, ($axisExpr) as ax, " . self::PEDIGREE_AGG_SELECT)
+            ->groupBy('horses.father', DB::raw("($axisExpr)"))
+            ->get();
+
+        // 行(父) × 列(軸) のマトリクスへ整形
+        $matrix = []; // [father][col] = ['metric'=>x, 'runs'=>n]
+        foreach ($cells as $c) {
+            $runs        = (int)($c->runs ?? 0);
+            $wins        = (int)($c->wins ?? 0);
+            $shows       = (int)($c->shows ?? 0);
+            $winPayout   = (float)($c->win_payout   ?? 0);
+            $winStake    = (float)($c->win_stake    ?? 0);
+            $placePayout = (float)($c->place_payout ?? 0);
+            $placeStake  = $runs * 100;
+
+            $val = match ($metric) {
+                'win_rate'   => $runs        > 0 ? round($wins  / $runs * 100, 1) : null,
+                'show_rate'  => $runs        > 0 ? round($shows / $runs * 100, 1) : null,
+                'roi_win'    => $winStake    > 0 ? round($winPayout   / $winStake  * 100, 1) : null,
+                'roi_place'  => $placeStake  > 0 ? round($placePayout / $placeStake* 100, 1) : null,
+                default      => null,
+            };
+
+            // 出走数が閾値未満のセルは null 扱いに(色付けしない)
+            if ($runs < $minRuns) $val = null;
+
+            $matrix[$c->father][$c->ax] = ['v' => $val, 'runs' => $runs];
+        }
+
+        return view('analytics.pedigree_heatmap', [
+            'axis'      => $axis,
+            'trackType' => $trackType,
+            'metric'    => $metric,
+            'minRuns'   => $minRuns,
+            'top'       => $top,
+            'fathers'   => $topFathers,
+            'columns'   => $axisOrder,
+            'matrix'    => $matrix,
+        ]);
+    }
+
     /**
      * 騎手×コース相性
      *

@@ -266,7 +266,11 @@
                                 <a href="{{ route('analytics.venue') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-turf-600" /><span>競馬場別傾向</span></a>
                                 <a href="{{ route('analytics.course-trends') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-emerald-600" /><span>コース別傾向</span></a>
                                 <a href="{{ route('analytics.pace') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="bolt" class="w-4 h-4 text-amber-500" /><span>ペース分析</span></a>
-                                <a href="{{ route('analytics.pedigree') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="dna" class="w-4 h-4 text-purple-500" /><span>血統傾向</span></a>
+                                <a href="{{ route('analytics.pedigree.overview') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="dna" class="w-4 h-4 text-purple-500" /><span>🧬 血統分析(トップ)</span></a>
+                                <a href="{{ route('analytics.pedigree.sires') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-purple-400">└</span><span>👑 父ランキング</span></a>
+                                <a href="{{ route('analytics.pedigree.broodmares') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-purple-400">└</span><span>🌸 母父ランキング</span></a>
+                                <a href="{{ route('analytics.pedigree.heatmap') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-purple-400">└</span><span>🔥 ヒートマップ</span></a>
+                                <a href="{{ route('analytics.pedigree') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-purple-400">└</span><span>🔎 父詳細</span></a>
                                 <a href="{{ route('analytics.jockey') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="user" class="w-4 h-4 text-sky-500" /><span>騎手×コース</span></a>
                                 <a href="{{ route('analytics.horse') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-rose-500" /><span>馬×コース優位性</span></a>
                                 <a href="{{ route('analytics.stats') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-gold-500" /><span>通算成績スタッツ</span></a>
@@ -408,7 +412,11 @@
                         <a href="{{ route('analytics.venue') }}"        class="{{ $mSub }}" @click="menuOpen=false">📍 競馬場別傾向</a>
                         <a href="{{ route('analytics.course-trends') }}" class="{{ $mSub }}" @click="menuOpen=false">🗺️ コース別傾向</a>
                         <a href="{{ route('analytics.pace') }}"         class="{{ $mSub }}" @click="menuOpen=false">⚡ ペース分析</a>
-                        <a href="{{ route('analytics.pedigree') }}" class="{{ $mSub }}" @click="menuOpen=false">🧬 血統傾向</a>
+                        <a href="{{ route('analytics.pedigree.overview') }}" class="{{ $mSub }}" @click="menuOpen=false">🧬 血統分析(トップ)</a>
+                        <a href="{{ route('analytics.pedigree.sires') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ 👑 父ランキング</a>
+                        <a href="{{ route('analytics.pedigree.broodmares') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ 🌸 母父ランキング</a>
+                        <a href="{{ route('analytics.pedigree.heatmap') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ 🔥 ヒートマップ</a>
+                        <a href="{{ route('analytics.pedigree') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ 🔎 父詳細</a>
                         <a href="{{ route('analytics.jockey') }}"   class="{{ $mSub }}" @click="menuOpen=false">👤 騎手×コース</a>
                         <a href="{{ route('analytics.horse') }}"    class="{{ $mSub }}" @click="menuOpen=false">🏆 馬×コース優位性</a>
                         <a href="{{ route('analytics.stats') }}"    class="{{ $mSub }}" @click="menuOpen=false">📊 通算成績スタッツ</a>
