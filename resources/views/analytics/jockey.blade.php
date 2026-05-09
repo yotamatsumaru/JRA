@@ -204,15 +204,10 @@
         @endif
     </div>
 
-    {{-- ============ 個別騎手の詳細 ============ --}}
+    {{-- ============ 個別騎手の詳細 (モーダル) ============ --}}
     @if ($jockeyName)
-    <div id="jockey-detail" class="bg-white rounded-lg shadow p-4 ring-2 ring-emerald-300 scroll-mt-20">
-        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h2 class="font-semibold text-gray-700 text-lg">
-                <span class="text-emerald-700">▼</span>
-                {{ $jockeyName }} の競馬場 × トラック相性
-            </h2>
-            <a href="{{ route('analytics.jockey', array_filter([
+        @php
+            $closeUrl = route('analytics.jockey', array_filter([
                 'min_runs'   => $filters['minRuns']   ?? null,
                 'venue_id'   => $filters['venueId']   ?? null,
                 'track_type' => $filters['trackType'] ?? null,
@@ -220,70 +215,94 @@
                 'from'       => $filters['from']      ?? null,
                 'to'         => $filters['to']        ?? null,
                 'keyword'    => $filters['keyword']   ?? null,
-            ], fn($v) => $v !== null && $v !== '')) }}"
-               class="text-xs px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">× 閉じる</a>
-        </div>
+            ], fn($v) => $v !== null && $v !== ''));
+        @endphp
+        <div
+            id="jockey-detail"
+            x-data="{ open: true, closeUrl: @js($closeUrl) }"
+            x-show="open"
+            x-transition.opacity
+            x-cloak
+            @keydown.escape.window="open = false; window.location.href = closeUrl;"
+            class="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/60 overflow-y-auto"
+        >
+            {{-- 背景クリックで閉じる --}}
+            <div class="absolute inset-0" @click="window.location.href = closeUrl;"></div>
 
-        @if ($stats->isEmpty())
-            <p class="text-sm text-gray-500">データがありません</p>
-        @else
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-100 text-xs text-gray-600">
-                    <tr>
-                        <th class="text-left px-3 py-2">競馬場</th>
-                        <th class="px-3 py-2">トラック</th>
-                        <th class="px-3 py-2">騎乗</th>
-                        <th class="px-3 py-2">勝</th>
-                        <th class="px-3 py-2">複勝</th>
-                        <th class="px-3 py-2">勝率</th>
-                        <th class="px-3 py-2">複勝率</th>
-                        <th class="px-3 py-2 w-1/4">複勝率ヒートマップ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($stats as $s)
-                        @php
-                            $winRate  = $s->runs > 0 ? round($s->wins  / $s->runs * 100, 1) : 0;
-                            $showRate = $s->runs > 0 ? round($s->shows / $s->runs * 100, 1) : 0;
-                            $intensity = min(100, $showRate * 1.5);
-                        @endphp
-                        <tr class="border-b">
-                            <td class="px-3 py-2">{{ $s->venue }}</td>
-                            <td class="px-3 py-2 text-center">{{ $s->track_type }}</td>
-                            <td class="px-3 py-2 text-center">{{ $s->runs }}</td>
-                            <td class="px-3 py-2 text-center text-yellow-600 font-bold">{{ $s->wins }}</td>
-                            <td class="px-3 py-2 text-center text-emerald-600">{{ $s->shows }}</td>
-                            <td class="px-3 py-2 text-center">{{ $winRate }}%</td>
-                            <td class="px-3 py-2 text-center font-bold">{{ $showRate }}%</td>
-                            <td class="px-3 py-2">
-                                <div class="h-5 rounded relative overflow-hidden bg-gray-100">
-                                    <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-300 via-blue-600 to-red-500" style="width: {{ $intensity }}%;"></div>
-                                    <div class="relative z-10 flex items-center justify-center h-full text-xs font-bold text-gray-800">{{ $showRate }}%</div>
-                                </div>
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+            {{-- モーダル本体 --}}
+            <div
+                class="relative bg-white rounded-lg shadow-2xl ring-2 ring-emerald-300 w-full max-w-5xl mt-12 max-h-[85vh] overflow-y-auto"
+                @click.stop
+            >
+                {{-- ヘッダー (sticky) --}}
+                <div class="sticky top-0 bg-white border-b px-5 py-3 flex items-center justify-between flex-wrap gap-2 z-10">
+                    <h2 class="font-semibold text-gray-700 text-lg">
+                        <span class="text-emerald-700">▼</span>
+                        {{ $jockeyName }} の競馬場 × トラック相性
+                    </h2>
+                    <div class="flex items-center gap-2">
+                        <a href="{{ route('jockeys.show', ['jockey' => $jockeyName]) }}"
+                           class="text-xs px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">
+                            個別ページ →
+                        </a>
+                        <a href="{{ $closeUrl }}"
+                           class="text-xs px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">× 閉じる</a>
+                    </div>
+                </div>
+
+                {{-- 本文 --}}
+                <div class="p-5">
+                    @if ($stats->isEmpty())
+                        <p class="text-sm text-gray-500">データがありません</p>
+                    @else
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-100 text-xs text-gray-600">
+                                <tr>
+                                    <th class="text-left px-3 py-2">競馬場</th>
+                                    <th class="px-3 py-2">トラック</th>
+                                    <th class="px-3 py-2">騎乗</th>
+                                    <th class="px-3 py-2">勝</th>
+                                    <th class="px-3 py-2">複勝</th>
+                                    <th class="px-3 py-2">勝率</th>
+                                    <th class="px-3 py-2">複勝率</th>
+                                    <th class="px-3 py-2 w-1/4">複勝率ヒートマップ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($stats as $s)
+                                    @php
+                                        $winRate  = $s->runs > 0 ? round($s->wins  / $s->runs * 100, 1) : 0;
+                                        $showRate = $s->runs > 0 ? round($s->shows / $s->runs * 100, 1) : 0;
+                                        $intensity = min(100, $showRate * 1.5);
+                                    @endphp
+                                    <tr class="border-b">
+                                        <td class="px-3 py-2">{{ $s->venue }}</td>
+                                        <td class="px-3 py-2 text-center">{{ $s->track_type }}</td>
+                                        <td class="px-3 py-2 text-center">{{ $s->runs }}</td>
+                                        <td class="px-3 py-2 text-center text-yellow-600 font-bold">{{ $s->wins }}</td>
+                                        <td class="px-3 py-2 text-center text-emerald-600">{{ $s->shows }}</td>
+                                        <td class="px-3 py-2 text-center">{{ $winRate }}%</td>
+                                        <td class="px-3 py-2 text-center font-bold">{{ $showRate }}%</td>
+                                        <td class="px-3 py-2">
+                                            <div class="h-5 rounded relative overflow-hidden bg-gray-100">
+                                                <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-300 via-blue-600 to-red-500" style="width: {{ $intensity }}%;"></div>
+                                                <div class="relative z-10 flex items-center justify-center h-full text-xs font-bold text-gray-800">{{ $showRate }}%</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    @endif
+                </div>
+            </div>
         </div>
-        @endif
-    </div>
     @endif
 </div>
 
 @push('scripts')
-<script>
-// 一覧から騎手を選んで詳細表示する際に詳細パネルへ自動スクロール
-document.addEventListener('DOMContentLoaded', () => {
-    const detail = document.getElementById('jockey-detail');
-    if (detail) {
-        // ブラウザ標準のハッシュジャンプを補助(固定ヘッダがある場合に備えて少しオフセット)
-        setTimeout(() => {
-            detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 50);
-    }
-});
-</script>
+<style>[x-cloak]{display:none!important;}</style>
 @endpush
 @endsection
