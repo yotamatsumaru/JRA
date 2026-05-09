@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('import_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->enum('source', ['manual', 'csv', 'netkeiba', 'image'])->comment('インポート元');
+            $table->enum('source', ['manual', 'csv', 'netkeiba', 'netkeiba_shutuba', 'image'])->comment('インポート元');
             $table->string('reference', 200)->nullable()->comment('URL/ファイル名等');
             $table->enum('status', ['pending', 'processing', 'success', 'partial', 'failed'])->default('pending');
             $table->unsignedInteger('records_total')->default(0);
