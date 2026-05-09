@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="space-y-4">
-    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">🔥 父系 × 条件 ヒートマップ</h1>
+    <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+        <x-icon name="fire" class="w-6 h-6 text-orange-500" />
+        <span>父系 × 条件 ヒートマップ</span>
+    </h1>
     <p class="text-xs sm:text-sm text-gray-600">
         出走数上位の父系を縦軸に、距離区分・馬場状態・競馬場を横軸にした得意/不得意マップ。
         色が濃いほど高水準。出走数が {{ $minRuns }} 回未満のセルは灰色(参考値なし)で表示します。

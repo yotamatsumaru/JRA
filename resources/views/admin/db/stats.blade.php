@@ -11,7 +11,10 @@
                 <div class="text-xs text-gray-500">
                     <a href="{{ route('admin.db.index') }}" class="hover:underline">DBビューア</a>
                 </div>
-                <h1 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100 mt-1">📊 統計ダッシュボード</h1>
+                <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100 mt-1">
+                    <x-icon name="chart" class="w-6 h-6 text-primary-600" />
+                    <span>統計ダッシュボード</span>
+                </h1>
             </div>
         </div>
 

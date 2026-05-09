@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="max-w-2xl mx-auto space-y-6">
-    <h1 class="text-2xl font-bold text-gray-800">📄 CSV取込</h1>
+    <h1 class="inline-flex items-center gap-2 text-2xl font-bold text-gray-800">
+        <x-icon name="document" class="w-7 h-7 text-emerald-600" />
+        <span>CSV取込</span>
+    </h1>
 
     <form method="POST" action="{{ route('import.csv.store') }}" enctype="multipart/form-data" class="bg-white rounded-lg shadow p-6 space-y-4">
         @csrf
@@ -20,7 +23,10 @@
     </form>
 
     <div class="bg-white rounded-lg shadow p-4 text-sm">
-        <h3 class="font-semibold text-gray-700 mb-2">📋 CSVフォーマット仕様</h3>
+        <h3 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 mb-2">
+            <x-icon name="list" class="w-4 h-4 text-gray-500" />
+            <span>CSVフォーマット仕様</span>
+        </h3>
         <p class="mb-2 text-gray-600">1行目はヘッダ行。以下の列が利用可能です（必須:race_date, venue_code, race_number, horse_number, horse_name）:</p>
         <div class="overflow-x-auto">
             <table class="w-full text-xs border">

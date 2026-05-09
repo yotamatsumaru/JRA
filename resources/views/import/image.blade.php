@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="max-w-2xl mx-auto space-y-6">
-    <h1 class="text-2xl font-bold text-gray-800">📸 画像取込（GPT-4o Vision）</h1>
+    <h1 class="inline-flex items-center gap-2 text-2xl font-bold text-gray-800">
+        <x-icon name="camera" class="w-7 h-7 text-purple-600" />
+        <span>画像取込（GPT-4o Vision）</span>
+    </h1>
 
     <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded text-sm text-blue-800">
         <p class="font-semibold mb-1">使い方</p>
@@ -58,7 +61,10 @@
     </form>
 
     <div class="bg-amber-50 border-l-4 border-amber-400 p-4 rounded text-sm text-amber-800">
-        <p>⚠️ <code>OPENAI_API_KEY</code> の設定が必要です。<code>.env</code> で設定してください。</p>
+        <p class="inline-flex items-start gap-1.5">
+            <x-icon name="warning" class="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span><code>OPENAI_API_KEY</code> の設定が必要です。<code>.env</code> で設定してください。</span>
+        </p>
         <p class="mt-1">画像1枚あたり数十円程度のAPIコストが発生します。</p>
     </div>
 </div>

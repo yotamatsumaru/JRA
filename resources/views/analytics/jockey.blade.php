@@ -14,7 +14,7 @@
     <form method="get" class="bg-white rounded-lg shadow p-3 sm:p-4" x-data="{ openFilter: window.innerWidth >= 640 }">
         <button type="button" @click="openFilter = !openFilter"
                 class="sm:hidden w-full flex items-center justify-between text-sm font-semibold text-gray-700 mb-2">
-            <span>🔍 絞り込み・並び替え</span>
+            <span class="inline-flex items-center gap-1.5"><x-icon name="search" class="w-4 h-4" /><span>絞り込み・並び替え</span></span>
             <span x-text="openFilter ? '▲' : '▼'"></span>
         </button>
         <div x-show="openFilter" x-cloak class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3 text-sm">

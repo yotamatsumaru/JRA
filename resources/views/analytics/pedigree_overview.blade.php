@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="space-y-4">
-    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">🧬 血統分析</h1>
+    <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+        <x-icon name="beaker" class="w-6 h-6 text-purple-600" />
+        <span>血統分析</span>
+    </h1>
     <p class="text-xs sm:text-sm text-gray-600">
         血統データ(父・母・母父)を使って種牡馬の傾向を見える化します。
         最低出走数 {{ $minRuns }} 回以上の系統のみ表示しています。
@@ -57,7 +60,10 @@
     {{-- 父TOP20 (ApexChart) --}}
     <div class="bg-white rounded-lg shadow p-4">
         <div class="flex items-center justify-between mb-3">
-            <h2 class="font-semibold text-gray-700">👑 父系 TOP20 (出走数)</h2>
+            <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700">
+                <x-icon name="crown" class="w-5 h-5 text-purple-600" />
+                <span>父系 TOP20 (出走数)</span>
+            </h2>
             <a href="{{ route('analytics.pedigree.sires') }}" class="text-xs text-purple-600 hover:underline">全件を見る →</a>
         </div>
 
@@ -106,7 +112,10 @@
     {{-- 母父TOP20 --}}
     <div class="bg-white rounded-lg shadow p-4">
         <div class="flex items-center justify-between mb-3">
-            <h2 class="font-semibold text-gray-700">🌸 母父系 TOP20 (出走数)</h2>
+            <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700">
+                <x-icon name="flower" class="w-5 h-5 text-rose-500" />
+                <span>母父系 TOP20 (出走数)</span>
+            </h2>
             <a href="{{ route('analytics.pedigree.broodmares') }}" class="text-xs text-purple-600 hover:underline">全件を見る →</a>
         </div>
 

@@ -17,7 +17,9 @@
 
     <div class="w-full max-w-md">
         <div class="text-center mb-6">
-            <a href="/" class="text-4xl">🏇</a>
+            <a href="/" class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary-600 text-white shadow-lg">
+                <x-icon name="horse" class="w-9 h-9" />
+            </a>
             <h1 class="text-2xl font-bold text-gray-800 mt-2">JRA Analyzer</h1>
             <p class="text-sm text-gray-600">中央競馬データ分析アプリ</p>
         </div>

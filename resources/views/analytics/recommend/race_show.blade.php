@@ -5,7 +5,10 @@
 <div class="space-y-4">
     <div class="flex items-center gap-3 flex-wrap">
         <a href="{{ route('analytics.recommend.race') }}" class="text-xs text-gray-500 hover:text-gray-700">← レース選択に戻る</a>
-        <h1 class="text-xl sm:text-2xl font-bold text-gray-800">🐎 推奨印 - {{ $race->name }}</h1>
+        <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+            <x-icon name="horse" class="w-6 h-6 text-rose-500" />
+            <span>推奨印 - {{ $race->name }}</span>
+        </h1>
     </div>
 
     @include('analytics.recommend._nav', ['active' => 'race'])
@@ -41,19 +44,32 @@
     @php $w = $settings['weights']; @endphp
     <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900 flex flex-wrap items-center gap-x-4 gap-y-1">
         <span>適用重み:</span>
-        <span class="px-2 py-0.5 bg-purple-100 text-purple-800 rounded">🧬 {{ $w['pedigree'] }}</span>
-        <span class="px-2 py-0.5 bg-sky-100 text-sky-800 rounded">👤 {{ $w['jockey'] }}</span>
-        <span class="px-2 py-0.5 bg-rose-100 text-rose-800 rounded">🐎 {{ $w['horse'] }}</span>
-        <span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded">💰 {{ $w['roi'] }}</span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-800 rounded">
+            <x-icon name="beaker" class="w-3.5 h-3.5" /><span>{{ $w['pedigree'] }}</span>
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-100 text-sky-800 rounded">
+            <x-icon name="user" class="w-3.5 h-3.5" /><span>{{ $w['jockey'] }}</span>
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-800 rounded">
+            <x-icon name="horse" class="w-3.5 h-3.5" /><span>{{ $w['horse'] }}</span>
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
+            <x-icon name="cash" class="w-3.5 h-3.5" /><span>{{ $w['roi'] }}</span>
+        </span>
         <span>最低出走数 ≥ {{ $settings['min_runs'] }}</span>
-        <a href="{{ route('analytics.recommend.settings') }}" class="ml-auto text-amber-700 hover:underline font-bold">⚙️ 重みを変える →</a>
+        <a href="{{ route('analytics.recommend.settings') }}" class="ml-auto inline-flex items-center gap-1 text-amber-700 hover:underline font-bold">
+            <x-icon name="cog" class="w-3.5 h-3.5" /><span>重みを変える →</span>
+        </a>
     </div>
 
     {{-- 推奨馬券 --}}
     @if (count($recommended_bets) > 0)
         <div class="bg-white rounded-lg shadow overflow-hidden">
             <div class="px-4 py-2.5 bg-rose-50 border-b border-rose-100">
-                <h2 class="font-bold text-rose-800">🎫 推奨馬券組み合わせ</h2>
+                <h2 class="inline-flex items-center gap-1.5 font-bold text-rose-800">
+                    <x-icon name="ticket" class="w-5 h-5" />
+                    <span>推奨馬券組み合わせ</span>
+                </h2>
                 <p class="text-xs text-rose-700 mt-0.5">印の付与に基づく機械的な提案です。最終判断は自己責任で。</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
@@ -90,7 +106,10 @@
     {{-- スコアランキング(印付与) --}}
     <div class="bg-white rounded-lg shadow overflow-hidden">
         <div class="px-4 py-2.5 bg-gray-50 border-b">
-            <h2 class="font-bold text-gray-800">📊 スコア順ランキング(印付与)</h2>
+            <h2 class="inline-flex items-center gap-1.5 font-bold text-gray-800">
+                <x-icon name="chart" class="w-5 h-5 text-gray-600" />
+                <span>スコア順ランキング(印付与)</span>
+            </h2>
             <p class="text-xs text-gray-600 mt-0.5">
                 印は <strong>◎</strong>=1位70+ / <strong>○</strong>=2位60+ / <strong>▲</strong>=3位55+ / <strong>△</strong>=4-5位50+ / <strong>☆</strong>=ROIサブスコア50+
             </p>
@@ -106,10 +125,26 @@
                         <th class="px-2 py-1.5 text-left">騎手</th>
                         <th class="px-2 py-1.5 text-left">父</th>
                         <th class="px-2 py-1.5 text-left">母父</th>
-                        <th class="px-2 py-1.5 text-right">🧬血統</th>
-                        <th class="px-2 py-1.5 text-right">👤騎手</th>
-                        <th class="px-2 py-1.5 text-right">🐎馬</th>
-                        <th class="px-2 py-1.5 text-right">💰ROI</th>
+                        <th class="px-2 py-1.5 text-right">
+                            <span class="inline-flex items-center justify-end gap-0.5">
+                                <x-icon name="beaker" class="w-3.5 h-3.5" /><span>血統</span>
+                            </span>
+                        </th>
+                        <th class="px-2 py-1.5 text-right">
+                            <span class="inline-flex items-center justify-end gap-0.5">
+                                <x-icon name="user" class="w-3.5 h-3.5" /><span>騎手</span>
+                            </span>
+                        </th>
+                        <th class="px-2 py-1.5 text-right">
+                            <span class="inline-flex items-center justify-end gap-0.5">
+                                <x-icon name="horse" class="w-3.5 h-3.5" /><span>馬</span>
+                            </span>
+                        </th>
+                        <th class="px-2 py-1.5 text-right">
+                            <span class="inline-flex items-center justify-end gap-0.5">
+                                <x-icon name="cash" class="w-3.5 h-3.5" /><span>ROI</span>
+                            </span>
+                        </th>
                         <th class="px-2 py-1.5 text-right">合計</th>
                         <th class="px-2 py-1.5 text-right">着順</th>
                     </tr>
@@ -186,7 +221,10 @@
     @php $marked = array_filter($evaluations, fn($e) => $e->mark !== ''); @endphp
     @if (count($marked) > 0)
         <div class="space-y-3">
-            <h2 class="text-base font-bold text-gray-800">🔍 印付き馬の内訳と推奨理由</h2>
+            <h2 class="inline-flex items-center gap-1.5 text-base font-bold text-gray-800">
+                <x-icon name="search" class="w-5 h-5 text-gray-600" />
+                <span>印付き馬の内訳と推奨理由</span>
+            </h2>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 @foreach ($marked as $e)
                     @php
@@ -209,10 +247,10 @@
                             default => 'text-gray-400',
                         };
                         $bars = [
-                            ['key' => 'pedigree', 'label' => '🧬 血統', 'color' => 'bg-purple-500'],
-                            ['key' => 'jockey',   'label' => '👤 騎手', 'color' => 'bg-sky-500'],
-                            ['key' => 'horse',    'label' => '🐎 馬',   'color' => 'bg-rose-500'],
-                            ['key' => 'roi',      'label' => '💰 ROI',  'color' => 'bg-amber-500'],
+                            ['key' => 'pedigree', 'icon' => 'beaker', 'label' => '血統', 'color' => 'bg-purple-500'],
+                            ['key' => 'jockey',   'icon' => 'user',   'label' => '騎手', 'color' => 'bg-sky-500'],
+                            ['key' => 'horse',    'icon' => 'horse',  'label' => '馬',     'color' => 'bg-rose-500'],
+                            ['key' => 'roi',      'icon' => 'cash',   'label' => 'ROI',  'color' => 'bg-amber-500'],
                         ];
                     @endphp
                     <div class="bg-white rounded-lg shadow border-l-4 {{ $borderCls }} p-4">
@@ -242,7 +280,10 @@
                                 @php $val = (float) $sub[$b['key']]; $pct = max(0, min(100, $val)); @endphp
                                 <div>
                                     <div class="flex justify-between text-[10px] text-gray-600 mb-0.5">
-                                        <span>{{ $b['label'] }}</span>
+                                        <span class="inline-flex items-center gap-1">
+                                            <x-icon :name="$b['icon']" class="w-3 h-3" />
+                                            <span>{{ $b['label'] }}</span>
+                                        </span>
                                         <span class="font-bold">{{ number_format($val, 1) }}</span>
                                     </div>
                                     <div class="h-1.5 bg-gray-100 rounded overflow-hidden">
@@ -255,7 +296,10 @@
                         {{-- 推奨理由 --}}
                         @if (count($e->reasons) > 0)
                             <div class="mt-3 pt-3 border-t">
-                                <div class="text-[11px] font-bold text-gray-600 mb-1">💡 推奨理由</div>
+                                <div class="inline-flex items-center gap-1 text-[11px] font-bold text-gray-600 mb-1">
+                                    <x-icon name="lightbulb" class="w-3.5 h-3.5 text-amber-500" />
+                                    <span>推奨理由</span>
+                                </div>
                                 <ul class="text-[11px] text-gray-700 space-y-0.5 list-disc list-inside">
                                     @foreach ($e->reasons as $reason)
                                         <li>{{ $reason }}</li>
@@ -271,7 +315,10 @@
 
     {{-- 注意書き --}}
     <div class="bg-gray-50 border border-gray-200 rounded p-3 text-xs text-gray-600 space-y-1">
-        <div class="font-bold text-gray-700">📖 ご利用上の注意</div>
+        <div class="inline-flex items-center gap-1.5 font-bold text-gray-700">
+            <x-icon name="document" class="w-4 h-4" />
+            <span>ご利用上の注意</span>
+        </div>
         <ul class="list-disc list-inside space-y-0.5">
             <li>本機能は過去走と血統からの統計的な傾向に基づく機械的な提案です。レースの最新状況(馬場・天候・パドック等)は反映されません。</li>
             <li>サンプル不足(同条件で {{ $settings['min_runs'] }} 走未満)のサブスコアは 0 として扱われます。</li>

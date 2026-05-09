@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="max-w-2xl mx-auto space-y-6">
-    <h1 class="text-2xl font-bold text-gray-800">🌐 netkeiba.com から取込</h1>
+    <h1 class="inline-flex items-center gap-2 text-2xl font-bold text-gray-800">
+        <x-icon name="globe" class="w-7 h-7 text-blue-600" />
+        <span>netkeiba.com から取込</span>
+    </h1>
 
     <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded text-sm text-blue-800">
         <p class="font-semibold mb-1">使い方</p>
@@ -40,7 +43,10 @@
     </form>
 
     <div class="bg-amber-50 border-l-4 border-amber-400 p-4 rounded text-sm text-amber-800">
-        <p class="font-semibold mb-1">📌 5年分の一括取込について</p>
+        <p class="inline-flex items-center gap-1.5 font-semibold mb-1">
+            <x-icon name="info" class="w-4 h-4" />
+            <span>5年分の一括取込について</span>
+        </p>
         <p>大量のレースを取り込む場合はコマンドラインからの実行が推奨です:</p>
         <pre class="bg-white p-2 rounded mt-2 text-xs overflow-x-auto"><code>php artisan netkeiba:race {race_id}     # 単一レース
 php artisan netkeiba:date 2024-05-04   # 指定日のレース全部

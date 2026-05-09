@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="space-y-4">
-    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">🌸 母父系ランキング</h1>
+    <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+        <x-icon name="flower" class="w-6 h-6 text-rose-500" />
+        <span>母父系ランキング</span>
+    </h1>
 
     @include('analytics._pedigree_nav', ['active' => 'broodmares'])
 

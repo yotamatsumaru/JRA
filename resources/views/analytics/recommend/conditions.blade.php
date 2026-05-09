@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="space-y-4">
-    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">🎯 条件指定で狙い目血統を抽出</h1>
+    <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+        <x-icon name="target" class="w-6 h-6 text-purple-600" />
+        <span>条件指定で狙い目血統を抽出</span>
+    </h1>
     <p class="text-xs sm:text-sm text-gray-600">
         指定した「競馬場 × トラック × 距離 × 馬場」の条件下で、複勝率と回収率の高い <strong>父・母父</strong> をランキング表示します。
         スコアは <code>血統 70% + ROI 30%</code> の簡易合成です。
@@ -72,8 +75,9 @@
                 父×母父クロス表を表示(各TOP10)
             </label>
             <button type="submit"
-                    class="ml-auto px-4 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded font-bold">
-                🔎 抽出する
+                    class="ml-auto inline-flex items-center gap-1.5 px-4 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded font-bold">
+                <x-icon name="search" class="w-4 h-4" />
+                <span>抽出する</span>
             </button>
             <a href="{{ route('analytics.recommend.conditions') }}"
                class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">条件クリア</a>
@@ -81,9 +85,10 @@
     </form>
 
     @if (! $has_filter)
-        <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-xs sm:text-sm text-amber-900">
-            ☝️ 条件を1つ以上指定してから「抽出する」を押してください(無条件抽出は重いため非対応)。<br>
-            例: 「東京 × 芝 × 1600m」「中山 × ダート × 短距離」など。
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-xs sm:text-sm text-amber-900 flex items-start gap-2">
+            <x-icon name="info" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <span>条件を1つ以上指定してから「抽出する」を押してください(無条件抽出は重いため非対応)。<br>
+            例: 「東京 × 芝 × 1600m」「中山 × ダート × 短距離」など。</span>
         </div>
     @else
         {{-- 適用条件サマリ --}}
@@ -92,16 +97,21 @@
             @php
                 $venueName = collect($venues)->firstWhere('id', $cond['venue_id'])->name ?? null;
                 $bits = array_filter([
-                    $venueName               ? "🏟 {$venueName}"          : null,
-                    $cond['track_type']      ? "🏇 {$cond['track_type']}" : null,
-                    $cond['distance']        ? "📏 {$cond['distance']}m ±200" : null,
+                    $venueName               ? ['icon' => 'flag',    'text' => $venueName]                  : null,
+                    $cond['track_type']      ? ['icon' => 'horse',   'text' => $cond['track_type']]         : null,
+                    $cond['distance']        ? ['icon' => 'scale',   'text' => $cond['distance'].'m ±200'] : null,
                     !$cond['distance']
-                        && $cond['distance_cat'] ? "📏 {$cond['distance_cat']}" : null,
-                    $cond['course_condition']? "🌧 {$cond['course_condition']}" : null,
+                        && $cond['distance_cat'] ? ['icon' => 'scale', 'text' => $cond['distance_cat']]      : null,
+                    $cond['course_condition']? ['icon' => 'warning', 'text' => $cond['course_condition']]   : null,
                 ]);
             @endphp
             @if (count($bits))
-                @foreach ($bits as $b) <span class="inline-block bg-white border border-purple-300 px-2 py-0.5 rounded mr-1">{{ $b }}</span> @endforeach
+                @foreach ($bits as $b)
+                    <span class="inline-flex items-center gap-1 bg-white border border-purple-300 px-2 py-0.5 rounded mr-1">
+                        <x-icon :name="$b['icon']" class="w-3.5 h-3.5" />
+                        <span>{{ $b['text'] }}</span>
+                    </span>
+                @endforeach
             @else
                 <span>(条件なし)</span>
             @endif
@@ -179,7 +189,10 @@
         @if ($show_cross && !empty($cross_cells))
             <div class="bg-white rounded-lg shadow overflow-hidden">
                 <div class="px-4 py-2.5 bg-rose-50 border-b border-rose-100">
-                    <h2 class="font-bold text-rose-800">🔀 父 × 母父 クロス表 (各TOP10, 複勝率%)</h2>
+                    <h2 class="inline-flex items-center gap-1.5 font-bold text-rose-800">
+                        <x-icon name="cube" class="w-5 h-5" />
+                        <span>父 × 母父 クロス表 (各TOP10, 複勝率%)</span>
+                    </h2>
                     <p class="text-xs text-rose-700 mt-0.5">
                         セルの数値は複勝率(%)、色が濃いほど好成績。括弧内は出走数。
                         最小出走数は <strong>{{ max(1, intdiv($min_runs, 4)) }}</strong> に緩和。

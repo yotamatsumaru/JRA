@@ -21,12 +21,12 @@
     </div>
 
     <div class="border-t pt-4 mt-6 text-xs text-gray-500 grid grid-cols-2 gap-2 text-left">
-        <div>🏟 全10競馬場対応</div>
-        <div>🐎 出走全頭データ管理</div>
-        <div>📊 ApexChartsで可視化</div>
-        <div>🤖 GPT-4o画像解析</div>
-        <div>🔁 netkeiba自動取込</div>
-        <div>📥 CSV一括インポート</div>
+        <div class="inline-flex items-center gap-1.5"><x-icon name="flag" class="w-4 h-4 text-emerald-600" /><span>全10競馬場対応</span></div>
+        <div class="inline-flex items-center gap-1.5"><x-icon name="horse" class="w-4 h-4 text-rose-500" /><span>出走全頭データ管理</span></div>
+        <div class="inline-flex items-center gap-1.5"><x-icon name="chart" class="w-4 h-4 text-sky-500" /><span>ApexChartsで可視化</span></div>
+        <div class="inline-flex items-center gap-1.5"><x-icon name="sparkles" class="w-4 h-4 text-purple-500" /><span>GPT-4o画像解析</span></div>
+        <div class="inline-flex items-center gap-1.5"><x-icon name="globe" class="w-4 h-4 text-blue-500" /><span>netkeiba自動取込</span></div>
+        <div class="inline-flex items-center gap-1.5"><x-icon name="download" class="w-4 h-4 text-amber-500" /><span>CSV一括インポート</span></div>
     </div>
 </div>
 @endsection

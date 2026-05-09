@@ -206,14 +206,14 @@
                 'bg-sky-50 dark:bg-sky-900 border-l-4 border-sky-500 text-sky-900 dark:text-sky-100': t.type === 'info',
             }"
         >
-            <span class="text-xl leading-none">
-                <span x-show="t.type === 'success'">✓</span>
-                <span x-show="t.type === 'error'">✕</span>
-                <span x-show="t.type === 'warning'">⚠</span>
-                <span x-show="t.type === 'info'">ℹ</span>
+            <span class="leading-none">
+                <x-icon name="check"   x-show="t.type === 'success'" class="w-5 h-5" />
+                <x-icon name="x-mark"  x-show="t.type === 'error'"   class="w-5 h-5" />
+                <x-icon name="warning" x-show="t.type === 'warning'" class="w-5 h-5" />
+                <x-icon name="info"    x-show="t.type === 'info'"    class="w-5 h-5" />
             </span>
             <div class="flex-1 text-sm" x-text="t.message"></div>
-            <button @click="remove(t.id)" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 leading-none">✕</button>
+            <button @click="remove(t.id)" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 leading-none"><x-icon name="x-mark" class="w-4 h-4" /></button>
         </div>
     </template>
 </div>
@@ -226,7 +226,7 @@
             <div class="flex justify-between h-16 items-center">
                 <div class="flex items-center space-x-6">
                     <a href="{{ route('dashboard') }}" class="flex items-center space-x-2 font-bold text-lg group">
-                        <span class="text-2xl group-hover:scale-110 transition-transform">🏇</span>
+                        <x-icon name="horse" class="w-7 h-7 group-hover:scale-110 transition-transform text-gold-400" />
                         <span>JRA Analyzer</span>
                     </a>
                     <div class="hidden md:flex items-center space-x-1">
@@ -244,7 +244,7 @@
                             <span>レース</span>
                         </a>
                         <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <span class="text-base leading-none">🐎</span>
+                            <x-icon name="horse" class="w-4 h-4" />
                             <span>馬</span>
                         </a>
                         <a href="{{ route('jockeys.index') }}" class="{{ request()->routeIs('jockeys.*') ? $active : $inactive }} flex items-center space-x-1.5">
@@ -266,18 +266,18 @@
                                 <a href="{{ route('analytics.venue') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-turf-600" /><span>競馬場別傾向</span></a>
                                 <a href="{{ route('analytics.course-trends') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-emerald-600" /><span>コース別傾向</span></a>
                                 <a href="{{ route('analytics.pace') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="bolt" class="w-4 h-4 text-amber-500" /><span>ペース分析</span></a>
-                                <a href="{{ route('analytics.pedigree.overview') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="dna" class="w-4 h-4 text-purple-500" /><span>🧬 血統分析(トップ)</span></a>
-                                <a href="{{ route('analytics.pedigree.sires') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-purple-400">└</span><span>👑 父ランキング</span></a>
-                                <a href="{{ route('analytics.pedigree.broodmares') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-purple-400">└</span><span>🌸 母父ランキング</span></a>
-                                <a href="{{ route('analytics.pedigree.heatmap') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-purple-400">└</span><span>🔥 ヒートマップ</span></a>
-                                <a href="{{ route('analytics.pedigree') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-purple-400">└</span><span>🔎 父詳細</span></a>
+                                <a href="{{ route('analytics.pedigree.overview') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="dna" class="w-4 h-4 text-purple-500" /><span>血統分析(トップ)</span></a>
+                                <a href="{{ route('analytics.pedigree.sires') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><x-icon name="crown" class="w-3.5 h-3.5 text-amber-500" /><span>父ランキング</span></a>
+                                <a href="{{ route('analytics.pedigree.broodmares') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><x-icon name="flower" class="w-3.5 h-3.5 text-pink-500" /><span>母父ランキング</span></a>
+                                <a href="{{ route('analytics.pedigree.heatmap') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><x-icon name="fire" class="w-3.5 h-3.5 text-rose-500" /><span>ヒートマップ</span></a>
+                                <a href="{{ route('analytics.pedigree') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><x-icon name="search" class="w-3.5 h-3.5 text-purple-400" /><span>父詳細</span></a>
                                 <a href="{{ route('analytics.jockey') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="user" class="w-4 h-4 text-sky-500" /><span>騎手×コース</span></a>
                                 <a href="{{ route('analytics.horse') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-rose-500" /><span>馬×コース優位性</span></a>
                                 <a href="{{ route('analytics.stats') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-gold-500" /><span>通算成績スタッツ</span></a>
                                 <a href="{{ route('analytics.roi') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-gold-500" /><span>回収率シミュ</span></a>
                                 <div class="border-t my-1"></div>
-                                <a href="{{ route('analytics.recommend.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><span class="text-base">💡</span><span>推奨(血統+騎手+馬)</span></a>
-                                <a href="{{ route('analytics.recommend.settings') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-amber-400">└</span><span>⚙️ 重み設定</span></a>
+                                <a href="{{ route('analytics.recommend.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="lightbulb" class="w-4 h-4 text-amber-500" /><span>推奨(血統+騎手+馬)</span></a>
+                                <a href="{{ route('analytics.recommend.settings') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><x-icon name="cog" class="w-3.5 h-3.5 text-amber-400" /><span>重み設定</span></a>
                             </div>
                         </div>
 
@@ -297,14 +297,14 @@
 
                         <div class="relative" x-data="{ open: false }">
                             <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('admin.db.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                                <span class="text-base">🗄️</span>
+                                <x-icon name="database" class="w-4 h-4" />
                                 <span>DB</span>
                                 <x-icon name="chevron-down" class="w-3 h-3" />
                             </button>
                             <div x-show="open" x-cloak x-transition class="absolute mt-2 w-52 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
-                                <a href="{{ route('admin.db.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><span>🏠</span><span>DBトップ</span></a>
-                                <a href="{{ route('admin.db.stats') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><span>📊</span><span>DB統計</span></a>
-                                <a href="{{ route('admin.db.schema') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><span>🗺️</span><span>ER図</span></a>
+                                <a href="{{ route('admin.db.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="home" class="w-4 h-4 text-turf-600" /><span>DBトップ</span></a>
+                                <a href="{{ route('admin.db.stats') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="chart" class="w-4 h-4 text-sky-500" /><span>DB統計</span></a>
+                                <a href="{{ route('admin.db.schema') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-emerald-500" /><span>ER図</span></a>
                             </div>
                         </div>
 
@@ -338,8 +338,8 @@
                         class="hidden md:flex items-center justify-center w-9 h-9 rounded-md hover:bg-turf-600/70 transition-colors"
                         :title="darkMode ? 'ライトモードに切替' : 'ダークモードに切替'"
                     >
-                        <span x-show="!darkMode" class="text-lg">🌙</span>
-                        <span x-show="darkMode" x-cloak class="text-lg">☀️</span>
+                        <x-icon name="moon" x-show="!darkMode" class="w-5 h-5" />
+                        <x-icon name="sun" x-show="darkMode" x-cloak class="w-5 h-5" />
                     </button>
 
                     @auth
@@ -396,7 +396,7 @@
                     <x-icon name="flag" class="w-4 h-4" /> レース
                 </a>
                 <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <span class="text-base leading-none">🐎</span> 馬
+                    <x-icon name="horse" class="w-4 h-4" /> 馬
                 </a>
                 <a href="{{ route('jockeys.index') }}" class="{{ request()->routeIs('jockeys.*') ? $mActive : $mLink }}" @click="menuOpen=false">
                     <x-icon name="user" class="w-4 h-4" /> 騎手
@@ -412,21 +412,21 @@
                         <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
-                        <a href="{{ route('analytics.venue') }}"        class="{{ $mSub }}" @click="menuOpen=false">📍 競馬場別傾向</a>
-                        <a href="{{ route('analytics.course-trends') }}" class="{{ $mSub }}" @click="menuOpen=false">🗺️ コース別傾向</a>
-                        <a href="{{ route('analytics.pace') }}"         class="{{ $mSub }}" @click="menuOpen=false">⚡ ペース分析</a>
-                        <a href="{{ route('analytics.pedigree.overview') }}" class="{{ $mSub }}" @click="menuOpen=false">🧬 血統分析(トップ)</a>
-                        <a href="{{ route('analytics.pedigree.sires') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ 👑 父ランキング</a>
-                        <a href="{{ route('analytics.pedigree.broodmares') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ 🌸 母父ランキング</a>
-                        <a href="{{ route('analytics.pedigree.heatmap') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ 🔥 ヒートマップ</a>
-                        <a href="{{ route('analytics.pedigree') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ 🔎 父詳細</a>
-                        <a href="{{ route('analytics.jockey') }}"   class="{{ $mSub }}" @click="menuOpen=false">👤 騎手×コース</a>
-                        <a href="{{ route('analytics.horse') }}"    class="{{ $mSub }}" @click="menuOpen=false">🏆 馬×コース優位性</a>
-                        <a href="{{ route('analytics.stats') }}"    class="{{ $mSub }}" @click="menuOpen=false">📊 通算成績スタッツ</a>
-                        <a href="{{ route('analytics.roi') }}"      class="{{ $mSub }}" @click="menuOpen=false">💰 回収率シミュ</a>
+                        <a href="{{ route('analytics.venue') }}"        class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="map" class="w-4 h-4" /> 競馬場別傾向</a>
+                        <a href="{{ route('analytics.course-trends') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="map" class="w-4 h-4" /> コース別傾向</a>
+                        <a href="{{ route('analytics.pace') }}"         class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="bolt" class="w-4 h-4" /> ペース分析</a>
+                        <a href="{{ route('analytics.pedigree.overview') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="dna" class="w-4 h-4" /> 血統分析(トップ)</a>
+                        <a href="{{ route('analytics.pedigree.sires') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false"><x-icon name="crown" class="w-3.5 h-3.5" /> 父ランキング</a>
+                        <a href="{{ route('analytics.pedigree.broodmares') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false"><x-icon name="flower" class="w-3.5 h-3.5" /> 母父ランキング</a>
+                        <a href="{{ route('analytics.pedigree.heatmap') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false"><x-icon name="fire" class="w-3.5 h-3.5" /> ヒートマップ</a>
+                        <a href="{{ route('analytics.pedigree') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false"><x-icon name="search" class="w-3.5 h-3.5" /> 父詳細</a>
+                        <a href="{{ route('analytics.jockey') }}"   class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="user" class="w-4 h-4" /> 騎手×コース</a>
+                        <a href="{{ route('analytics.horse') }}"    class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="trophy" class="w-4 h-4" /> 馬×コース優位性</a>
+                        <a href="{{ route('analytics.stats') }}"    class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> 通算成績スタッツ</a>
+                        <a href="{{ route('analytics.roi') }}"      class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="cash" class="w-4 h-4" /> 回収率シミュ</a>
                         <div class="border-t border-turf-700 my-1"></div>
-                        <a href="{{ route('analytics.recommend.index') }}" class="{{ $mSub }}" @click="menuOpen=false">💡 推奨(血統+騎手+馬)</a>
-                        <a href="{{ route('analytics.recommend.settings') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ ⚙️ 重み設定</a>
+                        <a href="{{ route('analytics.recommend.index') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="lightbulb" class="w-4 h-4" /> 推奨(血統+騎手+馬)</a>
+                        <a href="{{ route('analytics.recommend.settings') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false"><x-icon name="cog" class="w-3.5 h-3.5" /> 重み設定</a>
                     </div>
                 </div>
 
@@ -437,23 +437,23 @@
                         <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
-                        <a href="{{ route('import.netkeiba') }}" class="{{ $mSub }}" @click="menuOpen=false">🌐 netkeibaから取込</a>
-                        <a href="{{ route('import.csv') }}"      class="{{ $mSub }}" @click="menuOpen=false">📄 CSV取込</a>
-                        <a href="{{ route('import.image') }}"    class="{{ $mSub }}" @click="menuOpen=false">📷 画像取込(GPT-4o)</a>
-                        <a href="{{ route('import.logs') }}"     class="{{ $mSub }}" @click="menuOpen=false">📋 取込ログ</a>
+                        <a href="{{ route('import.netkeiba') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="globe" class="w-4 h-4" /> netkeibaから取込</a>
+                        <a href="{{ route('import.csv') }}"      class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="document" class="w-4 h-4" /> CSV取込</a>
+                        <a href="{{ route('import.image') }}"    class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="camera" class="w-4 h-4" /> 画像取込(GPT-4o)</a>
+                        <a href="{{ route('import.logs') }}"     class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="list" class="w-4 h-4" /> 取込ログ</a>
                     </div>
                 </div>
 
                 {{-- DBビューア(折り畳み) --}}
                 <div x-data="{ o: {{ request()->routeIs('admin.db.*') ? 'true' : 'false' }} }" class="rounded">
                     <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
-                        <span class="flex items-center gap-2">🗄️ DBビューア</span>
+                        <span class="flex items-center gap-2"><x-icon name="database" class="w-4 h-4" /> DBビューア</span>
                         <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
-                        <a href="{{ route('admin.db.index') }}"  class="{{ $mSub }}" @click="menuOpen=false">🏠 DBトップ</a>
-                        <a href="{{ route('admin.db.stats') }}"  class="{{ $mSub }}" @click="menuOpen=false">📊 DB統計</a>
-                        <a href="{{ route('admin.db.schema') }}" class="{{ $mSub }}" @click="menuOpen=false">🗺️ ER図</a>
+                        <a href="{{ route('admin.db.index') }}"  class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="home" class="w-4 h-4" /> DBトップ</a>
+                        <a href="{{ route('admin.db.stats') }}"  class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> DB統計</a>
+                        <a href="{{ route('admin.db.schema') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="map" class="w-4 h-4" /> ER図</a>
                     </div>
                 </div>
 
@@ -464,11 +464,11 @@
                         <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
-                        <a href="{{ route('betting.dashboard') }}"     class="{{ $mSub }}" @click="menuOpen=false">📊 収支ダッシュボード</a>
-                        <a href="{{ route('bets.index') }}"            class="{{ $mSub }}" @click="menuOpen=false">📋 買い目一覧</a>
-                        <a href="{{ route('bets.create') }}"           class="{{ $mSub }}" @click="menuOpen=false">➕ 馬券を登録</a>
-                        <a href="{{ route('betting.payouts.list') }}"  class="{{ $mSub }}" @click="menuOpen=false">💰 払戻金一覧</a>
-                        <a href="{{ route('betting.payouts') }}"       class="{{ $mSub }}" @click="menuOpen=false">📈 払戻傾向</a>
+                        <a href="{{ route('betting.dashboard') }}"     class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> 収支ダッシュボード</a>
+                        <a href="{{ route('bets.index') }}"            class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="list" class="w-4 h-4" /> 買い目一覧</a>
+                        <a href="{{ route('bets.create') }}"           class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="plus" class="w-4 h-4" /> 馬券を登録</a>
+                        <a href="{{ route('betting.payouts.list') }}"  class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="cash" class="w-4 h-4" /> 払戻金一覧</a>
+                        <a href="{{ route('betting.payouts') }}"       class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> 払戻傾向</a>
                     </div>
                 </div>
 
@@ -479,8 +479,8 @@
                 <div class="border-t border-turf-700 dark:border-gray-700 my-2"></div>
 
                 <button @click="darkMode = !darkMode" class="w-full flex items-center gap-2 px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
-                    <span x-show="!darkMode">🌙 ダークモード</span>
-                    <span x-show="darkMode" x-cloak>☀️ ライトモード</span>
+                    <span x-show="!darkMode" class="flex items-center gap-2"><x-icon name="moon" class="w-4 h-4" /> ダークモード</span>
+                    <span x-show="darkMode" x-cloak class="flex items-center gap-2"><x-icon name="sun" class="w-4 h-4" /> ライトモード</span>
                 </button>
                 @auth
                 <a href="{{ route('profile.edit') }}" class="flex items-center gap-2 px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700" @click="menuOpen=false">
@@ -518,7 +518,7 @@
 
     {{-- ============== フッター ============== --}}
     <footer class="bg-gray-800 dark:bg-black text-gray-400 text-center text-sm py-4">
-        <span class="text-gold-400">🏇</span> © {{ date('Y') }} JRA Analyzer - 個人利用専用
+        <span class="inline-flex items-center gap-1.5"><x-icon name="horse" class="w-4 h-4 text-gold-400" /> © {{ date('Y') }} JRA Analyzer - 個人利用専用</span>
     </footer>
 </div>
 

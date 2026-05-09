@@ -4,7 +4,10 @@
 @section('content')
 <div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-2">
-        <h1 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100">🗄️ DBビューア</h1>
+        <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100">
+            <x-icon name="database" class="w-6 h-6 text-primary-600" />
+            <span>DBビューア</span>
+        </h1>
         <div class="text-xs text-gray-500">読み取り専用 / Schema: {{ config('database.connections.'.config('database.default').'.database') }}</div>
     </div>
 
@@ -24,20 +27,20 @@
         </div>
         <a href="{{ route('admin.db.stats') }}" class="bg-gradient-to-br from-primary-500 to-primary-700 text-white rounded-lg shadow p-3 hover:opacity-90">
             <div class="text-xs opacity-90">統計ダッシュボード</div>
-            <div class="text-lg font-bold mt-1">📊 グラフで見る →</div>
+            <div class="inline-flex items-center gap-1.5 text-lg font-bold mt-1"><x-icon name="chart" class="w-5 h-5" /><span>グラフで見る</span><x-icon name="arrow-right" class="w-4 h-4" /></div>
         </a>
     </div>
 
     {{-- 行数バーチャート --}}
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">📊 テーブル別 行数</h2>
+        <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200 mb-3"><x-icon name="chart" class="w-5 h-5" /><span>テーブル別 行数</span></h2>
         <div id="chart-tables"></div>
     </div>
 
     {{-- グループ別カード一覧 --}}
     @foreach ($grouped as $group => $items)
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">📁 {{ $group }}</h2>
+        <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200 mb-3"><x-icon name="database" class="w-5 h-5" /><span>{{ $group }}</span></h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             @foreach ($items as $t)
                 <a href="{{ route('admin.db.table', $t->name) }}"

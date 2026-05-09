@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="space-y-4">
-    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">💡 推奨機能</h1>
+    <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+        <x-icon name="lightbulb" class="w-6 h-6 text-amber-500" />
+        <span>推奨機能</span>
+    </h1>
     <p class="text-xs sm:text-sm text-gray-600">
         血統・騎手・馬の過去走を組み合わせたスコアリングで「狙い目」を自動抽出します。
         重み付けはユーザー設定で自由にカスタマイズできます。
@@ -14,7 +17,7 @@
     {{-- 現在の重み設定サマリ --}}
     <div class="bg-white rounded-lg shadow p-4">
         <div class="flex items-center justify-between mb-3">
-            <h2 class="font-semibold text-gray-700">⚙️ 現在の重み設定</h2>
+            <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700"><x-icon name="cog" class="w-5 h-5 text-amber-500" /><span>現在の重み設定</span></h2>
             <a href="{{ route('analytics.recommend.settings') }}"
                class="text-xs text-amber-600 hover:underline">設定を変更 →</a>
         </div>
@@ -23,10 +26,10 @@
             $w = $settings['weights'];
             $sum = array_sum($w);
             $bars = [
-                'pedigree' => ['label' => '🧬 血統(父60%/母父40%)', 'color' => 'bg-purple-500'],
-                'jockey'   => ['label' => '👤 騎手 × 条件',         'color' => 'bg-sky-500'],
-                'horse'    => ['label' => '🐎 馬の過去走',           'color' => 'bg-rose-500'],
-                'roi'      => ['label' => '💰 回収率ボーナス',         'color' => 'bg-amber-500'],
+                'pedigree' => ['icon' => 'beaker', 'label' => '血統(父60%/母父40%)', 'color' => 'bg-purple-500', 'iconColor' => 'text-purple-600'],
+                'jockey'   => ['icon' => 'user',   'label' => '騎手 × 条件',           'color' => 'bg-sky-500',    'iconColor' => 'text-sky-600'],
+                'horse'    => ['icon' => 'horse',  'label' => '馬の過去走',             'color' => 'bg-rose-500',   'iconColor' => 'text-rose-600'],
+                'roi'      => ['icon' => 'cash',   'label' => '回収率ボーナス',         'color' => 'bg-amber-500',  'iconColor' => 'text-amber-600'],
             ];
         @endphp
 
@@ -38,7 +41,10 @@
                 @endphp
                 <div>
                     <div class="flex items-center justify-between text-xs mb-1">
-                        <span class="font-medium text-gray-700">{{ $b['label'] }}</span>
+                        <span class="inline-flex items-center gap-1.5 font-medium text-gray-700">
+                            <x-icon :name="$b['icon']" :class="'w-4 h-4 ' . $b['iconColor']" />
+                            <span>{{ $b['label'] }}</span>
+                        </span>
                         <span class="text-gray-500">重み {{ $v }} / 合成比 <span class="font-bold text-gray-700">{{ $pct }}%</span></span>
                     </div>
                     <div class="h-2 bg-gray-100 rounded overflow-hidden">
@@ -52,7 +58,10 @@
             <span>最低出走数: <span class="font-bold text-gray-800">{{ $settings['min_runs'] }}</span> 回</span>
             <span>合計重み: <span class="font-bold text-gray-800">{{ $sum }}</span></span>
             @if ($sum === 0)
-                <span class="text-rose-600 font-bold">⚠ 重み合計が0のためスコアは常に0になります</span>
+                <span class="inline-flex items-center gap-1 text-rose-600 font-bold">
+                    <x-icon name="warning" class="w-4 h-4" />
+                    <span>重み合計が0のためスコアは常に0になります</span>
+                </span>
             @endif
         </div>
     </div>
@@ -63,7 +72,10 @@
         <a href="{{ route('analytics.recommend.race') }}"
            class="block bg-white rounded-lg shadow border-l-4 border-rose-500 p-5 hover:shadow-lg hover:bg-rose-50 transition group">
             <div class="flex items-start justify-between mb-2">
-                <h3 class="font-bold text-gray-800 group-hover:text-rose-700">🐎 出馬表ベース推奨</h3>
+                <h3 class="inline-flex items-center gap-1.5 font-bold text-gray-800 group-hover:text-rose-700">
+                    <x-icon name="horse" class="w-5 h-5 text-rose-500" />
+                    <span>出馬表ベース推奨</span>
+                </h3>
                 <span class="text-[10px] bg-rose-500 text-white px-1.5 py-0.5 rounded">利用可</span>
             </div>
             <p class="text-xs text-gray-600 mb-3">
@@ -82,7 +94,10 @@
         <a href="{{ route('analytics.recommend.conditions') }}"
            class="block bg-white rounded-lg shadow border-l-4 border-purple-500 p-5 hover:shadow-lg hover:bg-purple-50 transition group">
             <div class="flex items-start justify-between mb-2">
-                <h3 class="font-bold text-gray-800 group-hover:text-purple-700">🎯 条件指定で狙い目抽出</h3>
+                <h3 class="inline-flex items-center gap-1.5 font-bold text-gray-800 group-hover:text-purple-700">
+                    <x-icon name="target" class="w-5 h-5 text-purple-500" />
+                    <span>条件指定で狙い目抽出</span>
+                </h3>
                 <span class="text-[10px] bg-purple-500 text-white px-1.5 py-0.5 rounded">利用可</span>
             </div>
             <p class="text-xs text-gray-600 mb-3">
@@ -101,7 +116,10 @@
         <a href="{{ route('analytics.recommend.scan') }}"
            class="block bg-white rounded-lg shadow border-l-4 border-emerald-500 p-5 hover:shadow-lg hover:bg-emerald-50 transition group">
             <div class="flex items-start justify-between mb-2">
-                <h3 class="font-bold text-gray-800 group-hover:text-emerald-700">🔍 全条件スキャン</h3>
+                <h3 class="inline-flex items-center gap-1.5 font-bold text-gray-800 group-hover:text-emerald-700">
+                    <x-icon name="search" class="w-5 h-5 text-emerald-500" />
+                    <span>全条件スキャン</span>
+                </h3>
                 <span class="text-[10px] bg-emerald-500 text-white px-1.5 py-0.5 rounded">利用可</span>
             </div>
             <p class="text-xs text-gray-600 mb-3">
@@ -119,7 +137,10 @@
 
     {{-- スコアリングの説明 --}}
     <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">📐 スコアリングの仕組み</h2>
+        <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 mb-3">
+            <x-icon name="scale" class="w-5 h-5 text-gray-600" />
+            <span>スコアリングの仕組み</span>
+        </h2>
         <div class="text-xs sm:text-sm text-gray-700 space-y-3">
             <p>
                 各馬・各条件に対して以下の4つのサブスコア(0〜100点)を算出し、ユーザー指定の重みで線形合成して総合スコア(0〜100点)を出します。
@@ -138,28 +159,40 @@
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                 <div class="border rounded p-3">
-                    <div class="font-bold text-purple-700 mb-1">🧬 pedigree_score</div>
+                    <div class="inline-flex items-center gap-1.5 font-bold text-purple-700 mb-1">
+                        <x-icon name="beaker" class="w-4 h-4" />
+                        <span>pedigree_score</span>
+                    </div>
                     <p class="text-xs text-gray-600">
                         父の該当条件での複勝率と母父の複勝率を <strong>父60% + 母父40%</strong> で合成。
                         複勝率50%で100点(線形マッピング ×2)。
                     </p>
                 </div>
                 <div class="border rounded p-3">
-                    <div class="font-bold text-sky-700 mb-1">👤 jockey_score</div>
+                    <div class="inline-flex items-center gap-1.5 font-bold text-sky-700 mb-1">
+                        <x-icon name="user" class="w-4 h-4" />
+                        <span>jockey_score</span>
+                    </div>
                     <p class="text-xs text-gray-600">
                         その騎手の<strong>同競馬場×同トラック</strong>での複勝率を 0〜100点に変換。
                         距離や馬場は加味しない(サンプル枯渇防止)。
                     </p>
                 </div>
                 <div class="border rounded p-3">
-                    <div class="font-bold text-rose-700 mb-1">🐎 horse_score</div>
+                    <div class="inline-flex items-center gap-1.5 font-bold text-rose-700 mb-1">
+                        <x-icon name="horse" class="w-4 h-4" />
+                        <span>horse_score</span>
+                    </div>
                     <p class="text-xs text-gray-600">
                         馬の<strong>同距離±200m or 同トラック</strong>の複勝率(0〜80点)に、直近5走の3着内回数 ×4(0〜20点)を加点。
                         現在好調補正を含む。
                     </p>
                 </div>
                 <div class="border rounded p-3">
-                    <div class="font-bold text-amber-700 mb-1">💰 roi_bonus</div>
+                    <div class="inline-flex items-center gap-1.5 font-bold text-amber-700 mb-1">
+                        <x-icon name="cash" class="w-4 h-4" />
+                        <span>roi_bonus</span>
+                    </div>
                     <p class="text-xs text-gray-600">
                         父系の<strong>複勝回収率</strong>が100%を超えた分を <code>(複回-100)×0.5</code> で 0〜100に変換。
                         妙味血統馬を後押しする補正。
@@ -168,7 +201,10 @@
             </div>
 
             <div class="mt-3">
-                <div class="font-bold text-gray-700 mb-1">🏷️ 推奨印の付与ルール(出馬表推奨用)</div>
+                <div class="inline-flex items-center gap-1.5 font-bold text-gray-700 mb-1">
+                    <x-icon name="badge-check" class="w-4 h-4" />
+                    <span>推奨印の付与ルール(出馬表推奨用)</span>
+                </div>
                 <table class="text-xs border-collapse">
                     <tr class="border-b">
                         <td class="px-2 py-1 font-bold text-2xl text-rose-700">◎</td>
@@ -196,10 +232,11 @@
     </div>
 
     {{-- 既存血統分析へのリンク --}}
-    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
-        💡 推奨機能で使うスコアリングのベースとなる集計値は、
+    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
+        <x-icon name="lightbulb" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+        <span>推奨機能で使うスコアリングのベースとなる集計値は、
         <a href="{{ route('analytics.pedigree.overview') }}" class="font-bold underline hover:text-amber-700">血統分析</a>
-        ページから直接眺められます。サンプル数に違和感があれば、まず血統分析でデータ量を確認してください。
+        ページから直接眺められます。サンプル数に違和感があれば、まず血統分析でデータ量を確認してください。</span>
     </div>
 </div>
 @endsection

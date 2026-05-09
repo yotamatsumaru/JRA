@@ -9,15 +9,15 @@
         <div class="space-y-1">
             <a href="{{ route('admin.db.index') }}"
                class="flex items-center gap-2 px-3 py-2 rounded text-sm {{ $currentRoute === 'admin.db.index' ? 'bg-primary-100 text-primary-800 font-semibold' : 'hover:bg-gray-100 dark:hover:bg-gray-700' }}">
-                <span>🏠</span><span>トップ</span>
+                <x-icon name="home" class="w-4 h-4" /><span>トップ</span>
             </a>
             <a href="{{ route('admin.db.stats') }}"
                class="flex items-center gap-2 px-3 py-2 rounded text-sm {{ $currentRoute === 'admin.db.stats' ? 'bg-primary-100 text-primary-800 font-semibold' : 'hover:bg-gray-100 dark:hover:bg-gray-700' }}">
-                <span>📊</span><span>統計</span>
+                <x-icon name="chart" class="w-4 h-4" /><span>統計</span>
             </a>
             <a href="{{ route('admin.db.schema') }}"
                class="flex items-center gap-2 px-3 py-2 rounded text-sm {{ $currentRoute === 'admin.db.schema' ? 'bg-primary-100 text-primary-800 font-semibold' : 'hover:bg-gray-100 dark:hover:bg-gray-700' }}">
-                <span>🗺️</span><span>ER図</span>
+                <x-icon name="map" class="w-4 h-4" /><span>ER図</span>
             </a>
         </div>
 

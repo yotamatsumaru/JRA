@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="space-y-4">
-    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">🔍 全条件スキャン</h1>
+    <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+        <x-icon name="search" class="w-6 h-6 text-emerald-600" />
+        <span>全条件スキャン</span>
+    </h1>
     <p class="text-xs sm:text-sm text-gray-600">
         DB 全体を <strong>競馬場 × トラック × 距離カテゴリ</strong> で総当たり集計し、
         各条件で最も成績の良い父系を抽出します。お宝血統の発見ボードとしてどうぞ。
@@ -60,8 +63,9 @@
 
         <div class="col-span-2 sm:col-span-3 lg:col-span-6 flex flex-wrap gap-3 pt-2 border-t">
             <button type="submit"
-                    class="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded font-bold">
-                🔎 スキャン実行
+                    class="inline-flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded font-bold">
+                <x-icon name="search" class="w-4 h-4" />
+                <span>スキャン実行</span>
             </button>
             <a href="{{ route('analytics.recommend.scan') }}"
                class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">条件クリア</a>
@@ -94,7 +98,10 @@
     {{-- 結果テーブル --}}
     <div class="bg-white rounded-lg shadow overflow-hidden">
         <div class="px-4 py-2.5 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
-            <h2 class="font-bold text-emerald-800">📊 スコア順 お宝発見ボード</h2>
+            <h2 class="inline-flex items-center gap-1.5 font-bold text-emerald-800">
+                <x-icon name="chart" class="w-5 h-5" />
+                <span>スコア順 お宝発見ボード</span>
+            </h2>
             <span class="text-xs text-emerald-700">クリックで条件指定(B)へ →</span>
         </div>
 
@@ -177,7 +184,10 @@
 
     {{-- 凡例 --}}
     <div class="bg-white rounded-lg shadow p-4 text-xs text-gray-600 space-y-2">
-        <h3 class="font-bold text-gray-700">📖 表の見方</h3>
+        <h3 class="inline-flex items-center gap-1.5 font-bold text-gray-700">
+            <x-icon name="document" class="w-4 h-4 text-gray-500" />
+            <span>表の見方</span>
+        </h3>
         <ul class="list-disc list-inside space-y-0.5">
             <li><strong>セル</strong> = 競馬場 × トラック × 距離カテゴリ の組み合わせ(最大10×2×5=100セル)</li>
             <li><strong>TOP 父系</strong> = そのセル内でスコアが最も高かった父名(同セル複数表示はセルあたり件数で調整可)</li>

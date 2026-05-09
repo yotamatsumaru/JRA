@@ -8,7 +8,7 @@
     <div class="flex items-center justify-between flex-wrap gap-2">
         <div>
             <h1 class="text-xl sm:text-2xl font-bold text-gray-800">
-                <span class="text-rose-600">🏇</span> 馬 × コース優位性分析
+                <span class="inline-flex items-center gap-1.5"><x-icon name="horse" class="w-6 h-6 text-rose-600" /><span>馬 × コース優位性分析</span></span>
             </h1>
             <p class="text-xs sm:text-sm text-gray-500">出走馬ごとに、競馬場・トラック・距離・馬場状態別の成績を比較できます。</p>
         </div>
@@ -41,7 +41,7 @@
     <form method="GET" class="bg-white rounded-lg shadow p-3 sm:p-4" x-data="{ openFilter: window.innerWidth >= 640 }">
         <button type="button" @click="openFilter = !openFilter"
                 class="sm:hidden w-full flex items-center justify-between text-sm font-semibold text-gray-700 mb-2">
-            <span>🔍 絞り込み・並び替え</span>
+            <span class="inline-flex items-center gap-1.5"><x-icon name="search" class="w-4 h-4" /><span>絞り込み・並び替え</span></span>
             <span x-text="openFilter ? '▲' : '▼'"></span>
         </button>
         <div x-show="openFilter" x-cloak class="grid grid-cols-2 md:grid-cols-6 gap-2 sm:gap-3 text-sm">
@@ -222,7 +222,7 @@
 
                 {{-- 競馬場別 --}}
                 <section>
-                    <h3 class="font-semibold text-gray-700 text-sm mb-2 border-l-4 border-rose-400 pl-2">📍 競馬場別</h3>
+                    <h3 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 text-sm mb-2 border-l-4 border-rose-400 pl-2"><x-icon name="map" class="w-4 h-4 text-rose-500" /><span>競馬場別</span></h3>
                     @if ($byVenue->isEmpty())
                         <p class="text-xs text-gray-400">データなし</p>
                     @else
@@ -256,7 +256,7 @@
 
                 {{-- トラック別 --}}
                 <section>
-                    <h3 class="font-semibold text-gray-700 text-sm mb-2 border-l-4 border-emerald-400 pl-2">🌱 トラック別</h3>
+                    <h3 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 text-sm mb-2 border-l-4 border-emerald-400 pl-2"><x-icon name="flag" class="w-4 h-4 text-emerald-500" /><span>トラック別</span></h3>
                     @if ($byTrack->isEmpty())
                         <p class="text-xs text-gray-400">データなし</p>
                     @else
@@ -290,7 +290,7 @@
 
                 {{-- 距離別 --}}
                 <section>
-                    <h3 class="font-semibold text-gray-700 text-sm mb-2 border-l-4 border-sky-400 pl-2">📏 距離別</h3>
+                    <h3 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 text-sm mb-2 border-l-4 border-sky-400 pl-2"><x-icon name="scale" class="w-4 h-4 text-sky-500" /><span>距離別</span></h3>
                     @if ($byDistance->isEmpty())
                         <p class="text-xs text-gray-400">データなし</p>
                     @else
@@ -324,7 +324,7 @@
 
                 {{-- 馬場状態別 --}}
                 <section>
-                    <h3 class="font-semibold text-gray-700 text-sm mb-2 border-l-4 border-amber-400 pl-2">☔ 馬場状態別</h3>
+                    <h3 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 text-sm mb-2 border-l-4 border-amber-400 pl-2"><x-icon name="sparkles" class="w-4 h-4 text-amber-500" /><span>馬場状態別</span></h3>
                     @if ($byCondition->isEmpty())
                         <p class="text-xs text-gray-400">データなし</p>
                     @else
@@ -356,7 +356,7 @@
 
                 {{-- 直近10走 --}}
                 <section>
-                    <h3 class="font-semibold text-gray-700 text-sm mb-2 border-l-4 border-purple-400 pl-2">🕒 直近10走</h3>
+                    <h3 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 text-sm mb-2 border-l-4 border-purple-400 pl-2"><x-icon name="clock" class="w-4 h-4 text-purple-500" /><span>直近10走</span></h3>
                     @if ($recentRuns->isEmpty())
                         <p class="text-xs text-gray-400">データなし</p>
                     @else

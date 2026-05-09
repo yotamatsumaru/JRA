@@ -73,7 +73,10 @@
 
         {{-- カラムスキーマ --}}
         <details class="bg-white dark:bg-gray-800 rounded-lg shadow p-3" open>
-            <summary class="cursor-pointer font-semibold text-gray-700 dark:text-gray-200">📋 カラム定義 ({{ count($tableMeta['col_detail']) }})</summary>
+            <summary class="cursor-pointer inline-flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200">
+                <x-icon name="list" class="w-4 h-4" />
+                <span>カラム定義 ({{ count($tableMeta['col_detail']) }})</span>
+            </summary>
             <div class="table-scroll mt-3">
                 <table class="w-full text-xs min-w-[600px]">
                     <thead class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
@@ -124,7 +127,10 @@
 
         {{-- データプレビュー --}}
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-3">
-            <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-2">🔍 データプレビュー</h2>
+            <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                <x-icon name="search" class="w-5 h-5" />
+                <span>データプレビュー</span>
+            </h2>
             @if ($items->isEmpty())
                 <p class="text-sm text-gray-500 p-4 text-center">該当するデータがありません。</p>
             @else

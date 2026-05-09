@@ -3,7 +3,10 @@
 
 @section('content')
 <div class="space-y-4">
-    <h1 class="text-xl sm:text-2xl font-bold text-gray-800">🐎 出馬表ベース推奨 - レース選択</h1>
+    <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
+        <x-icon name="horse" class="w-6 h-6 text-rose-500" />
+        <span>出馬表ベース推奨 - レース選択</span>
+    </h1>
     <p class="text-xs sm:text-sm text-gray-600">
         登録済みレースから1つ選んでください。出走馬を血統・騎手・過去走でスコアリングし、
         <strong>◎○▲△☆</strong> の印を自動で付与します。
@@ -15,12 +18,22 @@
     @php $w = $settings['weights']; $sumW = array_sum($w); @endphp
     <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900 flex flex-wrap items-center gap-x-4 gap-y-1">
         <span>現在の重み:</span>
-        <span class="px-2 py-0.5 bg-purple-100 text-purple-800 rounded">🧬 血統 {{ $w['pedigree'] }}</span>
-        <span class="px-2 py-0.5 bg-sky-100 text-sky-800 rounded">👤 騎手 {{ $w['jockey'] }}</span>
-        <span class="px-2 py-0.5 bg-rose-100 text-rose-800 rounded">🐎 馬 {{ $w['horse'] }}</span>
-        <span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded">💰 ROI {{ $w['roi'] }}</span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-800 rounded">
+            <x-icon name="beaker" class="w-3.5 h-3.5" /><span>血統 {{ $w['pedigree'] }}</span>
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-100 text-sky-800 rounded">
+            <x-icon name="user" class="w-3.5 h-3.5" /><span>騎手 {{ $w['jockey'] }}</span>
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-800 rounded">
+            <x-icon name="horse" class="w-3.5 h-3.5" /><span>馬 {{ $w['horse'] }}</span>
+        </span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
+            <x-icon name="cash" class="w-3.5 h-3.5" /><span>ROI {{ $w['roi'] }}</span>
+        </span>
         <span>最低出走数 ≥ {{ $settings['min_runs'] }}</span>
-        <a href="{{ route('analytics.recommend.settings') }}" class="ml-auto text-amber-700 hover:underline font-bold">⚙️ 設定変更 →</a>
+        <a href="{{ route('analytics.recommend.settings') }}" class="ml-auto inline-flex items-center gap-1 text-amber-700 hover:underline font-bold">
+            <x-icon name="cog" class="w-3.5 h-3.5" /><span>設定変更 →</span>
+        </a>
     </div>
 
     {{-- フィルタ --}}
@@ -67,8 +80,9 @@
         </div>
 
         <div class="col-span-2 sm:col-span-3 lg:col-span-6 flex gap-2 pt-2 border-t">
-            <button type="submit" class="px-4 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded font-bold">
-                🔎 検索
+            <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded font-bold">
+                <x-icon name="search" class="w-4 h-4" />
+                <span>検索</span>
             </button>
             <a href="{{ route('analytics.recommend.race') }}" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">クリア</a>
             <span class="ml-auto text-gray-500 self-center">{{ $races->total() }} 件</span>

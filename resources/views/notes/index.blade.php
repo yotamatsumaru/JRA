@@ -49,7 +49,7 @@
                             @endif
                             @if ($note->horse)
                                 <div class="text-xs text-sand-600 dark:text-sand-400 mt-0.5 flex items-center space-x-1">
-                                    <span class="text-sm leading-none">🐎</span>
+                                    <x-icon name="horse" class="w-3 h-3" />
                                     <a href="{{ route('horses.show', $note->horse) }}" class="hover:underline truncate">{{ $note->horse->name }}</a>
                                 </div>
                             @endif

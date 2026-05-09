@@ -11,7 +11,10 @@
                 <div class="text-xs text-gray-500">
                     <a href="{{ route('admin.db.index') }}" class="hover:underline">DBビューア</a>
                 </div>
-                <h1 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100 mt-1">🗺️ ER図 (スキーマ可視化)</h1>
+                <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100 mt-1">
+                    <x-icon name="map" class="w-6 h-6 text-primary-600" />
+                    <span>ER図 (スキーマ可視化)</span>
+                </h1>
             </div>
             <div class="text-xs text-gray-500">{{ count($entities) }} テーブル / {{ count($relations) }} リレーション</div>
         </div>
@@ -43,7 +46,10 @@ erDiagram
 
         {{-- リレーション一覧テーブル --}}
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">🔗 リレーション一覧</h2>
+            <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200 mb-3">
+                <x-icon name="globe" class="w-5 h-5" />
+                <span>リレーション一覧</span>
+            </h2>
             <div class="table-scroll">
                 <table class="w-full text-xs sm:text-sm min-w-[600px]">
                     <thead class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
@@ -78,7 +84,10 @@ erDiagram
         </div>
 
         <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900 leading-relaxed">
-            <p class="font-semibold mb-1">📌 ER図の凡例</p>
+            <p class="inline-flex items-center gap-1.5 font-semibold mb-1">
+                <x-icon name="info" class="w-4 h-4" />
+                <span>ER図の凡例</span>
+            </p>
             <ul class="list-disc list-inside space-y-0.5">
                 <li><strong>PK</strong>: Primary Key (主キー)</li>
                 <li><strong>UK</strong>: Unique Key (一意キー)</li>
