@@ -330,30 +330,71 @@ class NetkeibaScraper
 
     /**
      * 開催日からレースID一覧を取得
+     *
+     * 取得先:
+     *   1) https://db.netkeiba.com/race/list/{YYYYMMDD}/                        (旧DB)
+     *   2) https://race.netkeiba.com/top/race_list_sub.html?kaisai_date={YMD}   (新DB)
+     * 1) で 0件しか取れない場合に 2) にフォールバックする。
+     * 2025年などの最近の日付は 1) が 403 を返すため、実質 2) が主経路となる。
      */
     public function fetchRaceIdsByDate(string $date): array
     {
-        $this->respectInterval();
-
         $ymd = str_replace('-', '', $date);
-        $url = "/race/list/{$ymd}/";
 
-        $response = $this->http->get($url);
-        if ($response->getStatusCode() !== 200) {
-            return [];
+        // ---------- 1) db.netkeiba.com を試す ----------
+        $this->respectInterval();
+        $ids = [];
+        try {
+            $response = $this->http->get("/race/list/{$ymd}/");
+            $status = $response->getStatusCode();
+            if ($status === 200) {
+                $contentType = $response->getHeaderLine('Content-Type');
+                $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
+                $crawler = new Crawler($html);
+                $crawler->filter('a[href*="/race/"]')->each(function ($node) use (&$ids) {
+                    $href = $node->attr('href');
+                    if ($href && preg_match('|/race/(\d{12})/?|', $href, $m)) {
+                        $ids[$m[1]] = true;
+                    }
+                });
+            } else {
+                Log::info("Netkeiba race list (db) HTTP {$status} for {$ymd}, will try race.netkeiba.com");
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba race list (db) error for {$ymd}: " . $e->getMessage());
         }
 
-        $contentType = $response->getHeaderLine('Content-Type');
-        $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
+        if (!empty($ids)) {
+            return array_keys($ids);
+        }
 
-        $crawler = new Crawler($html);
-        $ids = [];
-        $crawler->filter('a[href*="/race/"]')->each(function ($node) use (&$ids) {
-            $href = $node->attr('href');
-            if ($href && preg_match('|/race/(\d{12})/?|', $href, $m)) {
-                $ids[$m[1]] = true;
+        // ---------- 2) race.netkeiba.com にフォールバック ----------
+        $this->respectInterval();
+        try {
+            $response = $this->httpRace->get("/top/race_list_sub.html?kaisai_date={$ymd}");
+            $status = $response->getStatusCode();
+            if ($status !== 200) {
+                Log::warning("Netkeiba race list (race) HTTP {$status} for {$ymd}");
+                return [];
             }
-        });
+            $contentType = $response->getHeaderLine('Content-Type');
+            $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
+
+            // race.netkeiba.com は href に "race_id=YYYYMMDDXXXX" の形で出てくる
+            if (preg_match_all('/race_id=(\d{12})/', $html, $matches)) {
+                foreach ($matches[1] as $rid) {
+                    $ids[$rid] = true;
+                }
+            }
+            // 念のため /race/{12桁}/ パターンも回収
+            if (preg_match_all('|/race/(\d{12})/?|', $html, $matches)) {
+                foreach ($matches[1] as $rid) {
+                    $ids[$rid] = true;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba race list (race) error for {$ymd}: " . $e->getMessage());
+        }
 
         return array_keys($ids);
     }
