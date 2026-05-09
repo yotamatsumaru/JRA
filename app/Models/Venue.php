@@ -38,4 +38,9 @@ class Venue extends Model
     {
         return $this->hasMany(Race::class);
     }
+
+    public function courses(): HasMany
+    {
+        return $this->hasMany(VenueCourse::class);
+    }
 }

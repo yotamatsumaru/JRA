@@ -72,6 +72,7 @@ Route::middleware('auth')->group(function () {
     // 分析
     Route::prefix('analytics')->name('analytics.')->group(function () {
         Route::get('/venue', [AnalyticsController::class, 'venue'])->name('venue');
+        Route::get('/course-trends', [AnalyticsController::class, 'courseTrends'])->name('course-trends');
         Route::get('/pace', [AnalyticsController::class, 'pace'])->name('pace');
         Route::get('/pedigree', [AnalyticsController::class, 'pedigree'])->name('pedigree');
         Route::get('/jockey', [AnalyticsController::class, 'jockey'])->name('jockey');

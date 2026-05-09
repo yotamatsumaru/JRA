@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Horse;
 use App\Models\Venue;
+use App\Models\VenueCourse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -1290,6 +1291,148 @@ class AnalyticsController extends Controller
                 'from'    => $from,
                 'to'      => $to,
             ],
+        ]);
+    }
+
+    /**
+     * コース別傾向 (競馬場 × トラック × 距離)
+     *
+     * 静的マスタ (venue_courses) と 実績集計 (race_results) を突き合わせ、
+     * - 公式コース情報 (直線長/高低差/コーナー数/スタート位置)
+     * - 想定傾向 (有利脚質/有利枠/ペース傾向/コメント)
+     * - 実績傾向 (枠別勝率/脚質別勝率/平均上がり3F/平均勝ちタイム/レース数)
+     * を1テーブルに並べて見える化する。
+     *
+     * クエリ:
+     *   ?venue_id=    競馬場
+     *   ?track_type=  芝/ダート/障害
+     *   ?distance_cat= 短距離/マイル/中距離/中長距離/長距離
+     */
+    public function courseTrends(Request $request): View
+    {
+        $venues    = Venue::orderBy('code')->get();
+        $venueId   = $request->get('venue_id');
+        $trackType = $request->get('track_type');
+        $distCat   = $request->get('distance_cat');
+
+        $distRange = match ($distCat) {
+            '短距離'   => [0, 1400],
+            'マイル'   => [1401, 1800],
+            '中距離'   => [1801, 2200],
+            '中長距離' => [2201, 2600],
+            '長距離'   => [2601, 9999],
+            default    => null,
+        };
+
+        // ========== 静的マスタ取得 ==========
+        $courseQuery = VenueCourse::with('venue')
+            ->join('venues', 'venues.id', '=', 'venue_courses.venue_id')
+            ->orderBy('venues.code')
+            ->orderBy('venue_courses.track_type')
+            ->orderBy('venue_courses.distance')
+            ->select('venue_courses.*');
+
+        if ($venueId)   $courseQuery->where('venue_courses.venue_id', $venueId);
+        if ($trackType) $courseQuery->where('venue_courses.track_type', $trackType);
+        if ($distRange) $courseQuery->whereBetween('venue_courses.distance', $distRange);
+
+        $courses = $courseQuery->get();
+
+        // ========== 実績集計 ==========
+        $aggQuery = DB::table('races')
+            ->leftJoin('race_results', 'race_results.race_id', '=', 'races.id')
+            ->whereNotNull('races.distance')
+            ->whereNotNull('races.track_type');
+
+        if ($venueId)   $aggQuery->where('races.venue_id', $venueId);
+        if ($trackType) $aggQuery->where('races.track_type', $trackType);
+        if ($distRange) $aggQuery->whereBetween('races.distance', $distRange);
+
+        $aggRows = $aggQuery
+            ->selectRaw("
+                races.venue_id,
+                races.track_type,
+                races.distance,
+                COUNT(DISTINCT races.id) as race_cnt,
+                AVG(CASE WHEN race_results.finish_position_int=1 THEN race_results.last_3f_seconds END) as avg_win_last3f,
+                AVG(CASE WHEN race_results.finish_position_int=1 THEN race_results.time_seconds END) as avg_win_time,
+                SUM(CASE WHEN race_results.finish_position_int=1 AND race_results.frame_number BETWEEN 1 AND 3 THEN 1 ELSE 0 END) as inner_wins,
+                SUM(CASE WHEN race_results.finish_position_int=1 AND race_results.frame_number BETWEEN 4 AND 5 THEN 1 ELSE 0 END) as middle_wins,
+                SUM(CASE WHEN race_results.finish_position_int=1 AND race_results.frame_number BETWEEN 6 AND 8 THEN 1 ELSE 0 END) as outer_wins,
+                SUM(CASE WHEN race_results.finish_position_int=1 AND race_results.running_style='逃げ'   THEN 1 ELSE 0 END) as nige_wins,
+                SUM(CASE WHEN race_results.finish_position_int=1 AND race_results.running_style='先行'   THEN 1 ELSE 0 END) as senko_wins,
+                SUM(CASE WHEN race_results.finish_position_int=1 AND race_results.running_style='差し'   THEN 1 ELSE 0 END) as sashi_wins,
+                SUM(CASE WHEN race_results.finish_position_int=1 AND race_results.running_style='追込'   THEN 1 ELSE 0 END) as oikomi_wins,
+                SUM(CASE WHEN races.pace='H' THEN 1 ELSE 0 END) as pace_h,
+                SUM(CASE WHEN races.pace='M' THEN 1 ELSE 0 END) as pace_m,
+                SUM(CASE WHEN races.pace='S' THEN 1 ELSE 0 END) as pace_s
+            ")
+            ->groupBy('races.venue_id', 'races.track_type', 'races.distance')
+            ->get();
+
+        $aggMap = [];
+        foreach ($aggRows as $r) {
+            $key = $r->venue_id . '|' . $r->track_type . '|' . $r->distance;
+            $aggMap[$key] = $r;
+        }
+
+        // ========== 静的 + 実績 をマージ ==========
+        $merged = $courses->map(function (VenueCourse $c) use ($aggMap) {
+            $key = $c->venue_id . '|' . $c->track_type . '|' . $c->distance;
+            $a = $aggMap[$key] ?? null;
+
+            $totalStyle = $a ? ((int)$a->nige_wins + (int)$a->senko_wins + (int)$a->sashi_wins + (int)$a->oikomi_wins) : 0;
+            $totalFrame = $a ? ((int)$a->inner_wins + (int)$a->middle_wins + (int)$a->outer_wins) : 0;
+            $totalPace  = $a ? ((int)$a->pace_h + (int)$a->pace_m + (int)$a->pace_s) : 0;
+
+            $pct = fn($n, $d) => $d > 0 ? round($n / $d * 100, 1) : null;
+
+            return (object) [
+                'venue_code'      => $c->venue->code ?? null,
+                'venue_name'      => $c->venue->name ?? '?',
+                'track_type'      => $c->track_type,
+                'distance'        => $c->distance,
+                'course_variation'=> $c->course_variation,
+                'straight_length' => $c->straight_length,
+                'elevation_diff'  => $c->elevation_diff,
+                'corner_count'    => $c->corner_count,
+                'start_position'  => $c->start_position,
+                'favored_style'   => $c->favored_style,
+                'favored_frame'   => $c->favored_frame,
+                'pace_tendency'   => $c->pace_tendency,
+                'notes'           => $c->notes,
+                'race_cnt'        => $a ? (int) $a->race_cnt : 0,
+                'avg_win_last3f'  => ($a && $a->avg_win_last3f !== null) ? round((float)$a->avg_win_last3f, 2) : null,
+                'avg_win_time'    => ($a && $a->avg_win_time   !== null) ? round((float)$a->avg_win_time, 2)   : null,
+                'inner_pct'       => $a ? $pct($a->inner_wins,  $totalFrame) : null,
+                'middle_pct'      => $a ? $pct($a->middle_wins, $totalFrame) : null,
+                'outer_pct'       => $a ? $pct($a->outer_wins,  $totalFrame) : null,
+                'nige_pct'        => $a ? $pct($a->nige_wins,   $totalStyle) : null,
+                'senko_pct'       => $a ? $pct($a->senko_wins,  $totalStyle) : null,
+                'sashi_pct'       => $a ? $pct($a->sashi_wins,  $totalStyle) : null,
+                'oikomi_pct'      => $a ? $pct($a->oikomi_wins, $totalStyle) : null,
+                'pace_h_pct'      => $a ? $pct($a->pace_h, $totalPace) : null,
+                'pace_m_pct'      => $a ? $pct($a->pace_m, $totalPace) : null,
+                'pace_s_pct'      => $a ? $pct($a->pace_s, $totalPace) : null,
+            ];
+        });
+
+        $summary = [
+            'course_count' => $merged->count(),
+            'with_data'    => $merged->where('race_cnt', '>', 0)->count(),
+            'total_races'  => $merged->sum('race_cnt'),
+        ];
+
+        $distCats = ['短距離','マイル','中距離','中長距離','長距離'];
+
+        return view('analytics.course-trends', [
+            'venues'    => $venues,
+            'venueId'   => $venueId,
+            'trackType' => $trackType,
+            'distCat'   => $distCat,
+            'distCats'  => $distCats,
+            'rows'      => $merged,
+            'summary'   => $summary,
         ]);
     }
 }

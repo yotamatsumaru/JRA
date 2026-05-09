@@ -264,6 +264,7 @@
                             </button>
                             <div x-show="open" x-cloak x-transition class="absolute mt-2 w-52 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
                                 <a href="{{ route('analytics.venue') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-turf-600" /><span>競馬場別傾向</span></a>
+                                <a href="{{ route('analytics.course-trends') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-emerald-600" /><span>コース別傾向</span></a>
                                 <a href="{{ route('analytics.pace') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="bolt" class="w-4 h-4 text-amber-500" /><span>ペース分析</span></a>
                                 <a href="{{ route('analytics.pedigree') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="dna" class="w-4 h-4 text-purple-500" /><span>血統傾向</span></a>
                                 <a href="{{ route('analytics.jockey') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="user" class="w-4 h-4 text-sky-500" /><span>騎手×コース</span></a>
@@ -391,8 +392,9 @@
                         <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
-                        <a href="{{ route('analytics.venue') }}"    class="{{ $mSub }}" @click="menuOpen=false">📍 競馬場別傾向</a>
-                        <a href="{{ route('analytics.pace') }}"     class="{{ $mSub }}" @click="menuOpen=false">⚡ ペース分析</a>
+                        <a href="{{ route('analytics.venue') }}"        class="{{ $mSub }}" @click="menuOpen=false">📍 競馬場別傾向</a>
+                        <a href="{{ route('analytics.course-trends') }}" class="{{ $mSub }}" @click="menuOpen=false">🗺️ コース別傾向</a>
+                        <a href="{{ route('analytics.pace') }}"         class="{{ $mSub }}" @click="menuOpen=false">⚡ ペース分析</a>
                         <a href="{{ route('analytics.pedigree') }}" class="{{ $mSub }}" @click="menuOpen=false">🧬 血統傾向</a>
                         <a href="{{ route('analytics.jockey') }}"   class="{{ $mSub }}" @click="menuOpen=false">👤 騎手×コース</a>
                         <a href="{{ route('analytics.horse') }}"    class="{{ $mSub }}" @click="menuOpen=false">🏆 馬×コース優位性</a>
