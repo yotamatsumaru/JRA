@@ -82,25 +82,197 @@ class AnalyticsController extends Controller
 
     /**
      * ペース分析（H/M/S別の決着脚質）
+     *
+     * フィルター:
+     *   - venue_id: 競馬場
+     *   - track_type: 芝/ダート/障害
+     *   - distance_cat: 短距離/マイル/中距離/中長距離/長距離
+     *   - distance: 個別距離
+     *   - course_condition: 良/稍重/重/不良
+     *   - from / to: 開催日範囲
      */
-    public function pace(): View
+    public function pace(Request $request): View
     {
-        $stats = DB::table('race_results')
+        $venues = Venue::orderBy('code')->get();
+
+        $f = [
+            'venue_id'         => $request->get('venue_id'),
+            'track_type'       => $request->get('track_type'),
+            'distance_cat'     => $request->get('distance_cat'),
+            'distance'         => $request->get('distance'),
+            'course_condition' => $request->get('course_condition'),
+            'from'             => $request->get('from'),
+            'to'               => $request->get('to'),
+        ];
+
+        // 距離カテゴリ → 距離レンジ
+        $distRange = match ($f['distance_cat']) {
+            '短距離'   => [0, 1400],
+            'マイル'   => [1401, 1800],
+            '中距離'   => [1801, 2200],
+            '中長距離' => [2201, 2600],
+            '長距離'   => [2601, 9999],
+            default    => null,
+        };
+
+        // 共通フィルター適用
+        $applyFilters = function ($q) use ($f, $distRange) {
+            if (!empty($f['venue_id']))         $q->where('races.venue_id', $f['venue_id']);
+            if (!empty($f['track_type']))       $q->where('races.track_type', $f['track_type']);
+            if (!empty($f['distance']))         $q->where('races.distance', $f['distance']);
+            if ($distRange)                     $q->whereBetween('races.distance', $distRange);
+            if (!empty($f['course_condition'])) $q->where('races.course_condition', $f['course_condition']);
+            if (!empty($f['from']))             $q->whereDate('races.race_date', '>=', $f['from']);
+            if (!empty($f['to']))               $q->whereDate('races.race_date', '<=', $f['to']);
+        };
+
+        // ============ ペース × 脚質ピボット ============
+        $statsQuery = DB::table('race_results')
             ->join('races', 'races.id', '=', 'race_results.race_id')
             ->whereNotNull('races.pace')
             ->whereNotNull('running_style')
-            ->where('finish_position_int', '<=', 3)
+            ->where('finish_position_int', '<=', 3);
+        $applyFilters($statsQuery);
+        $stats = $statsQuery
             ->selectRaw('races.pace, running_style, count(*) as cnt')
             ->groupBy('races.pace', 'running_style')
             ->get();
 
-        // ピボット
         $pivot = [];
         foreach ($stats as $s) {
-            $pivot[$s->pace][$s->running_style] = $s->cnt;
+            $pivot[$s->pace][$s->running_style] = (int) $s->cnt;
         }
 
-        return view('analytics.pace', compact('pivot'));
+        // ============ コース(競馬場×芝ダ)別 ペース分布 ============
+        $byCourseQuery = DB::table('races')
+            ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
+            ->whereNotNull('races.pace');
+        $applyFilters($byCourseQuery);
+        $byCourse = $byCourseQuery
+            ->selectRaw("
+                CONCAT(COALESCE(venues.name,'?'), ' ', COALESCE(races.track_type,'?')) as label,
+                races.pace,
+                count(*) as cnt
+            ")
+            ->groupBy('venues.name', 'races.track_type', 'races.pace')
+            ->orderBy('venues.name')
+            ->orderBy('races.track_type')
+            ->get();
+        $byCoursePivot = [];
+        foreach ($byCourse as $r) {
+            $byCoursePivot[$r->label][$r->pace] = (int) $r->cnt;
+        }
+
+        // ============ 距離カテゴリ別 ペース分布 ============
+        $distCats = [
+            '短距離'   => [0, 1400],
+            'マイル'   => [1401, 1800],
+            '中距離'   => [1801, 2200],
+            '中長距離' => [2201, 2600],
+            '長距離'   => [2601, 9999],
+        ];
+        $byDistance = [];
+        foreach ($distCats as $cat => [$lo, $hi]) {
+            $q = DB::table('races')->whereNotNull('races.pace')
+                ->whereBetween('races.distance', [$lo, $hi]);
+            $applyFilters($q);
+            $rows = $q->selectRaw('races.pace, count(*) as cnt')
+                ->groupBy('races.pace')
+                ->pluck('cnt', 'pace')
+                ->all();
+            $byDistance[$cat] = [
+                'H' => (int) ($rows['H'] ?? 0),
+                'M' => (int) ($rows['M'] ?? 0),
+                'S' => (int) ($rows['S'] ?? 0),
+            ];
+        }
+
+        // ============ 馬場状態別 ペース分布 ============
+        $conditions = ['良','稍重','重','不良'];
+        $byCondition = [];
+        foreach ($conditions as $c) {
+            $q = DB::table('races')
+                ->whereNotNull('races.pace')
+                ->where('races.course_condition', $c);
+            $applyFilters($q);
+            $rows = $q->selectRaw('races.pace, count(*) as cnt')
+                ->groupBy('races.pace')
+                ->pluck('cnt', 'pace')
+                ->all();
+            $byCondition[$c] = [
+                'H' => (int) ($rows['H'] ?? 0),
+                'M' => (int) ($rows['M'] ?? 0),
+                'S' => (int) ($rows['S'] ?? 0),
+            ];
+        }
+
+        // ============ ペース別 平均勝ちタイム / 上がり3F ============
+        $paceTimeQuery = DB::table('race_results')
+            ->join('races', 'races.id', '=', 'race_results.race_id')
+            ->whereNotNull('races.pace')
+            ->where('finish_position_int', 1);
+        $applyFilters($paceTimeQuery);
+        $paceTime = $paceTimeQuery
+            ->selectRaw('races.pace,
+                AVG(race_results.time_seconds) as avg_time,
+                AVG(race_results.last_3f_seconds) as avg_last3f,
+                count(*) as cnt')
+            ->groupBy('races.pace')
+            ->get()
+            ->keyBy('pace');
+
+        // ============ 距離カテゴリ × ペース × 脚質ピボット (3次元) ============
+        $cubeQuery = DB::table('race_results')
+            ->join('races', 'races.id', '=', 'race_results.race_id')
+            ->whereNotNull('races.pace')
+            ->whereNotNull('running_style')
+            ->where('finish_position_int', '<=', 3);
+        $applyFilters($cubeQuery);
+        $cubeRows = $cubeQuery
+            ->selectRaw("
+                CASE
+                    WHEN races.distance <= 1400 THEN '短距離'
+                    WHEN races.distance <= 1800 THEN 'マイル'
+                    WHEN races.distance <= 2200 THEN '中距離'
+                    WHEN races.distance <= 2600 THEN '中長距離'
+                    ELSE '長距離'
+                END as dist_cat,
+                races.pace,
+                running_style,
+                count(*) as cnt
+            ")
+            ->groupByRaw("
+                CASE
+                    WHEN races.distance <= 1400 THEN '短距離'
+                    WHEN races.distance <= 1800 THEN 'マイル'
+                    WHEN races.distance <= 2200 THEN '中距離'
+                    WHEN races.distance <= 2600 THEN '中長距離'
+                    ELSE '長距離'
+                END,
+                races.pace,
+                running_style
+            ")
+            ->get();
+        $cube = [];
+        foreach ($cubeRows as $r) {
+            $cube[$r->dist_cat][$r->pace][$r->running_style] = (int) $r->cnt;
+        }
+
+        // 利用可能な距離一覧
+        $availableDistances = DB::table('races')
+            ->whereNotNull('distance')
+            ->select('distance')
+            ->groupBy('distance')
+            ->orderBy('distance')
+            ->pluck('distance');
+
+        $totalRaces = DB::table('races')->whereNotNull('pace')->count();
+
+        return view('analytics.pace', compact(
+            'pivot', 'venues', 'f', 'byCoursePivot', 'byDistance',
+            'byCondition', 'paceTime', 'cube', 'availableDistances',
+            'totalRaces', 'distCats'
+        ));
     }
 
     /**
