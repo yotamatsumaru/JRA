@@ -46,22 +46,25 @@ class NotificationService
             ->get();
         if ($watchlist->isEmpty()) return 0;
 
-        $horseIds   = $watchlist->where('target_type', 'horse')->pluck('target_id')->all();
-        $jockeyIds  = $watchlist->where('target_type', 'jockey')->pluck('target_id')->all();
-        $trainerIds = $watchlist->where('target_type', 'trainer')->pluck('target_id')->all();
+        $horseIds   = $watchlist->where('target_type', 'horse')->pluck('target_id')->map(fn($v) => (int) $v)->all();
+        $jockeyIds  = $watchlist->where('target_type', 'jockey')->pluck('target_id')->map(fn($v) => (int) $v)->all();
+        $trainerIds = $watchlist->where('target_type', 'trainer')->pluck('target_id')->map(fn($v) => (int) $v)->all();
+
+        // 全部空ならスキャン対象なし (防御)
+        if (empty($horseIds) && empty($jockeyIds) && empty($trainerIds)) return 0;
 
         $today = Carbon::today();
         $end   = $today->copy()->addDays($days);
 
         $rrQuery = RaceResult::query()
-            ->with(['horse', 'jockey', 'trainer', 'race.venue'])
+            ->with(['horse:id,name', 'jockey:id,name', 'trainer:id,name', 'race:id,name,venue_id,race_date,race_number', 'race.venue:id,name'])
             ->whereHas('race', fn($q) => $q->whereBetween('race_date', [$today->toDateString(), $end->toDateString()]))
             ->where(function ($q) use ($horseIds, $jockeyIds, $trainerIds) {
-                $q->where(function ($qq) use ($horseIds) {
-                    if (!empty($horseIds)) $qq->whereIn('horse_id', $horseIds);
-                });
-                if (!empty($jockeyIds))  $q->orWhereIn('jockey_id',  $jockeyIds);
-                if (!empty($trainerIds)) $q->orWhereIn('trainer_id', $trainerIds);
+                $applied = false;
+                if (!empty($horseIds))   { $q->orWhereIn('horse_id',   $horseIds);   $applied = true; }
+                if (!empty($jockeyIds))  { $q->orWhereIn('jockey_id',  $jockeyIds);  $applied = true; }
+                if (!empty($trainerIds)) { $q->orWhereIn('trainer_id', $trainerIds); $applied = true; }
+                if (!$applied) { $q->whereRaw('0 = 1'); }
             })
             ->get();
 
