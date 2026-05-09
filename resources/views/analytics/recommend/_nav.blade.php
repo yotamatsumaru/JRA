@@ -4,11 +4,11 @@
 --}}
 @php
     $tabs = [
-        ['key' => 'index',      'route' => 'analytics.recommend.index',    'label' => '🏠 推奨トップ',     'enabled' => true],
-        ['key' => 'race',       'route' => 'analytics.recommend.index',    'label' => '🐎 出馬表推奨(A)',   'enabled' => false, 'badge' => 'Phase 3'],
-        ['key' => 'conditions', 'route' => 'analytics.recommend.index',    'label' => '🎯 条件指定(B)',     'enabled' => false, 'badge' => 'Phase 2'],
-        ['key' => 'scan',       'route' => 'analytics.recommend.index',    'label' => '🔍 全条件スキャン(C)','enabled' => false, 'badge' => 'Phase 2'],
-        ['key' => 'settings',   'route' => 'analytics.recommend.settings', 'label' => '⚙️ 重み設定',         'enabled' => true],
+        ['key' => 'index',      'route' => 'analytics.recommend.index',      'label' => '🏠 推奨トップ',       'enabled' => true],
+        ['key' => 'race',       'route' => 'analytics.recommend.index',      'label' => '🐎 出馬表推奨(A)',     'enabled' => false, 'badge' => 'Phase 3'],
+        ['key' => 'conditions', 'route' => 'analytics.recommend.conditions', 'label' => '🎯 条件指定(B)',       'enabled' => true],
+        ['key' => 'scan',       'route' => 'analytics.recommend.scan',       'label' => '🔍 全条件スキャン(C)', 'enabled' => true],
+        ['key' => 'settings',   'route' => 'analytics.recommend.settings',   'label' => '⚙️ 重み設定',           'enabled' => true],
     ];
     $active = $active ?? 'index';
 @endphp

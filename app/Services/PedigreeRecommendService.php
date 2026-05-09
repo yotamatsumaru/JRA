@@ -443,4 +443,305 @@ class PedigreeRecommendService
         // ここでは何もしない(設定変更後5分以内は古い値が混じる可能性があるが許容)。
         // 将来 Redis を使う場合は Cache::tags(['rec'])->flush(); に切り替え可能。
     }
+
+    // ====================================================================
+    // Phase 2 (B): 条件指定での血統(父/母父)ランキング
+    // ====================================================================
+
+    /**
+     * 指定条件下で、父(または母父)別に集計してスコアと回収率を返す。
+     *
+     * @param string $kind     'father' | 'mother_father'
+     * @param array  $cond     ['venue_id'=>?, 'track_type'=>?, 'distance'=>?, 'distance_cat'=>?, 'course_condition'=>?]
+     * @param int    $minRuns  最小出走数
+     * @param int    $limit    上位何件
+     * @return array{rows: array<int,object>, total_groups: int}
+     */
+    public function rankPedigreeByCondition(string $kind, array $cond, int $minRuns, int $limit = 30): array
+    {
+        $col = $kind === 'mother_father' ? 'horses.mother_father' : 'horses.father';
+
+        $key = 'rec:rank:' . md5($col . '|' . json_encode($cond) . '|' . $minRuns . '|' . $limit);
+        return Cache::remember($key, self::CACHE_TTL, function () use ($col, $cond, $minRuns, $limit) {
+            $q = $this->buildPedigreeAggBaseQuery($col, $cond);
+
+            $rows = $q->selectRaw("$col as name, " .
+                "count(*) as runs, " .
+                "SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins, " .
+                "SUM(CASE WHEN finish_position_int<=2 THEN 1 ELSE 0 END) as places, " .
+                "SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows, " .
+                "SUM(CASE WHEN finish_position_int=1 AND win_odds IS NOT NULL THEN win_odds*100 ELSE 0 END) as win_payout, " .
+                "SUM(CASE WHEN win_odds IS NOT NULL THEN 100 ELSE 0 END) as win_stake, " .
+                "SUM(CASE WHEN finish_position_int<=3 " .
+                "         THEN ((COALESCE(place_odds_min,0)+COALESCE(place_odds_max,0))/2)*100 " .
+                "         ELSE 0 END) as place_payout"
+            )
+            ->groupBy($col)
+            ->havingRaw('runs >= ?', [$minRuns])
+            ->orderByDesc('shows')  // 3着内回数で並べる(同率なら出走数多い方が信頼度高い)
+            ->limit($limit)
+            ->get();
+
+            $decorated = [];
+            foreach ($rows as $r) {
+                $runs   = (int) $r->runs;
+                $wins   = (int) $r->wins;
+                $places = (int) $r->places;
+                $shows  = (int) $r->shows;
+                $winPayout   = (float) ($r->win_payout   ?? 0);
+                $winStake    = (float) ($r->win_stake    ?? 0);
+                $placePayout = (float) ($r->place_payout ?? 0);
+                $placeStake  = $runs * 100;
+
+                $showRate  = $runs > 0 ? round($shows  / $runs * 100, 1) : 0;
+                $winRate   = $runs > 0 ? round($wins   / $runs * 100, 1) : 0;
+                $placeRate = $runs > 0 ? round($places / $runs * 100, 1) : 0;
+                $roiWin    = $winStake   > 0 ? round($winPayout   / $winStake   * 100, 1) : 0;
+                $roiPlace  = $placeStake > 0 ? round($placePayout / $placeStake * 100, 1) : 0;
+
+                // サブスコア
+                $pedigreeScore = min(100, $showRate * 2);
+                $roiScore      = max(0, min(100, ($roiPlace - 100) * 0.5));
+                // 簡易合成スコア (条件抽出専用: 血統 70% + ROI 30%)
+                $score = round($pedigreeScore * 0.7 + $roiScore * 0.3, 1);
+
+                $decorated[] = (object) [
+                    'name'           => $r->name,
+                    'runs'           => $runs,
+                    'wins'           => $wins,
+                    'places'         => $places,
+                    'shows'          => $shows,
+                    'win_rate'       => $winRate,
+                    'place_rate'     => $placeRate,
+                    'show_rate'      => $showRate,
+                    'roi_win'        => $roiWin,
+                    'roi_place'      => $roiPlace,
+                    'pedigree_score' => round($pedigreeScore, 1),
+                    'roi_score'      => round($roiScore, 1),
+                    'score'          => $score,
+                ];
+            }
+
+            return ['rows' => $decorated, 'total_groups' => count($decorated)];
+        });
+    }
+
+    /**
+     * 父×母父クロス表(指定条件)。父TOP×母父TOPの組み合わせで複勝率を見る。
+     *
+     * @param array       $cond
+     * @param int         $minRuns      クロス1セルの最小出走数
+     * @param string[]    $fatherList   行に並べる父リスト
+     * @param string[]    $mFatherList  列に並べる母父リスト
+     * @return array<string, array<string, object>>  $cells[$father][$mFather] = {runs, shows, show_rate, roi_place}
+     */
+    public function pedigreeCrossByCondition(array $cond, int $minRuns, array $fatherList, array $mFatherList): array
+    {
+        if (!$fatherList || !$mFatherList) return [];
+
+        $key = 'rec:cross:' . md5(json_encode($cond) . '|' . $minRuns . '|' . md5(implode(',', $fatherList)) . '|' . md5(implode(',', $mFatherList)));
+        return Cache::remember($key, self::CACHE_TTL, function () use ($cond, $minRuns, $fatherList, $mFatherList) {
+            $q = DB::table('race_results')
+                ->join('horses', 'horses.id', '=', 'race_results.horse_id')
+                ->join('races',  'races.id',  '=', 'race_results.race_id')
+                ->whereNotNull('horses.father')
+                ->whereNotNull('horses.mother_father')
+                ->whereNotNull('race_results.finish_position_int')
+                ->whereIn('horses.father', $fatherList)
+                ->whereIn('horses.mother_father', $mFatherList);
+
+            $this->applyCondToQuery($q, $cond);
+
+            $rows = $q->selectRaw("horses.father as father, horses.mother_father as m_father, " .
+                "count(*) as runs, " .
+                "SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows, " .
+                "SUM(CASE WHEN finish_position_int<=3 " .
+                "         THEN ((COALESCE(place_odds_min,0)+COALESCE(place_odds_max,0))/2)*100 " .
+                "         ELSE 0 END) as place_payout"
+            )
+            ->groupBy('horses.father', 'horses.mother_father')
+            ->havingRaw('runs >= ?', [$minRuns])
+            ->get();
+
+            $cells = [];
+            foreach ($rows as $r) {
+                $runs   = (int) $r->runs;
+                $shows  = (int) $r->shows;
+                $showRate  = $runs > 0 ? round($shows / $runs * 100, 1) : 0;
+                $roiPlace  = $runs > 0 ? round((float)$r->place_payout / ($runs * 100) * 100, 1) : 0;
+
+                $cells[$r->father][$r->m_father] = (object) [
+                    'runs'      => $runs,
+                    'shows'     => $shows,
+                    'show_rate' => $showRate,
+                    'roi_place' => $roiPlace,
+                ];
+            }
+            return $cells;
+        });
+    }
+
+    // ====================================================================
+    // Phase 2 (C): 全条件スキャン
+    // ====================================================================
+
+    /**
+     * 全 (venue × track_type × distance_cat) を総当たりで、各条件下の TOP 父を抽出。
+     * 「お宝」=「複勝率N%以上 かつ 複勝回収率100%超 かつ 出走N回以上」を優先表示。
+     *
+     * 重い処理のため、ベース集計をキャッシュした上で各条件の上位だけ返す。
+     *
+     * @param int  $minRuns        最小出走数(各セル)
+     * @param int  $topPerCell     セルあたりの上位件数
+     * @param bool $onlyPositive   true なら roi_place >= 100 のみ
+     * @return array<int, object>  各セル {venue_name, venue_id, track_type, distance_cat, top_father, runs, show_rate, roi_place, score}
+     */
+    public function scanAllConditions(int $minRuns = 20, int $topPerCell = 1, bool $onlyPositive = false): array
+    {
+        $key = 'rec:scan:' . md5("$minRuns|$topPerCell|" . ($onlyPositive ? '1' : '0'));
+        return Cache::remember($key, self::CACHE_TTL, function () use ($minRuns, $topPerCell, $onlyPositive) {
+
+            // venues 一覧
+            $venues = DB::table('venues')->orderBy('id')->get(['id', 'name']);
+
+            $distCats = ['短距離', 'マイル', '中距離', '中長距離', '長距離'];
+            $tracks   = ['芝', 'ダート'];
+
+            // 一度のクエリで venue×track×dist_cat×father の集計を取り、PHP 側でセル毎に整列
+            $rows = DB::table('race_results')
+                ->join('horses', 'horses.id', '=', 'race_results.horse_id')
+                ->join('races',  'races.id',  '=', 'race_results.race_id')
+                ->whereNotNull('horses.father')
+                ->whereNotNull('race_results.finish_position_int')
+                ->whereIn('races.track_type', $tracks)
+                ->selectRaw("races.venue_id as venue_id, " .
+                    "races.track_type as track_type, " .
+                    "CASE " .
+                    "  WHEN races.distance < 1400 THEN '短距離' " .
+                    "  WHEN races.distance < 1800 THEN 'マイル' " .
+                    "  WHEN races.distance < 2200 THEN '中距離' " .
+                    "  WHEN races.distance < 2600 THEN '中長距離' " .
+                    "  ELSE '長距離' " .
+                    "END as dist_cat, " .
+                    "horses.father as father, " .
+                    "count(*) as runs, " .
+                    "SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins, " .
+                    "SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows, " .
+                    "SUM(CASE WHEN finish_position_int<=3 " .
+                    "         THEN ((COALESCE(place_odds_min,0)+COALESCE(place_odds_max,0))/2)*100 " .
+                    "         ELSE 0 END) as place_payout"
+                )
+                ->groupBy('races.venue_id', 'races.track_type', 'dist_cat', 'horses.father')
+                ->havingRaw('runs >= ?', [$minRuns])
+                ->get();
+
+            // セル毎にバケット化
+            $venueMap = [];
+            foreach ($venues as $v) $venueMap[$v->id] = $v->name;
+
+            $bucket = []; // [venue_id][track][dist_cat] = []
+            foreach ($rows as $r) {
+                $runs      = (int) $r->runs;
+                $wins      = (int) $r->wins;
+                $shows     = (int) $r->shows;
+                $showRate  = $runs > 0 ? round($shows / $runs * 100, 1) : 0;
+                $winRate   = $runs > 0 ? round($wins  / $runs * 100, 1) : 0;
+                $roiPlace  = $runs > 0 ? round((float)$r->place_payout / ($runs * 100) * 100, 1) : 0;
+
+                if ($onlyPositive && $roiPlace < 100) continue;
+
+                $pedigreeScore = min(100, $showRate * 2);
+                $roiScore      = max(0, min(100, ($roiPlace - 100) * 0.5));
+                $score         = round($pedigreeScore * 0.7 + $roiScore * 0.3, 1);
+
+                $bucket[$r->venue_id][$r->track_type][$r->dist_cat][] = (object) [
+                    'father'     => $r->father,
+                    'runs'       => $runs,
+                    'wins'       => $wins,
+                    'shows'      => $shows,
+                    'win_rate'   => $winRate,
+                    'show_rate'  => $showRate,
+                    'roi_place'  => $roiPlace,
+                    'score'      => $score,
+                ];
+            }
+
+            // 各セル内でスコア順に並べ、topPerCell 件まで採用
+            $out = [];
+            foreach ($venues as $v) {
+                foreach ($tracks as $t) {
+                    foreach ($distCats as $d) {
+                        $list = $bucket[$v->id][$t][$d] ?? [];
+                        if (!$list) continue;
+                        usort($list, fn($a, $b) => $b->score <=> $a->score);
+                        foreach (array_slice($list, 0, $topPerCell) as $top) {
+                            $out[] = (object) [
+                                'venue_id'     => (int) $v->id,
+                                'venue_name'   => $v->name,
+                                'track_type'   => $t,
+                                'distance_cat' => $d,
+                                'top_father'   => $top->father,
+                                'runs'         => $top->runs,
+                                'wins'         => $top->wins,
+                                'shows'        => $top->shows,
+                                'win_rate'     => $top->win_rate,
+                                'show_rate'    => $top->show_rate,
+                                'roi_place'    => $top->roi_place,
+                                'score'        => $top->score,
+                            ];
+                        }
+                    }
+                }
+            }
+            // 全体をスコア降順
+            usort($out, fn($a, $b) => $b->score <=> $a->score);
+            return $out;
+        });
+    }
+
+    /**
+     * 競馬場リスト(条件指定フォームのプルダウン用)
+     */
+    public function venuesForSelect(): array
+    {
+        return Cache::remember('rec:venues', self::CACHE_TTL, function () {
+            return DB::table('venues')->orderBy('id')->get(['id', 'name'])->toArray();
+        });
+    }
+
+    // ====================================================================
+    // 内部ヘルパ(Phase 2 用)
+    // ====================================================================
+
+    /**
+     * 父or母父集計の共通ベースクエリ(条件適用済み)
+     */
+    private function buildPedigreeAggBaseQuery(string $col, array $cond)
+    {
+        $q = DB::table('race_results')
+            ->join('horses', 'horses.id', '=', 'race_results.horse_id')
+            ->join('races',  'races.id',  '=', 'race_results.race_id')
+            ->whereNotNull($col)
+            ->whereNotNull('race_results.finish_position_int');
+
+        $this->applyCondToQuery($q, $cond);
+        return $q;
+    }
+
+    /**
+     * 条件を任意のクエリに適用する(共通)
+     */
+    private function applyCondToQuery($q, array $cond): void
+    {
+        if (!empty($cond['venue_id']))         $q->where('races.venue_id', $cond['venue_id']);
+        if (!empty($cond['track_type']))       $q->where('races.track_type', $cond['track_type']);
+        if (!empty($cond['course_condition'])) $q->where('races.course_condition', $cond['course_condition']);
+        if (!empty($cond['distance'])) {
+            $d = (int) $cond['distance'];
+            $q->whereBetween('races.distance', [$d - 200, $d + 200]);
+        } elseif (!empty($cond['distance_cat'])) {
+            [$min, $max] = $this->distanceCatRange($cond['distance_cat']);
+            $q->whereBetween('races.distance', [$min, $max]);
+        }
+    }
 }

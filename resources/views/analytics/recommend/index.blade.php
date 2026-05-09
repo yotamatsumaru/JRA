@@ -59,7 +59,7 @@
 
     {{-- 3つの入口の案内カード --}}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {{-- A: 出馬表ベース --}}
+        {{-- A: 出馬表ベース (Phase 3 — 未実装) --}}
         <div class="bg-white rounded-lg shadow border-l-4 border-rose-400 p-5 opacity-60">
             <div class="flex items-start justify-between mb-2">
                 <h3 class="font-bold text-gray-800">🐎 出馬表ベース推奨</h3>
@@ -77,11 +77,12 @@
             <div class="mt-3 text-xs text-gray-400">準備中(Phase 3で実装予定)</div>
         </div>
 
-        {{-- B: 条件指定 --}}
-        <div class="bg-white rounded-lg shadow border-l-4 border-purple-400 p-5 opacity-60">
+        {{-- B: 条件指定 (有効) --}}
+        <a href="{{ route('analytics.recommend.conditions') }}"
+           class="block bg-white rounded-lg shadow border-l-4 border-purple-500 p-5 hover:shadow-lg hover:bg-purple-50 transition group">
             <div class="flex items-start justify-between mb-2">
-                <h3 class="font-bold text-gray-800">🎯 条件指定で狙い目抽出</h3>
-                <span class="text-[10px] bg-gray-300 text-white px-1.5 py-0.5 rounded">Phase 2</span>
+                <h3 class="font-bold text-gray-800 group-hover:text-purple-700">🎯 条件指定で狙い目抽出</h3>
+                <span class="text-[10px] bg-purple-500 text-white px-1.5 py-0.5 rounded">利用可</span>
             </div>
             <p class="text-xs text-gray-600 mb-3">
                 競馬場・トラック・距離・馬場状態を指定して、その条件で
@@ -92,26 +93,27 @@
                 <li>父×母父のクロス表(ニックス発見)</li>
                 <li>該当条件のお宝血統を即特定</li>
             </ul>
-            <div class="mt-3 text-xs text-gray-400">準備中(Phase 2で実装予定)</div>
-        </div>
+            <div class="mt-3 text-xs text-purple-600 font-bold">条件指定を開く →</div>
+        </a>
 
-        {{-- C: 全条件スキャン --}}
-        <div class="bg-white rounded-lg shadow border-l-4 border-emerald-400 p-5 opacity-60">
+        {{-- C: 全条件スキャン (有効) --}}
+        <a href="{{ route('analytics.recommend.scan') }}"
+           class="block bg-white rounded-lg shadow border-l-4 border-emerald-500 p-5 hover:shadow-lg hover:bg-emerald-50 transition group">
             <div class="flex items-start justify-between mb-2">
-                <h3 class="font-bold text-gray-800">🔍 全条件スキャン</h3>
-                <span class="text-[10px] bg-gray-300 text-white px-1.5 py-0.5 rounded">Phase 2</span>
+                <h3 class="font-bold text-gray-800 group-hover:text-emerald-700">🔍 全条件スキャン</h3>
+                <span class="text-[10px] bg-emerald-500 text-white px-1.5 py-0.5 rounded">利用可</span>
             </div>
             <p class="text-xs text-gray-600 mb-3">
                 DB全体から<strong>「複勝回収率100%超え かつ 出走N回以上」</strong>の
                 美味しい組み合わせを総当たりで発掘します。
             </p>
             <ul class="text-xs text-gray-500 space-y-0.5 list-disc list-inside">
-                <li>10場 × 2トラック × 5距離 × 4馬場 を総当たり</li>
-                <li>父TOP30をスキャン → お宝発見ボード</li>
+                <li>10場 × 2トラック × 5距離 を総当たり</li>
+                <li>各セルのTOP父をお宝発見ボードで一覧</li>
                 <li>1行クリックで条件指定(B)へジャンプ</li>
             </ul>
-            <div class="mt-3 text-xs text-gray-400">準備中(Phase 2で実装予定)</div>
-        </div>
+            <div class="mt-3 text-xs text-emerald-600 font-bold">スキャンを開く →</div>
+        </a>
     </div>
 
     {{-- スコアリングの説明 --}}
