@@ -275,6 +275,9 @@
                                 <a href="{{ route('analytics.horse') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-rose-500" /><span>馬×コース優位性</span></a>
                                 <a href="{{ route('analytics.stats') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-gold-500" /><span>通算成績スタッツ</span></a>
                                 <a href="{{ route('analytics.roi') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-gold-500" /><span>回収率シミュ</span></a>
+                                <div class="border-t my-1"></div>
+                                <a href="{{ route('analytics.recommend.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><span class="text-base">💡</span><span>推奨(血統+騎手+馬)</span></a>
+                                <a href="{{ route('analytics.recommend.settings') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><span class="text-amber-400">└</span><span>⚙️ 重み設定</span></a>
                             </div>
                         </div>
 
@@ -421,6 +424,9 @@
                         <a href="{{ route('analytics.horse') }}"    class="{{ $mSub }}" @click="menuOpen=false">🏆 馬×コース優位性</a>
                         <a href="{{ route('analytics.stats') }}"    class="{{ $mSub }}" @click="menuOpen=false">📊 通算成績スタッツ</a>
                         <a href="{{ route('analytics.roi') }}"      class="{{ $mSub }}" @click="menuOpen=false">💰 回収率シミュ</a>
+                        <div class="border-t border-turf-700 my-1"></div>
+                        <a href="{{ route('analytics.recommend.index') }}" class="{{ $mSub }}" @click="menuOpen=false">💡 推奨(血統+騎手+馬)</a>
+                        <a href="{{ route('analytics.recommend.settings') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false">└ ⚙️ 重み設定</a>
                     </div>
                 </div>
 

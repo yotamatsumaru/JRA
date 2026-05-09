@@ -11,6 +11,7 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\HorseController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\JockeyController;
+use App\Http\Controllers\PedigreeRecommendController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RaceController;
 use App\Http\Controllers\RaceNoteController;
@@ -80,6 +81,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/pedigree/sires',       [AnalyticsController::class, 'pedigreeSires'])->name('pedigree.sires');
         Route::get('/pedigree/broodmares',  [AnalyticsController::class, 'pedigreeBroodmares'])->name('pedigree.broodmares');
         Route::get('/pedigree/heatmap',     [AnalyticsController::class, 'pedigreeHeatmap'])->name('pedigree.heatmap');
+
+        // 推奨(Phase 1: トップ + 重み設定)
+        Route::prefix('recommend')->name('recommend.')->group(function () {
+            Route::get('/',                [PedigreeRecommendController::class, 'index'])->name('index');
+            Route::get('/settings',        [PedigreeRecommendController::class, 'settings'])->name('settings');
+            Route::post('/settings',       [PedigreeRecommendController::class, 'settingsStore'])->name('settings.store');
+            Route::post('/settings/reset', [PedigreeRecommendController::class, 'settingsReset'])->name('settings.reset');
+        });
         Route::get('/jockey', [AnalyticsController::class, 'jockey'])->name('jockey');
         Route::get('/horse', [AnalyticsController::class, 'horse'])->name('horse');
         Route::get('/stats', [AnalyticsController::class, 'stats'])->name('stats');
