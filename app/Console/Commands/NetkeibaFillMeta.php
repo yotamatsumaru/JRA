@@ -67,7 +67,51 @@ class NetkeibaFillMeta extends Command
 
         $total = (clone $query)->count();
         if ($total === 0) {
-            $this->info('対象レースが見つかりませんでした。');
+            $this->warn('対象レースが見つかりませんでした。');
+
+            // 診断情報: ユーザーにどの条件で 0 件になったか分かりやすく示す
+            if (!$raceFilter) {
+                $diag = Race::query()->whereNotNull('netkeiba_id');
+                if ($from) $diag->whereDate('race_date', '>=', $from);
+                if ($to)   $diag->whereDate('race_date', '<=', $to);
+
+                $rangeTotal     = (clone $diag)->count();
+                $alreadyFilled  = (clone $diag)
+                    ->whereNotNull('course_condition')
+                    ->whereNotNull('weather')
+                    ->count();
+                $needFill       = (clone $diag)
+                    ->where(function ($q) {
+                        $q->whereNull('course_condition')
+                          ->orWhereNull('weather');
+                    })->count();
+
+                $this->newLine();
+                $this->line('---------- 診断 ----------');
+                $rangeLabel = ($from || $to)
+                    ? '期間 '.($from ?: '----').' 〜 '.($to ?: '----')
+                    : '全期間';
+                $this->line("  {$rangeLabel} のレース総数 : {$rangeTotal} 件");
+                $this->line("  うち馬場/天候が既に入力済 : {$alreadyFilled} 件");
+                $this->line("  うち未入力 (補完対象)     : {$needFill} 件");
+                $this->newLine();
+
+                if ($rangeTotal === 0) {
+                    $this->warn('→ この期間のレースがそもそも DB に存在しません。');
+                    $this->line('  まず取り込みコマンドを実行してください。例:');
+                    $this->line('    php artisan netkeiba:import-year 2025');
+                    $this->line('  もしくは特定日付:');
+                    $this->line('    php artisan netkeiba:import-date 2025-01-05');
+                } elseif ($needFill === 0 && $alreadyFilled > 0) {
+                    $this->warn('→ 該当レースは全て馬場/天候が入力済のためスキップされました。');
+                    $this->line('  既存値を上書きして再取得したい場合は --all を付けてください:');
+                    $cmd = 'php artisan netkeiba:fill-meta --all';
+                    if ($from) $cmd .= " --from={$from}";
+                    if ($to)   $cmd .= " --to={$to}";
+                    $this->line("    {$cmd}");
+                }
+            }
+
             return self::SUCCESS;
         }
 
