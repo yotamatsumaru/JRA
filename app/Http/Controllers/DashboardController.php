@@ -165,6 +165,66 @@ class DashboardController extends Controller
             ->limit(10)
             ->get(), collect());
 
+        // ========= 競馬場別傾向 (Venue Trend) =========
+        // A) 競馬場 × トラック種別 勝率ヒートマップ
+        $venueTrackWinRate = $this->safe(function () {
+            return DB::table('race_results')
+                ->join('races', 'races.id', '=', 'race_results.race_id')
+                ->join('venues', 'venues.id', '=', 'races.venue_id')
+                ->whereNotNull('race_results.finish_position_int')
+                ->whereIn('races.track_type', ['芝', 'ダート'])
+                ->selectRaw("
+                    venues.name as venue,
+                    races.track_type as track_type,
+                    count(*) as runs,
+                    SUM(CASE WHEN race_results.finish_position_int = 1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN race_results.finish_position_int <= 3 THEN 1 ELSE 0 END) as shows
+                ")
+                ->groupBy('venues.id', 'venues.name', 'races.track_type')
+                ->orderBy('venues.id')
+                ->get();
+        }, collect());
+
+        // B) 全場合算 枠番別 勝率/複勝率（芝・ダート別）
+        $frameWinRates = $this->safe(function () {
+            return DB::table('race_results')
+                ->join('races', 'races.id', '=', 'race_results.race_id')
+                ->whereNotNull('race_results.frame_number')
+                ->whereNotNull('race_results.finish_position_int')
+                ->whereIn('races.track_type', ['芝', 'ダート'])
+                ->whereBetween('race_results.frame_number', [1, 8])
+                ->selectRaw("
+                    races.track_type as track_type,
+                    race_results.frame_number as frame_number,
+                    count(*) as runs,
+                    SUM(CASE WHEN race_results.finish_position_int = 1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN race_results.finish_position_int <= 3 THEN 1 ELSE 0 END) as shows
+                ")
+                ->groupBy('races.track_type', 'race_results.frame_number')
+                ->orderBy('races.track_type')
+                ->orderBy('race_results.frame_number')
+                ->get();
+        }, collect());
+
+        // C) 競馬場別 脚質傾向 (running_style 別 勝率)
+        $venueStyleStats = $this->safe(function () {
+            return DB::table('race_results')
+                ->join('races', 'races.id', '=', 'race_results.race_id')
+                ->join('venues', 'venues.id', '=', 'races.venue_id')
+                ->whereNotNull('race_results.running_style')
+                ->whereNotNull('race_results.finish_position_int')
+                ->where('race_results.running_style', '!=', '')
+                ->selectRaw("
+                    venues.name as venue,
+                    race_results.running_style as style,
+                    count(*) as runs,
+                    SUM(CASE WHEN race_results.finish_position_int = 1 THEN 1 ELSE 0 END) as wins
+                ")
+                ->groupBy('venues.id', 'venues.name', 'race_results.running_style')
+                ->orderBy('venues.id')
+                ->get();
+        }, collect());
+
         // 直近開催日のレース一覧
         $latestDateRaces = collect();
         $latestDate = $stats['last_race_date'] ?? null;
@@ -183,6 +243,7 @@ class DashboardController extends Controller
             'byTrack', 'byDistanceCat', 'byCondition', 'byWeather', 'byWeekday',
             'avgFieldByMonth',
             'topJockeys', 'topTrainers', 'topSires', 'topPrizeHorses',
+            'venueTrackWinRate', 'frameWinRates', 'venueStyleStats',
             'latestDate', 'latestDateRaces'
         ));
     }

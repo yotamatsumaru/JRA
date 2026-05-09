@@ -130,6 +130,61 @@
         </div>
     </div>
 
+    {{-- 競馬場別傾向 セクション --}}
+    @if (($venueTrackWinRate ?? collect())->isNotEmpty() || ($frameWinRates ?? collect())->isNotEmpty() || ($venueStyleStats ?? collect())->isNotEmpty())
+    <div class="space-y-6">
+        <div class="flex items-center space-x-2 pt-2">
+            <x-icon name="map" class="w-6 h-6 text-rose-500" />
+            <h2 class="text-lg sm:text-xl font-bold text-gray-800 dark:text-gray-100">競馬場別傾向</h2>
+            <span class="text-xs text-gray-500 dark:text-gray-400">全レース集計</span>
+        </div>
+
+        {{-- A) 競馬場 × 芝/ダート 勝率ヒートマップ --}}
+        @if (($venueTrackWinRate ?? collect())->isNotEmpty())
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
+            <div class="flex items-center space-x-2 mb-3 flex-wrap gap-2">
+                <x-icon name="chart-bar" class="w-5 h-5 text-rose-500" />
+                <h3 class="font-semibold text-gray-700 dark:text-gray-200">競馬場 × トラック種別 勝率（%）</h3>
+                <span class="text-xs text-gray-500 dark:text-gray-400">セルの色が濃いほど勝率高</span>
+            </div>
+            <div id="chart-venue-track-winrate"></div>
+        </div>
+        @endif
+
+        {{-- B) 全場合算 枠番別 勝率/複勝率 --}}
+        @if (($frameWinRates ?? collect())->isNotEmpty())
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
+                <div class="flex items-center space-x-2 mb-3 flex-wrap gap-2">
+                    <x-icon name="chart-bar" class="w-5 h-5 text-turf-600" />
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-200">枠番別 勝率（芝・ダート）</h3>
+                </div>
+                <div id="chart-frame-winrate"></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
+                <div class="flex items-center space-x-2 mb-3 flex-wrap gap-2">
+                    <x-icon name="chart-bar" class="w-5 h-5 text-sand-600" />
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-200">枠番別 複勝率（芝・ダート）</h3>
+                </div>
+                <div id="chart-frame-showrate"></div>
+            </div>
+        </div>
+        @endif
+
+        {{-- C) 競馬場別 脚質傾向 --}}
+        @if (($venueStyleStats ?? collect())->isNotEmpty())
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
+            <div class="flex items-center space-x-2 mb-3 flex-wrap gap-2">
+                <x-icon name="chart-bar" class="w-5 h-5 text-indigo-500" />
+                <h3 class="font-semibold text-gray-700 dark:text-gray-200">競馬場別 脚質勝率（%）</h3>
+                <span class="text-xs text-gray-500 dark:text-gray-400">脚質ごとの勝率を競馬場別に比較</span>
+            </div>
+            <div id="chart-venue-style"></div>
+        </div>
+        @endif
+    </div>
+    @endif
+
     {{-- グラフ 4段目: 平均出走頭数 推移 --}}
     @if ($avgFieldByMonth->isNotEmpty())
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
@@ -496,6 +551,153 @@ document.addEventListener('DOMContentLoaded', () => {
         grid: grid(),
         tooltip: { theme: themeMode() },
         dataLabels: { enabled: false },
+    }).render();
+    @endif
+
+    // === 競馬場 × トラック種別 勝率ヒートマップ ===
+    @if (($venueTrackWinRate ?? collect())->isNotEmpty())
+    @php
+        $vtVenues = $venueTrackWinRate->pluck('venue')->unique()->values();
+        $vtMap = [];
+        foreach ($venueTrackWinRate as $row) {
+            $vtMap[$row->track_type][$row->venue] = [
+                'rate' => ($row->runs > 0) ? round(($row->wins / $row->runs) * 100, 2) : 0,
+                'runs' => (int)$row->runs,
+                'wins' => (int)$row->wins,
+            ];
+        }
+        $vtSeries = [];
+        foreach (['芝', 'ダート'] as $tt) {
+            if (!isset($vtMap[$tt])) continue;
+            $data = [];
+            foreach ($vtVenues as $v) {
+                $cell = $vtMap[$tt][$v] ?? null;
+                $data[] = [
+                    'x' => $v,
+                    'y' => $cell ? $cell['rate'] : 0,
+                ];
+            }
+            $vtSeries[] = ['name' => $tt, 'data' => $data];
+        }
+    @endphp
+    new ApexCharts(document.querySelector('#chart-venue-track-winrate'), {
+        chart: { type: 'heatmap', height: 220, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+        series: @json($vtSeries),
+        colors: ['#dc2626'],
+        plotOptions: {
+            heatmap: {
+                shadeIntensity: 0.6,
+                radius: 4,
+                useFillColorAsStroke: false,
+                colorScale: {
+                    ranges: [
+                        { from: 0,  to: 5,   color: '#fee2e2', name: '〜5%' },
+                        { from: 5,  to: 8,   color: '#fca5a5', name: '5-8%' },
+                        { from: 8,  to: 11,  color: '#f87171', name: '8-11%' },
+                        { from: 11, to: 14,  color: '#ef4444', name: '11-14%' },
+                        { from: 14, to: 100, color: '#b91c1c', name: '14%〜' },
+                    ]
+                }
+            }
+        },
+        dataLabels: { enabled: true, style: { fontSize: '11px', colors: ['#111'] }, formatter: (v) => v.toFixed(1) + '%' },
+        xaxis: { labels: { style: { fontSize: '11px' } } },
+        grid: grid(),
+        tooltip: { theme: themeMode() },
+    }).render();
+    @endif
+
+    // === 枠番別 勝率/複勝率（芝・ダート）===
+    @if (($frameWinRates ?? collect())->isNotEmpty())
+    @php
+        $frameCats = [1,2,3,4,5,6,7,8];
+        $byTT = [];
+        foreach ($frameWinRates as $row) {
+            $byTT[$row->track_type][(int)$row->frame_number] = [
+                'runs'  => (int)$row->runs,
+                'wins'  => (int)$row->wins,
+                'shows' => (int)$row->shows,
+            ];
+        }
+        $frameWinSeries  = [];
+        $frameShowSeries = [];
+        foreach (['芝', 'ダート'] as $tt) {
+            if (!isset($byTT[$tt])) continue;
+            $win = []; $show = [];
+            foreach ($frameCats as $f) {
+                $c = $byTT[$tt][$f] ?? null;
+                $win[]  = $c && $c['runs'] > 0 ? round($c['wins']  / $c['runs'] * 100, 2) : 0;
+                $show[] = $c && $c['runs'] > 0 ? round($c['shows'] / $c['runs'] * 100, 2) : 0;
+            }
+            $frameWinSeries[]  = ['name' => $tt, 'data' => $win];
+            $frameShowSeries[] = ['name' => $tt, 'data' => $show];
+        }
+    @endphp
+    new ApexCharts(document.querySelector('#chart-frame-winrate'), {
+        chart: { type: 'bar', height: 280, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+        series: @json($frameWinSeries),
+        xaxis: { categories: @json($frameCats), title: { text: '枠番' } },
+        yaxis: { labels: { formatter: (v) => v.toFixed(1) + '%' } },
+        colors: ['#16a34a', '#dc8330'],
+        plotOptions: { bar: { borderRadius: 4, columnWidth: '70%' } },
+        dataLabels: { enabled: false },
+        legend: { position: 'top' },
+        grid: grid(),
+        tooltip: { theme: themeMode(), y: { formatter: (v) => v.toFixed(2) + '%' } },
+    }).render();
+
+    new ApexCharts(document.querySelector('#chart-frame-showrate'), {
+        chart: { type: 'bar', height: 280, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+        series: @json($frameShowSeries),
+        xaxis: { categories: @json($frameCats), title: { text: '枠番' } },
+        yaxis: { labels: { formatter: (v) => v.toFixed(1) + '%' } },
+        colors: ['#0ea5e9', '#a855f7'],
+        plotOptions: { bar: { borderRadius: 4, columnWidth: '70%' } },
+        dataLabels: { enabled: false },
+        legend: { position: 'top' },
+        grid: grid(),
+        tooltip: { theme: themeMode(), y: { formatter: (v) => v.toFixed(2) + '%' } },
+    }).render();
+    @endif
+
+    // === 競馬場別 脚質勝率 ===
+    @if (($venueStyleStats ?? collect())->isNotEmpty())
+    @php
+        $vsVenues = $venueStyleStats->pluck('venue')->unique()->values();
+        $expectedStyles = ['逃げ', '先行', '差し', '追込'];
+        $foundStyles = $venueStyleStats->pluck('style')->unique()->values()->all();
+        $vsStyles = array_values(array_unique(array_merge(
+            array_values(array_filter($expectedStyles, fn($s) => in_array($s, $foundStyles, true))),
+            array_values(array_diff($foundStyles, $expectedStyles))
+        )));
+        $vsLookup = [];
+        foreach ($venueStyleStats as $r) {
+            $vsLookup[$r->style][$r->venue] = [
+                'runs' => (int)$r->runs,
+                'wins' => (int)$r->wins,
+            ];
+        }
+        $vsSeries = [];
+        foreach ($vsStyles as $style) {
+            $data = [];
+            foreach ($vsVenues as $v) {
+                $c = $vsLookup[$style][$v] ?? null;
+                $data[] = $c && $c['runs'] > 0 ? round($c['wins'] / $c['runs'] * 100, 2) : 0;
+            }
+            $vsSeries[] = ['name' => $style, 'data' => $data];
+        }
+    @endphp
+    new ApexCharts(document.querySelector('#chart-venue-style'), {
+        chart: { type: 'bar', height: 360, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+        series: @json($vsSeries),
+        xaxis: { categories: @json($vsVenues), labels: { style: { fontSize: '11px' } } },
+        yaxis: { labels: { formatter: (v) => v.toFixed(1) + '%' }, title: { text: '勝率（%）' } },
+        colors: ['#ef4444', '#f59e0b', '#0ea5e9', '#8b5cf6', '#10b981'],
+        plotOptions: { bar: { borderRadius: 4, columnWidth: '75%' } },
+        dataLabels: { enabled: false },
+        legend: { position: 'top' },
+        grid: grid(),
+        tooltip: { theme: themeMode(), y: { formatter: (v) => v.toFixed(2) + '%' } },
     }).render();
     @endif
 
