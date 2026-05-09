@@ -331,6 +331,11 @@
                             </div>
                         </div>
 
+                        <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $active : $inactive }} flex items-center space-x-1.5">
+                            <x-icon name="cog" class="w-4 h-4" />
+                            <span>運用</span>
+                        </a>
+
                         <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $active : $inactive }} flex items-center space-x-1.5">
                             <x-icon name="pencil" class="w-4 h-4" />
                             <span>メモ</span>
@@ -483,6 +488,10 @@
                         <a href="{{ route('betting.payouts') }}"       class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> 払戻傾向</a>
                     </div>
                 </div>
+
+                <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="cog" class="w-4 h-4" /> 運用ダッシュボード
+                </a>
 
                 <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $mActive : $mLink }}" @click="menuOpen=false">
                     <x-icon name="pencil" class="w-4 h-4" /> メモ

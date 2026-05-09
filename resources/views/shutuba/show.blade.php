@@ -11,7 +11,7 @@
 @endphp
 
 @section('content')
-<div class="space-y-4" x-data="shutubaBoard()">
+<div class="space-y-4" x-data="shutubaBoard()" x-init="init()">
 
     {{-- ステータスフラッシュ --}}
     @if (session('status'))
@@ -56,6 +56,51 @@
             </button>
         </x-slot>
     </x-page-header>
+
+    {{-- Phase 3-I: リアルタイムオッズ --}}
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4"
+         x-show="liveOdds.enabled" x-cloak>
+        <div class="flex items-center justify-between mb-2">
+            <div class="text-xs font-semibold text-gray-700 dark:text-gray-200 flex items-center space-x-2">
+                <x-icon name="bolt" class="w-4 h-4 text-amber-500" />
+                <span>リアルタイムオッズ</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-mono"
+                      :class="liveOdds.fresh ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'"
+                      x-text="liveOdds.lastAt ? ('最終取得: ' + liveOdds.lastAt) : '未取得'"></span>
+                <span class="text-[10px] text-gray-400" x-text="'スナップショット ' + liveOdds.count + ' 件'"></span>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="inline-flex items-center gap-1 text-[11px] text-gray-600 dark:text-gray-300 cursor-pointer">
+                    <input type="checkbox" x-model="liveOdds.autoRefresh" @change="toggleAutoRefresh()"
+                        class="rounded border-gray-300 text-turf-600 focus:ring-turf-500">
+                    <span>自動更新 (30秒)</span>
+                </label>
+                <button type="button" @click="captureOdds()"
+                    :disabled="liveOdds.loading"
+                    class="inline-flex items-center gap-1 px-3 py-1.5 rounded text-[11px] font-medium bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white">
+                    <x-icon name="refresh" class="w-3.5 h-3.5" />
+                    <span x-text="liveOdds.loading ? '取得中...' : '今すぐ取得'"></span>
+                </button>
+            </div>
+        </div>
+        <div x-show="liveOdds.message" class="text-[11px] text-gray-500 mb-2" x-text="liveOdds.message"></div>
+        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-1.5"
+             x-show="liveOdds.horses && liveOdds.horses.length > 0">
+            <template x-for="h in liveOdds.horses" :key="h.horse_number">
+                <div class="rounded ring-1 ring-gray-200 dark:ring-gray-700 px-2 py-1.5 text-center"
+                     :class="h.popularity === 1 ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-white dark:bg-gray-900'">
+                    <div class="text-[10px] text-gray-400">#<span x-text="h.horse_number"></span></div>
+                    <div class="font-mono text-sm font-bold"
+                         :class="h.win_odds && h.win_odds < 5 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-200'"
+                         x-text="h.win_odds !== null ? h.win_odds.toFixed(1) : '-'"></div>
+                    <div class="text-[10px] text-gray-500" x-text="h.popularity ? (h.popularity + '人気') : ''"></div>
+                    <div class="text-[9px] mt-0.5" x-show="h.delta !== null && h.delta !== 0"
+                         :class="h.delta < 0 ? 'text-emerald-600' : 'text-red-500'"
+                         x-text="(h.delta > 0 ? '▲' : '▼') + Math.abs(h.delta).toFixed(1)"></div>
+                </div>
+            </template>
+        </div>
+    </div>
 
     {{-- ペース予想 + レース全体メモ (Phase 1-A, 1-T) --}}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -547,6 +592,20 @@
             past: {},
             copyLabel: '印をコピー',
 
+            // Phase 3-I: リアルタイムオッズ
+            liveOdds: {
+                enabled: true,
+                autoRefresh: false,
+                loading: false,
+                fresh: false,
+                lastAt: null,
+                count: 0,
+                horses: [],
+                message: '',
+                _timer: null,
+                _prev: {},
+            },
+
             togglePast(rrid) {
                 this.past[rrid] = !this.past[rrid];
             },
@@ -756,8 +815,89 @@
                 });
             },
 
+            // Phase 3-I: リアルタイムオッズ取得
+            async refreshOdds() {
+                try {
+                    const res = await fetch(@json(route('operations.odds', $race)), {
+                        headers: { 'Accept': 'application/json' },
+                    });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const data = await res.json();
+                    this.liveOdds.count = data.snapshot_count || 0;
+                    this.liveOdds.lastAt = data.latest_at
+                        ? new Date(data.latest_at).toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
+                        : null;
+                    const fresh = data.latest_at && (Date.now() - new Date(data.latest_at).getTime()) < 15 * 60 * 1000;
+                    this.liveOdds.fresh = !!fresh;
+
+                    const payload = data.latest_payload || [];
+                    const prev = this.liveOdds._prev || {};
+                    const horses = payload.map(h => {
+                        const num = h.horse_number;
+                        const odds = h.win_odds !== null && h.win_odds !== undefined ? Number(h.win_odds) : null;
+                        let delta = null;
+                        if (odds !== null && prev[num] !== undefined && prev[num] !== null) {
+                            delta = +(odds - prev[num]).toFixed(1);
+                        }
+                        return {
+                            horse_number: num,
+                            win_odds:     odds,
+                            popularity:   h.popularity ? Number(h.popularity) : null,
+                            delta:        delta,
+                        };
+                    }).sort((a, b) => a.horse_number - b.horse_number);
+
+                    // 次回比較用に保存
+                    const next = {};
+                    horses.forEach(h => { if (h.win_odds !== null) next[h.horse_number] = h.win_odds; });
+                    this.liveOdds._prev = next;
+                    this.liveOdds.horses = horses;
+                    this.liveOdds.message = horses.length === 0 ? 'まだスナップショットがありません。「今すぐ取得」を押してください。' : '';
+                } catch (e) {
+                    this.liveOdds.message = 'オッズ取得エラー: ' + e.message;
+                }
+            },
+
+            async captureOdds() {
+                this.liveOdds.loading = true;
+                try {
+                    const res = await fetch(@json(route('operations.odds.capture', $race)), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                            'Accept': 'application/json',
+                        },
+                    });
+                    const data = await res.json();
+                    if (!data.ok) {
+                        this.liveOdds.message = data.message || '取得に失敗しました';
+                    } else {
+                        this.liveOdds.message = '取得完了';
+                        await this.refreshOdds();
+                    }
+                } catch (e) {
+                    this.liveOdds.message = '取得エラー: ' + e.message;
+                } finally {
+                    this.liveOdds.loading = false;
+                }
+            },
+
+            toggleAutoRefresh() {
+                if (this.liveOdds._timer) {
+                    clearInterval(this.liveOdds._timer);
+                    this.liveOdds._timer = null;
+                }
+                if (this.liveOdds.autoRefresh) {
+                    this.liveOdds._timer = setInterval(() => this.refreshOdds(), 30000);
+                    this.refreshOdds();
+                }
+            },
+
             init() {
                 this.initKeyboard();
+                // 初回ロードでオッズを表示(スナップショットがあれば)
+                this.refreshOdds();
             },
         };
     }

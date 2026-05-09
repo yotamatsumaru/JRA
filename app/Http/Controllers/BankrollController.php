@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Bankroll;
 use App\Models\Bet;
 use Illuminate\Http\RedirectResponse;
@@ -103,7 +104,7 @@ class BankrollController extends Controller
             'notes'          => ['nullable', 'string', 'max:2000'],
         ]);
 
-        Bankroll::updateOrCreate(
+        $br = Bankroll::updateOrCreate(
             ['user_id' => Auth::id(), 'ym' => $data['ym']],
             [
                 'target_stake'  => (int) ($data['target_stake'] ?? 0),
@@ -111,6 +112,14 @@ class BankrollController extends Controller
                 'notes'         => $data['notes'] ?? null,
             ]
         );
+
+        try {
+            AuditLog::record('bankroll.update', $br, [
+                'ym' => $data['ym'],
+                'target_stake' => (int) ($data['target_stake'] ?? 0),
+                'target_profit' => (int) ($data['target_profit'] ?? 0),
+            ]);
+        } catch (\Throwable $e) { /* ignore */ }
 
         return redirect()->route('bankroll.index')->with('status', "{$data['ym']} の予算を更新しました");
     }
@@ -125,6 +134,10 @@ class BankrollController extends Controller
         ]);
 
         Bankroll::where('user_id', Auth::id())->where('ym', $data['ym'])->delete();
+
+        try {
+            AuditLog::record('bankroll.delete', null, ['ym' => $data['ym']]);
+        } catch (\Throwable $e) { /* ignore */ }
 
         return redirect()->route('bankroll.index')->with('status', "{$data['ym']} の予算を削除しました");
     }

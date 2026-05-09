@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Bet;
 use App\Models\BetLeg;
 use App\Models\Race;
@@ -316,6 +317,11 @@ class ShutubaController extends Controller
             ['race_id' => $race->id, 'mark' => $mark]
         );
 
+        $this->audit('shutuba.mark', $rm, [
+            'race_id' => $race->id, 'race_result_id' => $rr->id,
+            'horse_number' => $rr->horse_number, 'mark' => $mark,
+        ]);
+
         return response()->json([
             'ok'   => true,
             'mark' => $rm->mark,
@@ -422,6 +428,11 @@ class ShutubaController extends Controller
             }
         });
 
+        $this->audit('shutuba.auto_mark', null, [
+            'race_id' => $race->id, 'applied' => $applied, 'skipped' => $skipped,
+            'overwrite' => $overwrite,
+        ]);
+
         return response()->json([
             'ok'      => true,
             'applied' => $applied,
@@ -456,6 +467,11 @@ class ShutubaController extends Controller
             ['user_id' => $userId, 'race_result_id' => $rr->id],
             ['race_id' => $race->id, 'memo' => $validated['memo'] ?? null]
         );
+
+        $this->audit('shutuba.memo', $rm, [
+            'race_id' => $race->id, 'race_result_id' => $rr->id,
+            'len' => mb_strlen((string)($validated['memo'] ?? '')),
+        ]);
 
         return response()->json(['ok' => true, 'id' => $rm->id]);
     }
@@ -535,6 +551,11 @@ class ShutubaController extends Controller
         if (!empty($skipped)) {
             $msg .= ' (スキップ: ' . implode(',', $skipped) . ' = 必要な印が不足)';
         }
+        $this->audit('shutuba.generate_bets', null, [
+            'race_id' => $race->id, 'generated' => $generated,
+            'skipped' => $skipped, 'kinds' => $validated['kinds'],
+            'unit_stake' => $unitStake,
+        ]);
         return redirect()
             ->route('shutuba.show', $race)
             ->with('status', $msg);
@@ -560,6 +581,12 @@ class ShutubaController extends Controller
                 'watch_next' => (bool) ($validated['watch_next'] ?? false),
             ]
         );
+
+        $this->audit('shutuba.race_note', $note, [
+            'race_id' => $race->id,
+            'len' => mb_strlen((string)($validated['note'] ?? '')),
+            'watch_next' => (bool) ($validated['watch_next'] ?? false),
+        ]);
 
         return response()->json(['ok' => true, 'id' => $note->id]);
     }
@@ -591,15 +618,31 @@ class ShutubaController extends Controller
 
         if ($existing) {
             $existing->delete();
+            $this->audit('favorite.toggle', null, [
+                'type' => $validated['type'], 'target_id' => $validated['target_id'], 'state' => 'off',
+            ]);
             return response()->json(['ok' => true, 'state' => 'off']);
         }
 
-        \App\Models\Favorite::create([
+        $fav = \App\Models\Favorite::create([
             'user_id'          => $userId,
             'favoritable_type' => $cls,
             'favoritable_id'   => $validated['target_id'],
         ]);
+        $this->audit('favorite.toggle', $fav, [
+            'type' => $validated['type'], 'target_id' => $validated['target_id'], 'state' => 'on',
+        ]);
         return response()->json(['ok' => true, 'state' => 'on']);
+    }
+
+    /** AuditLog 記録 (audit_logs テーブル未マイグレーションでも落ちないようガード) */
+    protected function audit(string $action, ?\Illuminate\Database\Eloquent\Model $subject = null, array $meta = []): void
+    {
+        try {
+            AuditLog::record($action, $subject, $meta);
+        } catch (\Throwable $e) {
+            // ignore
+        }
     }
 
     // ======================================================================

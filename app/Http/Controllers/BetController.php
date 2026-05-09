@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Bet;
 use App\Models\BetLeg;
 use App\Models\Race;
@@ -115,6 +116,12 @@ class BetController extends Controller
         // レース結果がすでに登録済なら自動精算
         $this->autoSettleIfPossible($bet);
 
+        $this->audit('bet.create', $bet, [
+            'kind' => $bet->kind, 'method' => $bet->method,
+            'points' => $bet->points, 'total_stake' => $bet->total_stake,
+            'race_id' => $bet->race_id,
+        ]);
+
         return redirect()->route('bets.show', $bet)
             ->with('status', '馬券を登録しました（' . $bet->points . '点 ' . number_format($bet->total_stake) . '円）');
     }
@@ -144,13 +151,21 @@ class BetController extends Controller
 
         $this->autoSettleIfPossible($bet);
 
+        $this->audit('bet.update', $bet, [
+            'kind' => $bet->kind, 'method' => $bet->method,
+            'points' => $bet->points, 'total_stake' => $bet->total_stake,
+        ]);
+
         return redirect()->route('bets.show', $bet)->with('status', '馬券を更新しました');
     }
 
     public function destroy(Bet $bet): RedirectResponse
     {
         $this->authorizeBet($bet);
+        $betId = $bet->id;
+        $snapshot = ['kind' => $bet->kind, 'race_id' => $bet->race_id, 'total_stake' => $bet->total_stake];
         $bet->delete();
+        $this->audit('bet.delete', null, ['bet_id' => $betId] + $snapshot);
         return redirect()->route('bets.index')->with('status', '馬券を削除しました');
     }
 
@@ -159,6 +174,10 @@ class BetController extends Controller
     {
         $this->authorizeBet($bet);
         $result = $this->tickets->settle($bet);
+        $this->audit('bet.settle', $bet, [
+            'hit_count' => $result['hit_count'],
+            'total_return' => $result['total_return'],
+        ]);
         return back()->with('status', sprintf(
             '精算完了: %d点的中 / 払戻 %s円',
             $result['hit_count'],
@@ -207,7 +226,21 @@ class BetController extends Controller
             number_format($totalReturn),
             $errors > 0 ? " / エラー {$errors} 件" : ''
         );
+        $this->audit('bet.settle_all', null, [
+            'settled' => $settledCount, 'hits' => $hitCount,
+            'total_return' => $totalReturn, 'errors' => $errors,
+        ]);
         return back()->with('status', $msg);
+    }
+
+    /** AuditLog 記録 (audit_logs テーブル未マイグレーションでも落ちないようガード) */
+    protected function audit(string $action, ?\Illuminate\Database\Eloquent\Model $subject = null, array $meta = []): void
+    {
+        try {
+            AuditLog::record($action, $subject, $meta);
+        } catch (\Throwable $e) {
+            // audit_logs テーブル未作成 / DB接続不可 などは無視
+        }
     }
 
     // ==========================================================

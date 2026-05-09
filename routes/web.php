@@ -11,6 +11,7 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\HorseController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\JockeyController;
+use App\Http\Controllers\OperationsController;
 use App\Http\Controllers\PedigreeRecommendController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RaceController;
@@ -132,6 +133,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/stats',           [DbViewerController::class, 'stats'])->name('stats');
         Route::get('/schema',          [DbViewerController::class, 'schema'])->name('schema');
         Route::get('/table/{table}',   [DbViewerController::class, 'table'])->name('table');
+    });
+
+    // Phase 3-Z: 運用ダッシュボード(スケジューラ/監査ログ/手動ジョブ実行/リアルタイムオッズ)
+    Route::prefix('operations')->name('operations.')->group(function () {
+        Route::get('/',                       [OperationsController::class, 'index'])->name('index');
+        Route::post('/run-job',               [OperationsController::class, 'runJob'])->name('run-job');
+        Route::get('/odds/{race}',            [OperationsController::class, 'odds'])->name('odds');
+        Route::post('/odds/{race}/capture',   [OperationsController::class, 'captureOdds'])->name('odds.capture');
     });
 
     // インポート
