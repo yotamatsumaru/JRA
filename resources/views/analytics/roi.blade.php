@@ -221,15 +221,18 @@
     </div>
 </div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const datasets = @json([
+@php
+    $datasetsJs = [
         'by_popularity' => $charts['by_popularity'] ?? [],
         'by_odds_band'  => $charts['by_odds_band']  ?? [],
         'by_venue'      => $charts['by_venue']      ?? [],
         'by_track'      => $charts['by_track']      ?? [],
         'by_distance'   => $charts['by_distance']   ?? [],
-    ]);
+    ];
+@endphp
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const datasets = @json($datasetsJs);
 
     function colorFor(v) {
         if (v >= 100) return '#10b981';     // emerald
