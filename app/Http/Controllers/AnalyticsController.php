@@ -343,38 +343,415 @@ class AnalyticsController extends Controller
 
     /**
      * 回収率シミュレーション
+     *
+     * 対応券種: tan(単勝) / fuku(複勝) / uma-ren(馬連) / wide(ワイド) / san-fuku(3連複)
+     *
+     * - 単勝/複勝: race_results の win_odds / place_odds_* を使用
+     * - 馬連/ワイド/3連複: payouts テーブルの公式払戻を使用（"全買い"想定）
+     *   人気フィルタは「上位N人気の組合せ」で近似:
+     *     - 馬連/ワイド: popularity<=N の馬同士の組合せが C(N,2) 通り
+     *     - 3連複       : popularity<=N の馬同士の組合せが C(N,3) 通り
      */
     public function roi(Request $request): View
     {
+        $kind       = $request->get('kind', 'tan');
         $popularity = $request->get('popularity');
-        $venueId = $request->get('venue_id');
-        $trackType = $request->get('track_type');
-
-        $query = DB::table('race_results')
-            ->join('races', 'races.id', '=', 'race_results.race_id')
-            ->whereNotNull('win_odds')
-            ->whereNotNull('finish_position_int');
-
-        if ($popularity) {
-            $query->where('popularity', $popularity);
-        }
-        if ($venueId) {
-            $query->where('races.venue_id', $venueId);
-        }
-        if ($trackType) {
-            $query->where('races.track_type', $trackType);
-        }
-
-        $bets = $query->selectRaw('count(*) as bets,
-            SUM(CASE WHEN finish_position_int=1 THEN win_odds*100 ELSE 0 END) as winnings')
-            ->first();
-
-        $roi = $bets && $bets->bets > 0
-            ? round($bets->winnings / ($bets->bets * 100) * 100, 1)
-            : 0;
+        $venueId    = $request->get('venue_id');
+        $trackType  = $request->get('track_type');
+        $from       = $request->get('from');
+        $to         = $request->get('to');
 
         $venues = Venue::orderBy('code')->get();
 
-        return view('analytics.roi', compact('bets', 'roi', 'venues', 'popularity', 'venueId', 'trackType'));
+        // 共通フィルタを構築するクロージャ
+        $applyFilters = function ($q) use ($venueId, $trackType, $from, $to) {
+            if ($venueId)   $q->where('races.venue_id', $venueId);
+            if ($trackType) $q->where('races.track_type', $trackType);
+            if ($from)      $q->whereDate('races.race_date', '>=', $from);
+            if ($to)        $q->whereDate('races.race_date', '<=', $to);
+            return $q;
+        };
+
+        $simulation = match ($kind) {
+            'fuku'     => $this->simulateFuku($applyFilters, $popularity),
+            'uma-ren'  => $this->simulatePayoutKind($applyFilters, 'uma-ren', $popularity),
+            'wide'     => $this->simulatePayoutKind($applyFilters, 'wide', $popularity),
+            'san-fuku' => $this->simulatePayoutKind($applyFilters, 'san-fuku', $popularity),
+            default    => $this->simulateTan($applyFilters, $popularity),
+        };
+
+        // ====== グラフ用クロスタブ ======
+        $charts = [
+            'by_popularity' => $this->roiBreakdown($applyFilters, $kind, 'popularity'),
+            'by_venue'      => $this->roiBreakdown($applyFilters, $kind, 'venue'),
+            'by_track'      => $this->roiBreakdown($applyFilters, $kind, 'track'),
+            'by_distance'   => $this->roiBreakdown($applyFilters, $kind, 'distance'),
+            'by_odds_band'  => $kind === 'tan' ? $this->roiByOddsBand($applyFilters) : [],
+        ];
+
+        $kindLabels = [
+            'tan'      => '単勝',
+            'fuku'     => '複勝',
+            'uma-ren'  => '馬連',
+            'wide'     => 'ワイド',
+            'san-fuku' => '3連複',
+        ];
+
+        return view('analytics.roi', [
+            'kind'        => $kind,
+            'kindLabels'  => $kindLabels,
+            'kindLabel'   => $kindLabels[$kind] ?? $kind,
+            'simulation'  => $simulation,
+            'charts'      => $charts,
+            'venues'      => $venues,
+            'popularity'  => $popularity,
+            'venueId'     => $venueId,
+            'trackType'   => $trackType,
+            'from'        => $from,
+            'to'          => $to,
+        ]);
+    }
+
+    /**
+     * 単勝シミュレーション
+     */
+    private function simulateTan(\Closure $applyFilters, $popularity): array
+    {
+        $q = DB::table('race_results')
+            ->join('races', 'races.id', '=', 'race_results.race_id')
+            ->whereNotNull('win_odds')
+            ->whereNotNull('finish_position_int');
+        $applyFilters($q);
+        if ($popularity) $q->where('popularity', $popularity);
+
+        $row = $q->selectRaw('count(*) as bets,
+            SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as hits,
+            SUM(CASE WHEN finish_position_int=1 THEN win_odds*100 ELSE 0 END) as winnings'
+        )->first();
+
+        return $this->packSimulation((int)($row->bets ?? 0), (int)($row->hits ?? 0), (float)($row->winnings ?? 0));
+    }
+
+    /**
+     * 複勝シミュレーション
+     * place_odds_min/max があればその平均で計算、無ければ payouts テーブルから補完
+     */
+    private function simulateFuku(\Closure $applyFilters, $popularity): array
+    {
+        $q = DB::table('race_results')
+            ->join('races', 'races.id', '=', 'race_results.race_id')
+            ->whereNotNull('finish_position_int');
+        $applyFilters($q);
+        if ($popularity) $q->where('popularity', $popularity);
+
+        $row = $q->selectRaw("count(*) as bets,
+            SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as hits,
+            SUM(CASE WHEN finish_position_int<=3
+                     THEN COALESCE(((COALESCE(place_odds_min,0)+COALESCE(place_odds_max,0))/2)*100, 0)
+                     ELSE 0 END) as winnings"
+        )->first();
+
+        return $this->packSimulation((int)($row->bets ?? 0), (int)($row->hits ?? 0), (float)($row->winnings ?? 0));
+    }
+
+    /**
+     * payouts ベースの券種シミュレーション(馬連/ワイド/3連複)
+     *
+     * 「全買い」想定:
+     *   購入数 = 各レースで C(N,k) 点 (Nは絞り込み: popularity指定なら N、無指定は出走頭数)
+     *   払戻   = payouts テーブルの該当券種の amount 合計
+     */
+    private function simulatePayoutKind(\Closure $applyFilters, string $kind, $popularity): array
+    {
+        // 払戻合計
+        $pq = DB::table('payouts')
+            ->join('races', 'races.id', '=', 'payouts.race_id')
+            ->where('payouts.kind', $kind);
+        $applyFilters($pq);
+        $payoutRow = $pq->selectRaw('SUM(payouts.amount) as winnings, COUNT(DISTINCT payouts.race_id) as hit_races')
+            ->first();
+        $winnings = (float) ($payoutRow->winnings ?? 0);
+        $hitRaces = (int) ($payoutRow->hit_races ?? 0);
+
+        // 購入レース母集団 = 該当券種の払戻があったレース母集団
+        // (払戻データ自体がそのレースの該当券種の存在を保証する)
+        $rq = DB::table('races')
+            ->join('payouts', function ($join) use ($kind) {
+                $join->on('payouts.race_id', '=', 'races.id')
+                     ->where('payouts.kind', '=', $kind);
+            })
+            ->select('races.id', 'races.horses_count');
+        $applyFilters($rq);
+        $races = $rq->distinct()->get();
+        $raceCount = $races->count();
+
+        // 1レースあたりの購入点数
+        $combosPerRace = match ($kind) {
+            'uma-ren', 'wide' => fn(int $n) => max(0, intdiv($n * ($n-1), 2)),
+            'san-fuku'        => fn(int $n) => max(0, intdiv($n * ($n-1) * ($n-2), 6)),
+            default           => fn(int $n) => 0,
+        };
+
+        // 人気フィルタ: 上位N人気で買う想定
+        $totalCombos = 0;
+        foreach ($races as $r) {
+            $n = $popularity ? min((int)$popularity, (int)($r->horses_count ?? 0)) : (int)($r->horses_count ?? 0);
+            if ($n <= 0) continue;
+            $totalCombos += $combosPerRace($n);
+        }
+
+        // 投資額(全買い想定: 1点100円)
+        $stake = $totalCombos * 100;
+
+        return [
+            'kind_basis' => 'payouts',
+            'races'      => $raceCount,
+            'bets'       => $totalCombos,
+            'hits'       => $hitRaces,
+            'stake'      => $stake,
+            'winnings'   => (int) $winnings,
+            'profit'     => (int) ($winnings - $stake),
+            'roi'        => $stake > 0 ? round($winnings / $stake * 100, 1) : 0,
+            'hit_rate'   => $raceCount > 0 ? round($hitRaces / $raceCount * 100, 1) : 0,
+        ];
+    }
+
+    /**
+     * 単勝/複勝シミュレーションの結果を統一フォーマットに整える
+     */
+    private function packSimulation(int $bets, int $hits, float $winnings): array
+    {
+        $stake = $bets * 100;
+        return [
+            'kind_basis' => 'odds',
+            'races'      => $bets,
+            'bets'       => $bets,
+            'hits'       => $hits,
+            'stake'      => $stake,
+            'winnings'   => (int) $winnings,
+            'profit'     => (int) ($winnings - $stake),
+            'roi'        => $stake > 0 ? round($winnings / $stake * 100, 1) : 0,
+            'hit_rate'   => $bets > 0 ? round($hits / $bets * 100, 1) : 0,
+        ];
+    }
+
+    /**
+     * グラフ用クロスタブ集計
+     * @param string $axis  'popularity' | 'venue' | 'track' | 'distance'
+     */
+    private function roiBreakdown(\Closure $applyFilters, string $kind, string $axis): array
+    {
+        // ===== 軸の指定 =====
+        // [select句, groupBy句, ラベル取得関数(stdClass→string)]
+        $axisSpec = match ($axis) {
+            'popularity' => [
+                'race_results.popularity as ax',
+                'race_results.popularity',
+                fn($r) => $r->ax !== null ? $r->ax . '番人気' : '不明',
+            ],
+            'venue' => [
+                'venues.name as ax',
+                'venues.id, venues.name',
+                fn($r) => $r->ax ?? '不明',
+            ],
+            'track' => [
+                'races.track_type as ax',
+                'races.track_type',
+                fn($r) => $r->ax ?? '不明',
+            ],
+            'distance' => [
+                "CASE
+                    WHEN races.distance <= 1400 THEN '短(〜1400)'
+                    WHEN races.distance <= 1800 THEN 'マ(〜1800)'
+                    WHEN races.distance <= 2200 THEN '中(〜2200)'
+                    WHEN races.distance <= 2600 THEN '中長(〜2600)'
+                    ELSE '長(2700〜)' END as ax",
+                "CASE
+                    WHEN races.distance <= 1400 THEN '短(〜1400)'
+                    WHEN races.distance <= 1800 THEN 'マ(〜1800)'
+                    WHEN races.distance <= 2200 THEN '中(〜2200)'
+                    WHEN races.distance <= 2600 THEN '中長(〜2600)'
+                    ELSE '長(2700〜)' END",
+                fn($r) => $r->ax ?? '不明',
+            ],
+            default => null,
+        };
+        if (!$axisSpec) return [];
+
+        [$select, $groupBy, $labelFn] = $axisSpec;
+
+        // ===== 券種別クエリ =====
+        if ($kind === 'tan') {
+            $q = DB::table('race_results')
+                ->join('races', 'races.id', '=', 'race_results.race_id')
+                ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
+                ->whereNotNull('win_odds')
+                ->whereNotNull('finish_position_int');
+            $applyFilters($q);
+
+            $rows = $q->selectRaw("
+                {$select},
+                count(*) as bets,
+                SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as hits,
+                SUM(CASE WHEN finish_position_int=1 THEN win_odds*100 ELSE 0 END) as winnings
+            ")->groupByRaw($groupBy)->get();
+
+            return $this->mapBreakdown($rows, $labelFn, 'odds');
+        }
+
+        if ($kind === 'fuku') {
+            $q = DB::table('race_results')
+                ->join('races', 'races.id', '=', 'race_results.race_id')
+                ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
+                ->whereNotNull('finish_position_int');
+            $applyFilters($q);
+
+            $rows = $q->selectRaw("
+                {$select},
+                count(*) as bets,
+                SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as hits,
+                SUM(CASE WHEN finish_position_int<=3
+                         THEN COALESCE(((COALESCE(place_odds_min,0)+COALESCE(place_odds_max,0))/2)*100, 0)
+                         ELSE 0 END) as winnings
+            ")->groupByRaw($groupBy)->get();
+
+            return $this->mapBreakdown($rows, $labelFn, 'odds');
+        }
+
+        // payouts ベース (uma-ren/wide/san-fuku) — 軸別に集計
+        // popularity 軸はオッズ的な意味を持たないので非対応
+        if ($axis === 'popularity') return [];
+
+        // 払戻合計とレース数を軸別に集計
+        $pq = DB::table('payouts')
+            ->join('races', 'races.id', '=', 'payouts.race_id')
+            ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
+            ->where('payouts.kind', $kind);
+        $applyFilters($pq);
+
+        $rows = $pq->selectRaw("
+            {$select},
+            COUNT(DISTINCT payouts.race_id) as hit_races,
+            SUM(payouts.amount) as winnings
+        ")->groupByRaw($groupBy)->get();
+
+        // レース母集団(各軸の C(N,k)*100 を計算)
+        $rq = DB::table('races')
+            ->join('payouts', function ($join) use ($kind) {
+                $join->on('payouts.race_id', '=', 'races.id')
+                     ->where('payouts.kind', '=', $kind);
+            })
+            ->leftJoin('venues', 'venues.id', '=', 'races.venue_id');
+        $applyFilters($rq);
+        $raceRows = $rq->selectRaw("{$select}, races.horses_count as hc")->distinct()->get();
+
+        $combosPerRace = match ($kind) {
+            'uma-ren', 'wide' => fn(int $n) => max(0, intdiv($n * ($n-1), 2)),
+            'san-fuku'        => fn(int $n) => max(0, intdiv($n * ($n-1) * ($n-2), 6)),
+            default           => fn(int $n) => 0,
+        };
+
+        // 軸ラベルごとの combo 合計
+        $combosByAxis = [];
+        $racesByAxis  = [];
+        foreach ($raceRows as $r) {
+            $label = $labelFn($r);
+            $n = (int) ($r->hc ?? 0);
+            if ($n <= 0) continue;
+            $combosByAxis[$label] = ($combosByAxis[$label] ?? 0) + $combosPerRace($n);
+            $racesByAxis[$label]  = ($racesByAxis[$label]  ?? 0) + 1;
+        }
+
+        $out = [];
+        foreach ($rows as $r) {
+            $label = $labelFn($r);
+            $combos = $combosByAxis[$label] ?? 0;
+            $stake = $combos * 100;
+            $winnings = (float) ($r->winnings ?? 0);
+            $races = $racesByAxis[$label] ?? 0;
+            $hitRaces = (int) ($r->hit_races ?? 0);
+
+            $out[] = [
+                'label'    => $label,
+                'bets'     => $combos,
+                'hits'     => $hitRaces,
+                'races'    => $races,
+                'stake'    => $stake,
+                'winnings' => (int) $winnings,
+                'roi'      => $stake > 0 ? round($winnings / $stake * 100, 1) : 0,
+                'hit_rate' => $races > 0 ? round($hitRaces / $races * 100, 1) : 0,
+            ];
+        }
+
+        // 並び順
+        if ($axis === 'distance') {
+            $order = ['短(〜1400)','マ(〜1800)','中(〜2200)','中長(〜2600)','長(2700〜)'];
+            usort($out, fn($a,$b) => array_search($a['label'],$order) - array_search($b['label'],$order));
+        } else {
+            usort($out, fn($a,$b) => $b['bets'] - $a['bets']);
+        }
+
+        return $out;
+    }
+
+    /**
+     * 単勝/複勝の breakdown 行を統一フォーマットに整える
+     */
+    private function mapBreakdown($rows, \Closure $labelFn, string $basis): array
+    {
+        $out = [];
+        foreach ($rows as $r) {
+            $bets = (int) ($r->bets ?? 0);
+            $hits = (int) ($r->hits ?? 0);
+            $stake = $bets * 100;
+            $winnings = (float) ($r->winnings ?? 0);
+            $out[] = [
+                'label'    => $labelFn($r),
+                'bets'     => $bets,
+                'hits'     => $hits,
+                'races'    => $bets,
+                'stake'    => $stake,
+                'winnings' => (int) $winnings,
+                'roi'      => $stake > 0 ? round($winnings / $stake * 100, 1) : 0,
+                'hit_rate' => $bets > 0 ? round($hits / $bets * 100, 1) : 0,
+            ];
+        }
+        // 数の多い順に並べる
+        usort($out, fn($a,$b) => $b['bets'] - $a['bets']);
+        return $out;
+    }
+
+    /**
+     * 単勝のオッズ帯別ROI(1.x / 2.x / 3-4 / 5-9 / 10-19 / 20-49 / 50+)
+     */
+    private function roiByOddsBand(\Closure $applyFilters): array
+    {
+        $bandExpr = "CASE
+            WHEN win_odds < 2  THEN '1倍台'
+            WHEN win_odds < 3  THEN '2倍台'
+            WHEN win_odds < 5  THEN '3-4倍'
+            WHEN win_odds < 10 THEN '5-9倍'
+            WHEN win_odds < 20 THEN '10-19倍'
+            WHEN win_odds < 50 THEN '20-49倍'
+            ELSE '50倍〜' END";
+
+        $q = DB::table('race_results')
+            ->join('races', 'races.id', '=', 'race_results.race_id')
+            ->whereNotNull('win_odds')
+            ->whereNotNull('finish_position_int');
+        $applyFilters($q);
+
+        $rows = $q->selectRaw("
+            {$bandExpr} as ax,
+            count(*) as bets,
+            SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as hits,
+            SUM(CASE WHEN finish_position_int=1 THEN win_odds*100 ELSE 0 END) as winnings
+        ")->groupByRaw($bandExpr)->get();
+
+        $out = $this->mapBreakdown($rows, fn($r) => $r->ax ?? '不明', 'odds');
+
+        $order = ['1倍台','2倍台','3-4倍','5-9倍','10-19倍','20-49倍','50倍〜'];
+        usort($out, fn($a,$b) => array_search($a['label'],$order) - array_search($b['label'],$order));
+        return $out;
     }
 }
