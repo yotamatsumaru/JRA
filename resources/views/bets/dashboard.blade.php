@@ -8,6 +8,12 @@
             <a href="{{ route('bets.create') }}" class="inline-flex items-center space-x-1 bg-turf-600 hover:bg-turf-700 text-white px-4 py-2 rounded text-sm">
                 <x-icon name="plus" class="w-4 h-4" /><span>馬券を登録</span>
             </a>
+            <a href="{{ route('bankroll.index') }}" class="inline-flex items-center space-x-1 bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded text-sm">
+                <x-icon name="cash" class="w-4 h-4" /><span>バンクロール</span>
+            </a>
+            <a href="{{ route('bets.whatif') }}" class="inline-flex items-center space-x-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded text-sm">
+                <x-icon name="sparkles" class="w-4 h-4" /><span>What-if</span>
+            </a>
             <a href="{{ route('bets.index') }}" class="inline-flex items-center space-x-1 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 px-4 py-2 rounded text-sm">
                 <x-icon name="list" class="w-4 h-4" /><span>買い目一覧</span>
             </a>
@@ -90,6 +96,50 @@
             <div id="chart-monthly" style="height:280px"></div>
         </div>
     </div>
+
+    {{-- 年次推移 (Phase 2-E) --}}
+    @if ($yearly->isNotEmpty())
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+        <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3 flex items-center space-x-1">
+            <x-icon name="chart" class="w-4 h-4 text-turf-600" /><span>年次推移</span>
+        </h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div id="chart-yearly" style="height:260px"></div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-600 dark:text-gray-300">
+                        <tr>
+                            <th class="px-3 py-2 text-left">年</th>
+                            <th class="px-3 py-2 text-right">件数</th>
+                            <th class="px-3 py-2 text-right">投資</th>
+                            <th class="px-3 py-2 text-right">払戻</th>
+                            <th class="px-3 py-2 text-right">収支</th>
+                            <th class="px-3 py-2 text-right">ROI</th>
+                            <th class="px-3 py-2 text-right">的中率</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                        @foreach ($yearly as $r)
+                        <tr>
+                            <td class="px-3 py-2 font-medium">{{ $r['y'] }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums text-xs">{{ $r['cnt'] }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums text-xs">¥{{ number_format($r['stake']) }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums text-xs">¥{{ number_format($r['return']) }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums font-bold {{ $r['profit'] >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
+                                {{ $r['profit'] >= 0 ? '+' : '' }}¥{{ number_format($r['profit']) }}
+                            </td>
+                            <td class="px-3 py-2 text-right tabular-nums">
+                                <span class="font-bold {{ $r['roi'] >= 100 ? 'text-emerald-600' : 'text-rose-600' }}">{{ $r['roi'] }}%</span>
+                            </td>
+                            <td class="px-3 py-2 text-right tabular-nums text-xs">{{ $r['hit_rate'] }}%</td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- 券種別ROI --}}
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
@@ -611,20 +661,51 @@ document.addEventListener('DOMContentLoaded', () => {
     @endif
 
     @if ($monthly->isNotEmpty())
-    // 月次収支
+    // 月次収支 (投資/払戻/ROI 複合チャート)
     new ApexCharts(document.querySelector('#chart-monthly'), {
-        chart: { type: 'bar', height: 280, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        chart: { type: 'line', height: 280, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
         series: [
-            { name: '投資', data: @json($monthly->pluck('stake')) },
-            { name: '払戻', data: @json($monthly->pluck('return')) },
+            { name: '投資',   type: 'column', data: @json($monthly->pluck('stake')) },
+            { name: '払戻',   type: 'column', data: @json($monthly->pluck('return')) },
+            { name: 'ROI(%)', type: 'line',   data: @json($monthly->pluck('roi')) },
         ],
+        stroke: { curve: 'smooth', width: [0, 0, 3] },
         plotOptions: { bar: { columnWidth: '60%' } },
         xaxis: { categories: @json($monthly->pluck('ym')), labels: { style: { colors: fg } } },
-        yaxis: { labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
-        colors: ['#94a3b8', '#eab308'],
+        yaxis: [
+            { title: { text: '金額(円)', style: { color: fg } }, labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+            { show: false },
+            { opposite: true, title: { text: 'ROI(%)', style: { color: fg } }, labels: { style: { colors: fg } } },
+        ],
+        colors: ['#94a3b8', '#eab308', '#16a34a'],
         grid: { borderColor: grid },
         legend: { labels: { colors: fg } },
-        tooltip: { theme: isDark ? 'dark' : 'light', y: { formatter: v => '¥' + (v|0).toLocaleString() } },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+    }).render();
+    @endif
+
+    @if ($yearly->isNotEmpty())
+    // 年次推移 (投資/払戻/ROI)
+    new ApexCharts(document.querySelector('#chart-yearly'), {
+        chart: { type: 'line', height: 260, toolbar: { show: false }, foreColor: fg, animations: { enabled: false } },
+        series: [
+            { name: '投資',   type: 'column', data: @json($yearly->pluck('stake')) },
+            { name: '払戻',   type: 'column', data: @json($yearly->pluck('return')) },
+            { name: 'ROI(%)', type: 'line',   data: @json($yearly->pluck('roi')) },
+        ],
+        stroke: { curve: 'smooth', width: [0, 0, 3] },
+        plotOptions: { bar: { columnWidth: '50%', borderRadius: 4 } },
+        xaxis: { categories: @json($yearly->pluck('y')), labels: { style: { colors: fg } } },
+        yaxis: [
+            { title: { text: '金額(円)', style: { color: fg } }, labels: { style: { colors: fg }, formatter: v => '¥' + (v|0).toLocaleString() } },
+            { show: false },
+            { opposite: true, title: { text: 'ROI(%)', style: { color: fg } }, labels: { style: { colors: fg } } },
+        ],
+        colors: ['#94a3b8', '#eab308', '#16a34a'],
+        grid: { borderColor: grid },
+        legend: { labels: { colors: fg } },
+        tooltip: { theme: isDark ? 'dark' : 'light' },
+        annotations: { yaxis: [{ y: 100, yAxisIndex: 2, borderColor: '#94a3b8', strokeDashArray: 4 }] },
     }).render();
     @endif
 

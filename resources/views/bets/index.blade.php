@@ -5,10 +5,29 @@
 <div class="space-y-4">
     <x-page-header title="買い目一覧" subtitle="登録した馬券と収支" icon="cash">
         <x-slot name="actions">
-            <a href="{{ route('betting.dashboard') }}" class="inline-flex items-center space-x-1 bg-gold-500 hover:bg-gold-600 text-white px-4 py-2 rounded text-sm">
-                <x-icon name="chart" class="w-4 h-4" /><span>収支ダッシュボード</span>
+            <form method="POST" action="{{ route('bets.settle-all') }}" class="inline"
+                  onsubmit="return confirm('結果が確定しているのに未精算の馬券を一括精算します。よろしいですか?');">
+                @csrf
+                <button type="submit" class="inline-flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded text-sm">
+                    <x-icon name="check" class="w-4 h-4" /><span>一括精算</span>
+                </button>
+            </form>
+            <a href="{{ route('bets.whatif', request()->only(['kind', 'from', 'to'])) }}" class="inline-flex items-center space-x-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded text-sm">
+                <x-icon name="sparkles" class="w-4 h-4" /><span>What-if</span>
             </a>
-            <a href="{{ route('bets.create') }}" class="inline-flex items-center space-x-1 bg-turf-600 hover:bg-turf-700 text-white px-4 py-2 rounded text-sm">
+            <a href="{{ route('bankroll.index') }}" class="inline-flex items-center space-x-1 bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded text-sm">
+                <x-icon name="cash" class="w-4 h-4" /><span>バンクロール</span>
+            </a>
+            <a href="{{ route('bets.export-csv', request()->query()) }}" class="inline-flex items-center space-x-1 bg-sky-600 hover:bg-sky-700 text-white px-3 py-2 rounded text-sm">
+                <x-icon name="download" class="w-4 h-4" /><span>CSV</span>
+            </a>
+            <a href="{{ route('bets.print', request()->query()) }}" target="_blank" class="inline-flex items-center space-x-1 bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded text-sm">
+                <x-icon name="document" class="w-4 h-4" /><span>印刷</span>
+            </a>
+            <a href="{{ route('betting.dashboard') }}" class="inline-flex items-center space-x-1 bg-gold-500 hover:bg-gold-600 text-white px-3 py-2 rounded text-sm">
+                <x-icon name="chart" class="w-4 h-4" /><span>ダッシュボード</span>
+            </a>
+            <a href="{{ route('bets.create') }}" class="inline-flex items-center space-x-1 bg-turf-600 hover:bg-turf-700 text-white px-3 py-2 rounded text-sm">
                 <x-icon name="plus" class="w-4 h-4" /><span>馬券を登録</span>
             </a>
         </x-slot>

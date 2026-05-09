@@ -55,17 +55,45 @@ class BettingDashboardController extends Controller
                 DATE_FORMAT(races.race_date, '%Y-%m') as ym,
                 SUM(bets.total_stake)  as stake,
                 SUM(bets.total_return) as ret,
-                COUNT(*) as cnt
+                COUNT(*) as cnt,
+                SUM(CASE WHEN bets.hit_count > 0 THEN 1 ELSE 0 END) as hits
             ")
             ->groupBy('ym')
             ->orderBy('ym')
             ->get()
             ->map(fn($r) => [
-                'ym'     => $r->ym,
-                'stake'  => (int) $r->stake,
-                'return' => (int) $r->ret,
-                'profit' => (int) ($r->ret - $r->stake),
-                'roi'    => $r->stake > 0 ? round($r->ret / $r->stake * 100, 1) : 0,
+                'ym'      => $r->ym,
+                'stake'   => (int) $r->stake,
+                'return'  => (int) $r->ret,
+                'profit'  => (int) ($r->ret - $r->stake),
+                'roi'     => $r->stake > 0 ? round($r->ret / $r->stake * 100, 1) : 0,
+                'cnt'     => (int) $r->cnt,
+                'hits'    => (int) $r->hits,
+                'hit_rate'=> $r->cnt > 0 ? round($r->hits / $r->cnt * 100, 1) : 0,
+            ]);
+
+        // ===== 年次推移 (Phase 2-E) =====
+        $yearly = (clone $base)
+            ->join('races', 'bets.race_id', '=', 'races.id')
+            ->selectRaw("
+                DATE_FORMAT(races.race_date, '%Y') as y,
+                SUM(bets.total_stake)  as stake,
+                SUM(bets.total_return) as ret,
+                COUNT(*) as cnt,
+                SUM(CASE WHEN bets.hit_count > 0 THEN 1 ELSE 0 END) as hits
+            ")
+            ->groupBy('y')
+            ->orderBy('y')
+            ->get()
+            ->map(fn($r) => [
+                'y'        => $r->y,
+                'stake'    => (int) $r->stake,
+                'return'   => (int) $r->ret,
+                'profit'   => (int) ($r->ret - $r->stake),
+                'roi'      => $r->stake > 0 ? round($r->ret / $r->stake * 100, 1) : 0,
+                'cnt'      => (int) $r->cnt,
+                'hits'     => (int) $r->hits,
+                'hit_rate' => $r->cnt > 0 ? round($r->hits / $r->cnt * 100, 1) : 0,
             ]);
 
         // ===== 累積回収率推移（日次） =====
@@ -270,7 +298,7 @@ class BettingDashboardController extends Controller
         $myAnalytics = $this->buildMyAnalytics($userId, $from, $to);
 
         return view('bets.dashboard', compact(
-            'kpi', 'monthly', 'cumulative', 'byKind', 'byVenue', 'byTrack',
+            'kpi', 'monthly', 'yearly', 'cumulative', 'byKind', 'byVenue', 'byTrack',
             'byJockey', 'byHorse', 'bestPayouts', 'streaks', 'monthlyTarget',
             'payoutOverview', 'payoutAnalytics', 'myAnalytics',
             'from', 'to'

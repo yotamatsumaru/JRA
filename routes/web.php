@@ -81,8 +81,22 @@ Route::middleware('auth')->group(function () {
     Route::get('/betting', [BettingDashboardController::class, 'index'])->name('betting.dashboard');
     Route::get('/betting/payouts', [BettingDashboardController::class, 'payouts'])->name('betting.payouts');
     Route::get('/betting/payouts/list', [BettingDashboardController::class, 'payoutsList'])->name('betting.payouts.list');
+
+    // Phase 2-F/H/L: 一括精算 / What-if / エクスポート (resource より前)
+    Route::post('bets/settle-all', [BetController::class, 'settleAll'])->name('bets.settle-all');
+    Route::get('bets/whatif',      [BetController::class, 'whatif'])->name('bets.whatif');
+    Route::get('bets/export.csv',  [BetController::class, 'exportCsv'])->name('bets.export-csv');
+    Route::get('bets/print',       [BetController::class, 'printView'])->name('bets.print');
+
     Route::resource('bets', BetController::class);
     Route::post('bets/{bet}/settle', [BetController::class, 'settle'])->name('bets.settle');
+
+    // Phase 2-G: バンクロール管理
+    Route::prefix('bankroll')->name('bankroll.')->group(function () {
+        Route::get('/',        [\App\Http\Controllers\BankrollController::class, 'index'])->name('index');
+        Route::post('/update', [\App\Http\Controllers\BankrollController::class, 'update'])->name('update');
+        Route::post('/delete', [\App\Http\Controllers\BankrollController::class, 'destroy'])->name('destroy');
+    });
 
     // 分析
     Route::prefix('analytics')->name('analytics.')->group(function () {

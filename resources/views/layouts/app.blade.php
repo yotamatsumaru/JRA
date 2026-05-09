@@ -318,10 +318,13 @@
                                 <span>馬券</span>
                                 <x-icon name="chevron-down" class="w-3 h-3" />
                             </button>
-                            <div x-show="open" x-cloak x-transition class="absolute mt-2 w-52 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
+                            <div x-show="open" x-cloak x-transition class="absolute mt-2 w-56 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
                                 <a href="{{ route('betting.dashboard') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="chart" class="w-4 h-4 text-gold-500" /><span>収支ダッシュボード</span></a>
                                 <a href="{{ route('bets.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="list" class="w-4 h-4 text-turf-600" /><span>買い目一覧</span></a>
                                 <a href="{{ route('bets.create') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="plus" class="w-4 h-4 text-emerald-500" /><span>馬券を登録</span></a>
+                                <div class="border-t border-gray-100 dark:border-gray-700 my-1"></div>
+                                <a href="{{ route('bankroll.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-amber-500" /><span>バンクロール管理</span></a>
+                                <a href="{{ route('bets.whatif') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="sparkles" class="w-4 h-4 text-purple-500" /><span>What-if シミュレーション</span></a>
                                 <div class="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                                 <a href="{{ route('betting.payouts.list') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-gold-500" /><span>払戻金一覧</span></a>
                                 <a href="{{ route('betting.payouts') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="chart" class="w-4 h-4 text-amber-500" /><span>払戻傾向</span></a>
@@ -474,6 +477,8 @@
                         <a href="{{ route('betting.dashboard') }}"     class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> 収支ダッシュボード</a>
                         <a href="{{ route('bets.index') }}"            class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="list" class="w-4 h-4" /> 買い目一覧</a>
                         <a href="{{ route('bets.create') }}"           class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="plus" class="w-4 h-4" /> 馬券を登録</a>
+                        <a href="{{ route('bankroll.index') }}"        class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="cash" class="w-4 h-4" /> バンクロール管理</a>
+                        <a href="{{ route('bets.whatif') }}"           class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="sparkles" class="w-4 h-4" /> What-if</a>
                         <a href="{{ route('betting.payouts.list') }}"  class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="cash" class="w-4 h-4" /> 払戻金一覧</a>
                         <a href="{{ route('betting.payouts') }}"       class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> 払戻傾向</a>
                     </div>
