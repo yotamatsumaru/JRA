@@ -624,39 +624,34 @@ class AnalyticsController extends Controller
             return $this->mapBreakdown($rows, $labelFn, 'odds');
         }
 
-        // payouts ベース (uma-ren/wide/san-fuku) — 軸別に集計
+        // payouts ベース (uma-ren/wide/san-fuku) — PHP側で1パス集計
         // popularity 軸はオッズ的な意味を持たないので非対応
         if ($axis === 'popularity') return [];
 
-        // 払戻合計とレース数を軸別に集計
-        $pq = DB::table('payouts')
-            ->join('races', 'races.id', '=', 'payouts.race_id')
-            ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
-            ->where('payouts.kind', $kind);
-        $applyFilters($pq);
-
-        $rows = $pq->selectRaw("
-            {$select},
-            COUNT(DISTINCT payouts.race_id) as hit_races,
-            SUM(payouts.amount) as winnings
-        ")->groupByRaw($groupBy)->get();
-
-        // レース母集団(各軸の C(N,k)*100 を計算)
-        // payouts は 1 レースに対し複数行(着順別など)あるので、
-        // races.id でユニーク化してから集計する
+        // SQLは出来るだけ単純にして strict mode の罠を回避する
+        // 必要な情報だけを races + payouts 集計値で取ってきて PHP 側で軸別に振り分ける
         $rq = DB::table('races')
             ->leftJoin('venues', 'venues.id', '=', 'races.venue_id')
-            ->whereExists(function ($sub) use ($kind) {
-                $sub->select(DB::raw(1))
-                    ->from('payouts')
-                    ->whereColumn('payouts.race_id', 'races.id')
-                    ->where('payouts.kind', $kind);
+            ->leftJoin('payouts', function ($join) use ($kind) {
+                $join->on('payouts.race_id', '=', 'races.id')
+                     ->where('payouts.kind', '=', $kind);
             });
         $applyFilters($rq);
-        $raceRows = $rq->selectRaw("{$select}, races.id as race_id, races.horses_count as hc")
-            ->groupBy('races.id', 'races.horses_count')
-            ->groupByRaw($groupBy)
-            ->get();
+
+        // 軸ラベル取得用の生SQL(SELECT)はそのまま使う(group byしない)
+        // 1レース複数 payouts に対応するため SUM/COUNT で集約
+        $raceRows = $rq->selectRaw("
+            races.id as race_id,
+            races.horses_count as hc,
+            races.track_type as track_type,
+            races.distance as distance,
+            races.venue_id as venue_id,
+            venues.name as venue_name,
+            COUNT(payouts.id) as payout_rows,
+            COALESCE(SUM(payouts.amount), 0) as winnings_sum
+        ")
+        ->groupBy('races.id', 'races.horses_count', 'races.track_type', 'races.distance', 'races.venue_id', 'venues.name')
+        ->get();
 
         $combosPerRace = match ($kind) {
             'uma-ren', 'wide' => fn(int $n) => max(0, intdiv($n * ($n-1), 2)),
@@ -664,35 +659,52 @@ class AnalyticsController extends Controller
             default           => fn(int $n) => 0,
         };
 
-        // 軸ラベルごとの combo 合計
-        $combosByAxis = [];
-        $racesByAxis  = [];
+        // PHP 側でラベル決定
+        $axisLabel = function ($r) use ($axis) {
+            return match ($axis) {
+                'venue'    => $r->venue_name ?? '不明',
+                'track'    => $r->track_type ?? '不明',
+                'distance' => match (true) {
+                    ($r->distance ?? 0) <= 1400 => '短(〜1400)',
+                    ($r->distance ?? 0) <= 1800 => 'マ(〜1800)',
+                    ($r->distance ?? 0) <= 2200 => '中(〜2200)',
+                    ($r->distance ?? 0) <= 2600 => '中長(〜2600)',
+                    default => '長(2700〜)',
+                },
+                default => '不明',
+            };
+        };
+
+        // 軸ラベルごとに集計
+        $agg = []; // label => [bets, hits(racesWithPayout), races, winnings]
         foreach ($raceRows as $r) {
-            $label = $labelFn($r);
+            $label = $axisLabel($r);
             $n = (int) ($r->hc ?? 0);
-            if ($n <= 0) continue;
-            $combosByAxis[$label] = ($combosByAxis[$label] ?? 0) + $combosPerRace($n);
-            $racesByAxis[$label]  = ($racesByAxis[$label]  ?? 0) + 1;
+            $combos = $n > 0 ? $combosPerRace($n) : 0;
+            $hasPayout = ((int) $r->payout_rows) > 0 ? 1 : 0;
+
+            if (!isset($agg[$label])) {
+                $agg[$label] = ['bets'=>0, 'hits'=>0, 'races'=>0, 'winnings'=>0];
+            }
+            $agg[$label]['bets']     += $combos;
+            $agg[$label]['hits']     += $hasPayout;
+            $agg[$label]['races']    += 1;
+            $agg[$label]['winnings'] += (float) ($r->winnings_sum ?? 0);
         }
 
         $out = [];
-        foreach ($rows as $r) {
-            $label = $labelFn($r);
-            $combos = $combosByAxis[$label] ?? 0;
-            $stake = $combos * 100;
-            $winnings = (float) ($r->winnings ?? 0);
-            $races = $racesByAxis[$label] ?? 0;
-            $hitRaces = (int) ($r->hit_races ?? 0);
-
+        foreach ($agg as $label => $a) {
+            $stake = $a['bets'] * 100;
+            $winnings = $a['winnings'];
             $out[] = [
                 'label'    => $label,
-                'bets'     => $combos,
-                'hits'     => $hitRaces,
-                'races'    => $races,
+                'bets'     => $a['bets'],
+                'hits'     => $a['hits'],
+                'races'    => $a['races'],
                 'stake'    => $stake,
                 'winnings' => (int) $winnings,
                 'roi'      => $stake > 0 ? round($winnings / $stake * 100, 1) : 0,
-                'hit_rate' => $races > 0 ? round($hitRaces / $races * 100, 1) : 0,
+                'hit_rate' => $a['races'] > 0 ? round($a['hits'] / $a['races'] * 100, 1) : 0,
             ];
         }
 
