@@ -32,4 +32,36 @@ class Trainer extends Model
     {
         return $this->hasMany(RaceResult::class);
     }
+
+    /**
+     * 調教師の成績サマリ (期間絞り可)
+     */
+    public function summary(?string $from = null, ?string $to = null): array
+    {
+        $query = $this->results()->whereNotNull('finish_position_int');
+
+        if ($from || $to) {
+            $query->whereHas('race', function ($q) use ($from, $to) {
+                if ($from) $q->whereDate('race_date', '>=', $from);
+                if ($to)   $q->whereDate('race_date', '<=', $to);
+            });
+        }
+
+        $results = $query->get();
+        $total  = $results->count();
+        $wins   = $results->where('finish_position_int', 1)->count();
+        $places = $results->whereIn('finish_position_int', [1, 2])->count();
+        $shows  = $results->whereIn('finish_position_int', [1, 2, 3])->count();
+
+        return [
+            'total'      => $total,
+            'runs'       => $total, // 互換: jockey と同じキーも提供
+            'wins'       => $wins,
+            'places'     => $places,
+            'shows'      => $shows,
+            'win_rate'   => $total > 0 ? round($wins / $total * 100, 1) : 0,
+            'place_rate' => $total > 0 ? round($places / $total * 100, 1) : 0,
+            'show_rate'  => $total > 0 ? round($shows / $total * 100, 1) : 0,
+        ];
+    }
 }

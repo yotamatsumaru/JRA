@@ -11,6 +11,7 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\HorseController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\JockeyController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OperationsController;
 use App\Http\Controllers\PedigreeRecommendController;
 use App\Http\Controllers\PredictionAccuracyController;
@@ -20,6 +21,7 @@ use App\Http\Controllers\RaceController;
 use App\Http\Controllers\RaceNoteController;
 use App\Http\Controllers\RaceResultController;
 use App\Http\Controllers\ShutubaController;
+use App\Http\Controllers\TrainerController;
 use App\Http\Controllers\VenueController;
 use App\Http\Controllers\WatchlistController;
 use Illuminate\Support\Facades\Route;
@@ -77,6 +79,9 @@ Route::middleware('auth')->group(function () {
 
     // 騎手
     Route::resource('jockeys', JockeyController::class)->only(['index', 'show']);
+
+    // 調教師
+    Route::resource('trainers', TrainerController::class)->only(['index', 'show']);
 
     // 競馬場
     Route::resource('venues', VenueController::class)->only(['index', 'show']);
@@ -142,6 +147,13 @@ Route::middleware('auth')->group(function () {
 
     // Phase 4-W: ウォッチリスト
     Route::resource('watchlist', WatchlistController::class)->only(['index', 'store', 'update', 'destroy']);
+
+    // Phase 6-A: 通知センター
+    Route::get('/notifications',                  [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/{notification}',   [NotificationController::class, 'read'])->name('notifications.read');
+    Route::post('/notifications/read-all',        [NotificationController::class, 'readAll'])->name('notifications.readAll');
+    Route::post('/notifications/scan',            [NotificationController::class, 'scan'])->name('notifications.scan');
+    Route::delete('/notifications/{notification}',[NotificationController::class, 'destroy'])->name('notifications.destroy');
 
     // Phase 4-S: 予想スナップショット共有 (認証ユーザ向け管理)
     Route::get('/shares',                [PredictionShareController::class, 'index'])->name('shares.index');

@@ -126,7 +126,7 @@
             </div>
         @endif
 
-        {{-- ラップタイム --}}
+        {{-- Phase 6-G: レース回顧 (ラップタイム + ペース推移 + 印的中サマリ) --}}
         @php
             $lapTimes = [];
             try {
@@ -137,24 +137,217 @@
                     if (is_array($decoded)) $lapTimes = $decoded;
                 }
             } catch (\Throwable $e) { $lapTimes = []; }
+
+            // ラップ秒数化 (例: "12.3" => 12.3)
+            $lapSeconds = [];
+            $lapDistances = [];
+            $lapAvg = null;
+            foreach ($lapTimes as $i => $lap) {
+                $sec = is_numeric($lap) ? (float) $lap : (float) preg_replace('/[^0-9.]/', '', (string) $lap);
+                if ($sec > 0) {
+                    $lapSeconds[] = $sec;
+                    $lapDistances[] = ($i + 1) * 200;
+                }
+            }
+            if (!empty($lapSeconds)) {
+                $lapAvg = round(array_sum($lapSeconds) / count($lapSeconds), 2);
+            }
+
+            // 前半/後半比較 (前半=前3F vs 後半=上り3F)
+            $first3f = is_numeric($race->first_3f) ? (float) $race->first_3f : null;
+            $last3f  = is_numeric($race->last_3f)  ? (float) $race->last_3f  : null;
+            $paceLabel = null;
+            if ($first3f !== null && $last3f !== null) {
+                $diff = round($first3f - $last3f, 1);
+                if ($diff >= 1.0)      $paceLabel = ['ハイペース', 'bg-rose-100 text-rose-700'];
+                elseif ($diff <= -1.0) $paceLabel = ['スローペース', 'bg-sky-100 text-sky-700'];
+                else                   $paceLabel = ['平均ペース', 'bg-emerald-100 text-emerald-700'];
+            }
+
+            // 印的中サマリ (race_marks があれば集計)
+            $markHits = [];
+            try {
+                if (\Illuminate\Support\Facades\Schema::hasTable('race_marks')) {
+                    $marks = \App\Models\RaceMark::where('race_id', $race->id)
+                        ->where('user_id', \Illuminate\Support\Facades\Auth::id())
+                        ->get();
+                    if ($marks->isNotEmpty() && $results->isNotEmpty()) {
+                        $resultByHorseId = $results->keyBy('horse_id');
+                        foreach ($marks as $m) {
+                            $rr = $resultByHorseId->get($m->horse_id);
+                            $finish = $rr?->finish_position_int;
+                            $key = $m->mark ?: '?';
+                            if (!isset($markHits[$key])) {
+                                $markHits[$key] = ['mark' => $key, 'count' => 0, 'win' => 0, 'place' => 0, 'show' => 0, 'horses' => []];
+                            }
+                            $markHits[$key]['count']++;
+                            if ($finish === 1) $markHits[$key]['win']++;
+                            if (in_array($finish, [1,2], true)) $markHits[$key]['place']++;
+                            if (in_array($finish, [1,2,3], true)) $markHits[$key]['show']++;
+                            $markHits[$key]['horses'][] = [
+                                'name' => $rr?->horse?->name ?? ('#'.$m->horse_id),
+                                'finish' => $rr?->finish_position ?? '-',
+                                'finish_int' => $finish,
+                            ];
+                        }
+                        // 印の標準順序
+                        $order = ['◎' => 0, '○' => 1, '▲' => 2, '△' => 3, '☆' => 4, '✓' => 5, '?' => 9];
+                        uksort($markHits, fn($a, $b) => ($order[$a] ?? 8) <=> ($order[$b] ?? 8));
+                    }
+                }
+            } catch (\Throwable $e) { $markHits = []; }
         @endphp
-        @if (!empty($lapTimes))
-            <div class="mt-6">
-                <h3 class="text-sm font-semibold text-gray-700 mb-2">ラップタイム</h3>
-                <div class="flex flex-wrap gap-2 text-xs font-mono">
-                    @foreach ($lapTimes as $i => $lap)
-                        <span class="bg-gray-100 border rounded px-2 py-1">
-                            <span class="text-gray-500">{{ ($i + 1) * 200 }}m</span>
-                            <span class="ml-1 text-gray-800 font-bold">{{ $lap }}</span>
-                        </span>
-                    @endforeach
+
+        @if (!empty($lapTimes) || !empty($markHits))
+            <div class="mt-6 space-y-6">
+                <div class="border-t pt-5">
+                    <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2 mb-4">
+                        <x-icon name="chart-bar" class="w-5 h-5 text-emerald-500" />
+                        レース回顧
+                        @if ($paceLabel)
+                            <span class="text-xs px-2 py-0.5 rounded {{ $paceLabel[1] }}">{{ $paceLabel[0] }}</span>
+                        @endif
+                    </h2>
+
+                    @if (!empty($lapSeconds))
+                        {{-- ペース推移グラフ --}}
+                        <div class="bg-gray-50 dark:bg-gray-900/40 border rounded p-3 sm:p-4">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">ペース推移 (200mラップ)</h3>
+                                <div class="text-xs text-gray-500 flex flex-wrap gap-x-3">
+                                    @if ($lapAvg !== null) <span>平均ラップ: <span class="font-mono font-bold text-gray-800 dark:text-gray-100">{{ $lapAvg }}秒</span></span> @endif
+                                    @if ($first3f) <span>前3F: <span class="font-mono font-bold">{{ $first3f }}</span></span> @endif
+                                    @if ($last3f) <span>上り3F: <span class="font-mono font-bold">{{ $last3f }}</span></span> @endif
+                                </div>
+                            </div>
+                            <div id="pace-chart-{{ $race->id }}" wire:ignore style="min-height: 220px;"></div>
+
+                            {{-- ラップタイム一覧 (バッジ形式) --}}
+                            <div class="flex flex-wrap gap-2 text-xs font-mono mt-3">
+                                @foreach ($lapTimes as $i => $lap)
+                                    @php
+                                        $sec = is_numeric($lap) ? (float) $lap : (float) preg_replace('/[^0-9.]/', '', (string) $lap);
+                                        $cls = 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-100';
+                                        if ($lapAvg !== null && $sec > 0) {
+                                            if ($sec <= $lapAvg - 0.5)      $cls = 'bg-rose-100 dark:bg-rose-900/30 border-rose-300 text-rose-700 dark:text-rose-300';
+                                            elseif ($sec >= $lapAvg + 0.5)  $cls = 'bg-sky-100 dark:bg-sky-900/30 border-sky-300 text-sky-700 dark:text-sky-300';
+                                        }
+                                    @endphp
+                                    <span class="border rounded px-2 py-1 {{ $cls }}">
+                                        <span class="opacity-60">{{ ($i + 1) * 200 }}m</span>
+                                        <span class="ml-1 font-bold">{{ $lap }}</span>
+                                    </span>
+                                @endforeach
+                            </div>
+                            <div class="text-[10px] text-gray-500 mt-1">
+                                <span class="inline-block w-2 h-2 bg-rose-300 rounded-sm mr-1"></span>速い (-0.5秒以下)
+                                <span class="inline-block w-2 h-2 bg-sky-300 rounded-sm ml-2 mr-1"></span>遅い (+0.5秒以上)
+                            </div>
+                        </div>
+
+                        @push('scripts')
+                        <script>
+                            document.addEventListener('DOMContentLoaded', function () {
+                                if (typeof ApexCharts === 'undefined') return;
+                                const el = document.querySelector('#pace-chart-{{ $race->id }}');
+                                if (!el) return;
+                                const lapData = @json($lapSeconds);
+                                const distances = @json($lapDistances);
+                                const avg = {{ $lapAvg !== null ? $lapAvg : 'null' }};
+                                const options = {
+                                    chart: { type: 'line', height: 220, toolbar: { show: false }, zoom: { enabled: false }, fontFamily: 'inherit' },
+                                    series: [{ name: 'ラップ秒', data: lapData }],
+                                    xaxis: {
+                                        categories: distances.map(d => d + 'm'),
+                                        labels: { style: { fontSize: '11px' } }
+                                    },
+                                    yaxis: {
+                                        reversed: false,
+                                        labels: { formatter: v => v.toFixed(1) + 's' },
+                                        title: { text: '秒/200m', style: { fontSize: '11px' } }
+                                    },
+                                    stroke: { curve: 'smooth', width: 3 },
+                                    markers: { size: 4 },
+                                    colors: ['#10b981'],
+                                    annotations: avg !== null ? {
+                                        yaxis: [{
+                                            y: avg,
+                                            borderColor: '#f59e0b',
+                                            strokeDashArray: 4,
+                                            label: { text: '平均 ' + avg.toFixed(2) + 's', style: { background: '#f59e0b', color: '#fff', fontSize: '10px' } }
+                                        }]
+                                    } : {},
+                                    grid: { borderColor: '#e5e7eb', strokeDashArray: 3 },
+                                    tooltip: { y: { formatter: v => v.toFixed(2) + ' 秒' } }
+                                };
+                                new ApexCharts(el, options).render();
+                            });
+                        </script>
+                        @endpush
+                    @endif
+
+                    {{-- 印 × 着順 サマリ --}}
+                    @if (!empty($markHits))
+                        <div class="mt-5 bg-gray-50 dark:bg-gray-900/40 border rounded p-3 sm:p-4">
+                            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-2">
+                                <x-icon name="target" class="w-4 h-4 text-rose-500" />
+                                あなたの印 × 着順
+                            </h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm min-w-[480px]">
+                                    <thead class="bg-white dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300">
+                                        <tr>
+                                            <th class="px-2 py-2 text-left">印</th>
+                                            <th class="px-2 py-2">頭数</th>
+                                            <th class="px-2 py-2">勝</th>
+                                            <th class="px-2 py-2">連対</th>
+                                            <th class="px-2 py-2">複勝</th>
+                                            <th class="px-2 py-2 text-left">対象馬 (着順)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($markHits as $h)
+                                            @php
+                                                $cnt = max(1, $h['count']);
+                                                $winRate   = round($h['win']   / $cnt * 100, 1);
+                                                $placeRate = round($h['place'] / $cnt * 100, 1);
+                                                $showRate  = round($h['show']  / $cnt * 100, 1);
+                                            @endphp
+                                            <tr class="border-t">
+                                                <td class="px-2 py-2 font-bold text-lg text-rose-600">{{ $h['mark'] }}</td>
+                                                <td class="px-2 py-2 text-center">{{ $h['count'] }}</td>
+                                                <td class="px-2 py-2 text-center">
+                                                    {{ $h['win'] }}
+                                                    <span class="text-xs text-gray-500">({{ $winRate }}%)</span>
+                                                </td>
+                                                <td class="px-2 py-2 text-center">
+                                                    {{ $h['place'] }}
+                                                    <span class="text-xs text-gray-500">({{ $placeRate }}%)</span>
+                                                </td>
+                                                <td class="px-2 py-2 text-center">
+                                                    {{ $h['show'] }}
+                                                    <span class="text-xs text-gray-500">({{ $showRate }}%)</span>
+                                                </td>
+                                                <td class="px-2 py-2 text-xs text-gray-700 dark:text-gray-300">
+                                                    @foreach ($h['horses'] as $hh)
+                                                        @php
+                                                            $cls = 'text-gray-600';
+                                                            if ($hh['finish_int'] === 1)              $cls = 'text-amber-600 font-bold';
+                                                            elseif (in_array($hh['finish_int'], [2,3], true)) $cls = 'text-emerald-600 font-semibold';
+                                                        @endphp
+                                                        <span class="inline-block mr-2 {{ $cls }}">
+                                                            {{ $hh['name'] }}<span class="text-gray-400">({{ $hh['finish'] }})</span>
+                                                        </span>
+                                                    @endforeach
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    @endif
                 </div>
-                @if ($race->first_3f || $race->last_3f)
-                    <div class="mt-2 text-xs text-gray-600">
-                        @if ($race->first_3f) <span class="mr-3">前3F: <span class="font-mono font-bold text-gray-800">{{ $race->first_3f }}</span></span> @endif
-                        @if ($race->last_3f) <span>上り3F: <span class="font-mono font-bold text-gray-800">{{ $race->last_3f }}</span></span> @endif
-                    </div>
-                @endif
             </div>
         @endif
 

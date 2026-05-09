@@ -1,0 +1,50 @@
+{
+    "name": "JRA Analytics",
+    "short_name": "JRA",
+    "description": "JRA レース分析・予想記録・ウォッチリスト・通知",
+    "start_url": "/JRA/dashboard",
+    "scope": "/JRA/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "theme_color": "#0f5132",
+    "background_color": "#0f172a",
+    "lang": "ja",
+    "categories": ["sports", "productivity", "utilities"],
+    "icons": [
+        {
+            "src": "/JRA/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        },
+        {
+            "src": "/JRA/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/JRA/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "ダッシュボード",
+            "short_name": "Home",
+            "url": "/JRA/dashboard"
+        },
+        {
+            "name": "ウォッチリスト",
+            "short_name": "Watch",
+            "url": "/JRA/watchlist"
+        },
+        {
+            "name": "通知",
+            "short_name": "Notify",
+            "url": "/JRA/notifications"
+        }
+    ]
+}

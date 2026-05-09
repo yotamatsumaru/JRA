@@ -8,7 +8,13 @@
     <meta name="theme-color" content="#052e16" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="JRA">
     <meta name="format-detection" content="telephone=no">
+
+    {{-- Phase 6-P: PWA --}}
+    <link rel="manifest" href="{{ url('/manifest.json') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url('/icon.svg') }}">
+    <link rel="apple-touch-icon" href="{{ url('/icon.svg') }}">
 
     <title>@yield('title', 'JRA Analyzer') - {{ config('app.name', 'JRA Analyzer') }}</title>
 
@@ -255,6 +261,10 @@
                             <x-icon name="user" class="w-4 h-4" />
                             <span>騎手</span>
                         </a>
+                        <a href="{{ route('trainers.index') }}" class="{{ request()->routeIs('trainers.*') ? $active : $inactive }} flex items-center space-x-1.5">
+                            <x-icon name="user" class="w-4 h-4" />
+                            <span>調教師</span>
+                        </a>
                         <a href="{{ route('venues.index') }}" class="{{ request()->routeIs('venues.*') ? $active : $inactive }} flex items-center space-x-1.5">
                             <x-icon name="map" class="w-4 h-4" />
                             <span>競馬場</span>
@@ -368,6 +378,18 @@
                     </button>
 
                     @auth
+                    {{-- Phase 6-A: 通知ベル --}}
+                    <a href="{{ route('notifications.index') }}"
+                       class="hidden md:inline-flex items-center justify-center relative w-9 h-9 rounded-md hover:bg-turf-600/70 transition-colors"
+                       title="通知センター">
+                        <x-icon name="bell" class="w-5 h-5" />
+                        @if(($headerUnreadNotifications ?? 0) > 0)
+                            <span class="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 text-[10px] font-bold rounded-full bg-rose-500 text-white ring-2 ring-turf-700">
+                                {{ $headerUnreadNotifications > 99 ? '99+' : $headerUnreadNotifications }}
+                            </span>
+                        @endif
+                    </a>
+
                     <div class="hidden md:flex items-center relative" x-data="{ open: false }">
                         <button @click="open = !open" @click.away="open = false" class="flex items-center space-x-2 hover:bg-turf-600/70 px-3 py-2 rounded-md text-sm transition-colors">
                             <div class="w-7 h-7 rounded-full bg-gold-500 text-turf-900 flex items-center justify-center font-bold text-xs">
@@ -428,6 +450,9 @@
                 </a>
                 <a href="{{ route('jockeys.index') }}" class="{{ request()->routeIs('jockeys.*') ? $mActive : $mLink }}" @click="menuOpen=false">
                     <x-icon name="user" class="w-4 h-4" /> 騎手
+                </a>
+                <a href="{{ route('trainers.index') }}" class="{{ request()->routeIs('trainers.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="user" class="w-4 h-4" /> 調教師
                 </a>
                 <a href="{{ route('venues.index') }}" class="{{ request()->routeIs('venues.*') ? $mActive : $mLink }}" @click="menuOpen=false">
                     <x-icon name="map" class="w-4 h-4" /> 競馬場
@@ -528,6 +553,14 @@
                     <span x-show="darkMode" x-cloak class="flex items-center gap-2"><x-icon name="sun" class="w-4 h-4" /> ライトモード</span>
                 </button>
                 @auth
+                <a href="{{ route('notifications.index') }}" class="flex items-center justify-between gap-2 px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700" @click="menuOpen=false">
+                    <span class="flex items-center gap-2"><x-icon name="bell" class="w-4 h-4" /> 通知</span>
+                    @if(($headerUnreadNotifications ?? 0) > 0)
+                        <span class="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 text-[10px] font-bold rounded-full bg-rose-500 text-white">
+                            {{ $headerUnreadNotifications > 99 ? '99+' : $headerUnreadNotifications }}
+                        </span>
+                    @endif
+                </a>
                 <a href="{{ route('profile.edit') }}" class="flex items-center gap-2 px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700" @click="menuOpen=false">
                     <x-icon name="cog" class="w-4 h-4" /> プロフィール
                 </a>
@@ -568,5 +601,21 @@
 </div>
 
 @stack('scripts')
+
+{{-- Phase 6-P: Service Worker 登録 --}}
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+            navigator.serviceWorker.register('{{ url('/service-worker.js') }}', { scope: '{{ url('/') }}/' })
+                .then(function (reg) {
+                    // 更新検知 (バックグラウンドで通知)
+                    if (reg && reg.waiting) {
+                        try { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
+                    }
+                })
+                .catch(function () { /* SW登録失敗は致命的でないため握り潰す */ });
+        });
+    }
+</script>
 </body>
 </html>
