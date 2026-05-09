@@ -159,12 +159,26 @@
                             'from'       => $filters['from']      ?? null,
                             'to'         => $filters['to']        ?? null,
                             'keyword'    => $filters['keyword']   ?? null,
-                        ], fn($v) => $v !== null && $v !== ''));
+                        ], fn($v) => $v !== null && $v !== '')) . '#jockey-detail';
+                        // 騎手プロフィールページ(jockeys.show) は jockey_id が必要
+                        $profileUrl = isset($r->jockey_id)
+                            ? route('jockeys.show', $r->jockey_id)
+                            : null;
                     @endphp
                     <tr class="border-b hover:bg-emerald-50 {{ $isPicked ? 'bg-emerald-100' : '' }}">
                         <td class="px-3 py-2 text-gray-400">{{ $i + 1 }}</td>
                         <td class="px-3 py-2 font-semibold">
-                            <a href="{{ $detailUrl }}" class="text-emerald-700 hover:underline">{{ $r->name }}</a>
+                            <a href="{{ $detailUrl }}"
+                               class="text-emerald-700 hover:underline inline-flex items-center gap-1"
+                               title="クリックで下の詳細を表示">
+                                <span>{{ $r->name }}</span>
+                                <span class="text-xs text-gray-400">▼</span>
+                            </a>
+                            @if ($profileUrl)
+                                <a href="{{ $profileUrl }}"
+                                   class="ml-1 text-xs text-sky-600 hover:underline"
+                                   title="騎手詳細ページへ">[個別ページ]</a>
+                            @endif
                         </td>
                         <td class="px-3 py-2 text-center">{{ number_format($r->runs) }}</td>
                         <td class="px-3 py-2 text-center text-yellow-600 font-bold">{{ number_format($r->wins) }}</td>
@@ -192,9 +206,12 @@
 
     {{-- ============ 個別騎手の詳細 ============ --}}
     @if ($jockeyName)
-    <div class="bg-white rounded-lg shadow p-4">
-        <div class="flex items-center justify-between mb-3">
-            <h2 class="font-semibold text-gray-700">{{ $jockeyName }} の競馬場 × トラック相性</h2>
+    <div id="jockey-detail" class="bg-white rounded-lg shadow p-4 ring-2 ring-emerald-300 scroll-mt-20">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 class="font-semibold text-gray-700 text-lg">
+                <span class="text-emerald-700">▼</span>
+                {{ $jockeyName }} の競馬場 × トラック相性
+            </h2>
             <a href="{{ route('analytics.jockey', array_filter([
                 'min_runs'   => $filters['minRuns']   ?? null,
                 'venue_id'   => $filters['venueId']   ?? null,
@@ -254,4 +271,19 @@
     </div>
     @endif
 </div>
+
+@push('scripts')
+<script>
+// 一覧から騎手を選んで詳細表示する際に詳細パネルへ自動スクロール
+document.addEventListener('DOMContentLoaded', () => {
+    const detail = document.getElementById('jockey-detail');
+    if (detail) {
+        // ブラウザ標準のハッシュジャンプを補助(固定ヘッダがある場合に備えて少しオフセット)
+        setTimeout(() => {
+            detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
+    }
+});
+</script>
+@endpush
 @endsection
