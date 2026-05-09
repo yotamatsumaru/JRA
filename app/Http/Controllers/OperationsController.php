@@ -14,6 +14,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 /**
@@ -31,43 +33,68 @@ class OperationsController extends Controller
     public function index(Request $request): View
     {
         // --- スケジューラ実行ログ (直近30件) ---
-        $schedulerLogs = SchedulerLog::orderByDesc('id')->limit(30)->get();
+        $schedulerLogs = $this->safe(
+            fn() => Schema::hasTable('scheduler_logs')
+                ? SchedulerLog::orderByDesc('id')->limit(30)->get()
+                : collect(),
+            collect()
+        );
 
         // --- 監査ログ (フィルタ + ページネーション) ---
-        $auditQuery = AuditLog::with('user')->orderByDesc('id');
-        if ($request->filled('action')) {
-            $auditQuery->where('action', $request->input('action'));
-        }
-        if ($request->filled('user_id')) {
-            $auditQuery->where('user_id', (int) $request->input('user_id'));
-        }
-        if ($request->filled('from')) {
-            $auditQuery->whereDate('created_at', '>=', $request->input('from'));
-        }
-        if ($request->filled('to')) {
-            $auditQuery->whereDate('created_at', '<=', $request->input('to'));
-        }
-        $auditLogs = $auditQuery->paginate(50)->withQueryString();
+        $auditLogs = $this->safe(function () use ($request) {
+            if (!Schema::hasTable('audit_logs')) {
+                return new \Illuminate\Pagination\LengthAwarePaginator([], 0, 50);
+            }
+            $auditQuery = AuditLog::with('user')->orderByDesc('id');
+            if ($request->filled('action')) {
+                $auditQuery->where('action', $request->input('action'));
+            }
+            if ($request->filled('user_id')) {
+                $auditQuery->where('user_id', (int) $request->input('user_id'));
+            }
+            if ($request->filled('from')) {
+                $auditQuery->whereDate('created_at', '>=', $request->input('from'));
+            }
+            if ($request->filled('to')) {
+                $auditQuery->whereDate('created_at', '<=', $request->input('to'));
+            }
+            return $auditQuery->paginate(50)->withQueryString();
+        }, new \Illuminate\Pagination\LengthAwarePaginator([], 0, 50));
 
         // --- スケジューラサマリ ---
-        $schedSummary = [
-            'success_24h' => SchedulerLog::where('status', SchedulerLog::STATUS_SUCCESS)
-                ->where('created_at', '>=', now()->subDay())->count(),
-            'failed_24h'  => SchedulerLog::where('status', SchedulerLog::STATUS_FAILED)
-                ->where('created_at', '>=', now()->subDay())->count(),
-            'running'     => SchedulerLog::where('status', SchedulerLog::STATUS_RUNNING)->count(),
-            'last_run'    => SchedulerLog::orderByDesc('id')->first(),
-        ];
+        $schedSummary = $this->safe(function () {
+            if (!Schema::hasTable('scheduler_logs')) {
+                return ['success_24h' => 0, 'failed_24h' => 0, 'running' => 0, 'last_run' => null];
+            }
+            return [
+                'success_24h' => SchedulerLog::where('status', SchedulerLog::STATUS_SUCCESS)
+                    ->where('created_at', '>=', now()->subDay())->count(),
+                'failed_24h'  => SchedulerLog::where('status', SchedulerLog::STATUS_FAILED)
+                    ->where('created_at', '>=', now()->subDay())->count(),
+                'running'     => SchedulerLog::where('status', SchedulerLog::STATUS_RUNNING)->count(),
+                'last_run'    => SchedulerLog::orderByDesc('id')->first(),
+            ];
+        }, ['success_24h' => 0, 'failed_24h' => 0, 'running' => 0, 'last_run' => null]);
 
         // --- ジョブ別 直近実行 ---
-        $jobsLatest = SchedulerLog::selectRaw('job, MAX(id) as last_id')
-            ->groupBy('job')->pluck('last_id');
-        $jobsSummary = SchedulerLog::whereIn('id', $jobsLatest)->orderBy('job')->get();
+        // ONLY_FULL_GROUP_BY 環境でも動くよう、サブクエリを使わず PHP 側で集約
+        $jobsSummary = $this->safe(function () {
+            if (!Schema::hasTable('scheduler_logs')) return collect();
+            $latestIds = SchedulerLog::selectRaw('MAX(id) as last_id')
+                ->groupBy('job')
+                ->pluck('last_id')
+                ->all();
+            if (empty($latestIds)) return collect();
+            return SchedulerLog::whereIn('id', $latestIds)->orderBy('job')->get();
+        }, collect());
 
         // --- 監査ログサマリ ---
-        $actionTotals = AuditLog::selectRaw('action, COUNT(*) as cnt')
-            ->where('created_at', '>=', now()->subDays(30))
-            ->groupBy('action')->orderByDesc('cnt')->get();
+        $actionTotals = $this->safe(function () {
+            if (!Schema::hasTable('audit_logs')) return collect();
+            return AuditLog::selectRaw('action, COUNT(*) as cnt')
+                ->where('created_at', '>=', now()->subDays(30))
+                ->groupBy('action')->orderByDesc('cnt')->get();
+        }, collect());
 
         $actions = AuditLog::ACTIONS;
 
@@ -75,6 +102,23 @@ class OperationsController extends Controller
             'schedulerLogs', 'auditLogs', 'schedSummary',
             'jobsSummary', 'actionTotals', 'actions'
         ));
+    }
+
+    /**
+     * 個別の集計が落ちても運用画面全体が500にならないようにするヘルパ
+     */
+    private function safe(\Closure $fn, $default)
+    {
+        try {
+            return $fn();
+        } catch (\Throwable $e) {
+            Log::error('OperationsController safe() caught', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+            ]);
+            return $default;
+        }
     }
 
     /**

@@ -41,22 +41,38 @@ class WatchlistService
         $watchlist = Watchlist::where('user_id', $userId)->get();
         if ($watchlist->isEmpty()) return [];
 
-        $horseIds   = $watchlist->where('target_type', 'horse')->pluck('target_id')->all();
-        $jockeyIds  = $watchlist->where('target_type', 'jockey')->pluck('target_id')->all();
-        $trainerIds = $watchlist->where('target_type', 'trainer')->pluck('target_id')->all();
+        $horseIds   = $watchlist->where('target_type', 'horse')->pluck('target_id')->map(fn($v) => (int) $v)->all();
+        $jockeyIds  = $watchlist->where('target_type', 'jockey')->pluck('target_id')->map(fn($v) => (int) $v)->all();
+        $trainerIds = $watchlist->where('target_type', 'trainer')->pluck('target_id')->map(fn($v) => (int) $v)->all();
+
+        // 全部空 (理論上は isEmpty で弾かれるが防御)
+        if (empty($horseIds) && empty($jockeyIds) && empty($trainerIds)) return [];
 
         $today = Carbon::today();
         $end   = $today->copy()->addDays($days);
 
         $rrQuery = RaceResult::query()
-            ->with(['horse', 'jockey', 'trainer', 'race.venue'])
+            ->with(['horse:id,name', 'jockey:id,name', 'trainer:id,name', 'race:id,name,venue_id,race_date,race_number,track_type,distance', 'race.venue:id,name'])
             ->whereHas('race', fn($q) => $q->whereBetween('race_date', [$today->toDateString(), $end->toDateString()]))
             ->where(function ($q) use ($horseIds, $jockeyIds, $trainerIds) {
-                $q->where(function ($qq) use ($horseIds) {
-                    if (!empty($horseIds))   $qq->whereIn('horse_id',   $horseIds);
-                });
-                if (!empty($jockeyIds))  $q->orWhereIn('jockey_id',  $jockeyIds);
-                if (!empty($trainerIds)) $q->orWhereIn('trainer_id', $trainerIds);
+                // 各 IN 条件を独立した OR グループとしてまとめる (空配列はスキップ)
+                $applied = false;
+                if (!empty($horseIds)) {
+                    $q->orWhereIn('horse_id', $horseIds);
+                    $applied = true;
+                }
+                if (!empty($jockeyIds)) {
+                    $q->orWhereIn('jockey_id', $jockeyIds);
+                    $applied = true;
+                }
+                if (!empty($trainerIds)) {
+                    $q->orWhereIn('trainer_id', $trainerIds);
+                    $applied = true;
+                }
+                // 全て空の場合は対象なしになるよう raw 0
+                if (!$applied) {
+                    $q->whereRaw('0 = 1');
+                }
             });
 
         $results = $rrQuery->get();
@@ -69,13 +85,13 @@ class WatchlistService
                 $grouped[$rid] = ['race' => $rr->race, 'hits' => []];
             }
             $hits = [];
-            if (in_array($rr->horse_id, $horseIds, true)) {
+            if (in_array((int) $rr->horse_id, $horseIds, true)) {
                 $hits[] = ['type' => 'horse',   'name' => $rr->horse?->name   ?? '#'.$rr->horse_id,   'horse_no' => $rr->horse_number];
             }
-            if (in_array($rr->jockey_id, $jockeyIds, true)) {
+            if (in_array((int) $rr->jockey_id, $jockeyIds, true)) {
                 $hits[] = ['type' => 'jockey',  'name' => $rr->jockey?->name  ?? '#'.$rr->jockey_id,  'horse_no' => $rr->horse_number];
             }
-            if (in_array($rr->trainer_id, $trainerIds, true)) {
+            if (in_array((int) $rr->trainer_id, $trainerIds, true)) {
                 $hits[] = ['type' => 'trainer', 'name' => $rr->trainer?->name ?? '#'.$rr->trainer_id, 'horse_no' => $rr->horse_number];
             }
             $grouped[$rid]['hits'] = array_merge($grouped[$rid]['hits'], $hits);

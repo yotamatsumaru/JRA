@@ -14,6 +14,7 @@ use App\Services\PredictionAccuracyService;
 use App\Services\WatchlistService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
@@ -23,9 +24,33 @@ class DashboardController extends Controller
     public function index(WatchlistService $watchlistService, PredictionAccuracyService $accuracyService): View
     {
         // ========= Phase 5-D: パーソナル サマリ (ログインユーザー) =========
+        // パーソナル領域はユーザー固有なのでキャッシュは個別に短時間 (60秒) のみ
         $userId = Auth::id();
-        $personal = $this->buildPersonalSummary($userId, $watchlistService, $accuracyService);
+        $personal = Cache::remember(
+            'dashboard:personal:' . ($userId ?? 'guest'),
+            now()->addSeconds(60),
+            fn() => $this->buildPersonalSummary($userId, $watchlistService, $accuracyService)
+        );
 
+        // ========= グローバル集計はまとめて 10 分キャッシュ =========
+        // すべてのユーザーで共通なので 1 度計算すれば 10 分間は再計算不要
+        $aggregates = Cache::remember(
+            'dashboard:aggregates:v1',
+            now()->addMinutes(10),
+            fn() => $this->buildAggregates()
+        );
+
+        return view('dashboard.index', array_merge(
+            ['personal' => $personal],
+            $aggregates
+        ));
+    }
+
+    /**
+     * グローバル集計をまとめて構築 (キャッシュ対象)
+     */
+    private function buildAggregates(): array
+    {
         // ========= 基本 KPI =========
         $stats = [
             'races_total'    => $this->safe(fn() => Race::count(), 0),
@@ -42,7 +67,7 @@ class DashboardController extends Controller
             ),
             'last_race_date' => $this->safe(fn() => Race::max('race_date'), null),
             'recent_races'   => $this->safe(
-                fn() => Race::with('venue')
+                fn() => Race::with('venue:id,name')
                     ->withCount('results')
                     ->orderByDesc('race_date')
                     ->orderByDesc('race_number')
@@ -239,7 +264,7 @@ class DashboardController extends Controller
         $latestDateRaces = collect();
         $latestDate = $stats['last_race_date'] ?? null;
         if ($latestDate) {
-            $latestDateRaces = $this->safe(fn() => Race::with('venue')
+            $latestDateRaces = $this->safe(fn() => Race::with('venue:id,name')
                 ->withCount('results')
                 ->whereDate('race_date', $latestDate)
                 ->orderBy('venue_id')
@@ -247,8 +272,7 @@ class DashboardController extends Controller
                 ->get(), collect());
         }
 
-        return view('dashboard.index', compact(
-            'personal',
+        return compact(
             'stats',
             'byGrade', 'byMonth', 'byVenue',
             'byTrack', 'byDistanceCat', 'byCondition', 'byWeather', 'byWeekday',
@@ -256,7 +280,7 @@ class DashboardController extends Controller
             'topJockeys', 'topTrainers', 'topSires', 'topPrizeHorses',
             'venueTrackWinRate', 'frameWinRates', 'venueStyleStats',
             'latestDate', 'latestDateRaces'
-        ));
+        );
     }
 
     /**

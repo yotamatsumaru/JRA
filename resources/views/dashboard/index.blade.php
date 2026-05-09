@@ -575,9 +575,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeMode = () => isDark() ? 'dark' : 'light';
     const grid = () => ({ borderColor: isDark() ? '#374151' : '#e5e7eb' });
 
+    /**
+     * 各チャートを「画面に入ってから初期化」するキューに登録するヘルパ
+     *  - チャートが多いダッシュボードでファーストペイントを軽くする
+     *  - 一度描画したら disconnect (再描画はテーマ切替時のみ任意)
+     */
+    const __chartQueue = [];
+    const queueChart = (selector, optionsBuilder) => {
+        const el = document.querySelector(selector);
+        if (!el) return;
+        __chartQueue.push({ el, optionsBuilder, rendered: false });
+    };
+    const flushChart = (entry) => {
+        if (entry.rendered) return;
+        entry.rendered = true;
+        try {
+            new ApexCharts(entry.el, entry.optionsBuilder()).render();
+        } catch (e) { /* 単一チャートで例外が出ても他に波及させない */ }
+    };
+    const startChartObserver = () => {
+        if (typeof IntersectionObserver === 'undefined') {
+            __chartQueue.forEach(flushChart);
+            return;
+        }
+        const io = new IntersectionObserver((entries) => {
+            entries.forEach((ent) => {
+                if (!ent.isIntersecting) return;
+                const target = ent.target;
+                const found = __chartQueue.find(c => c.el === target);
+                if (found) flushChart(found);
+                io.unobserve(target);
+            });
+        }, { rootMargin: '120px 0px' });
+        __chartQueue.forEach(c => io.observe(c.el));
+    };
+
     // === 月別レース数 ===
-    new ApexCharts(document.querySelector('#chart-monthly'), {
-        chart: { type: 'area', height: 250, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-monthly', () => ({
+        chart: { type: 'area', height: 250, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: [{ name: 'レース数', data: @json($byMonth->pluck('cnt')) }],
         xaxis: { categories: @json($byMonth->pluck('ym')) },
         colors: ['#16a34a'],
@@ -586,10 +621,10 @@ document.addEventListener('DOMContentLoaded', () => {
         dataLabels: { enabled: false },
         grid: grid(),
         tooltip: { theme: themeMode() },
-    }).render();
+    }));
 
     // === グレード別 ===
-    new ApexCharts(document.querySelector('#chart-grade'), {
+    queueChart('#chart-grade', () => ({
         chart: { type: 'bar', height: 250, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
         series: [{ name: 'レース数', data: @json($byGrade->pluck('cnt')) }],
         xaxis: { categories: @json($byGrade->pluck('grade')) },
@@ -598,11 +633,11 @@ document.addEventListener('DOMContentLoaded', () => {
         grid: grid(),
         tooltip: { theme: themeMode() },
         dataLabels: { enabled: false },
-    }).render();
+    }));
 
     // === 競馬場別 ===
-    new ApexCharts(document.querySelector('#chart-venue'), {
-        chart: { type: 'bar', height: 320, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-venue', () => ({
+        chart: { type: 'bar', height: 320, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: [{ name: 'レース数', data: @json($byVenue->pluck('cnt')) }],
         xaxis: { categories: @json($byVenue->pluck('name')) },
         colors: ['#dc8330'],
@@ -610,25 +645,25 @@ document.addEventListener('DOMContentLoaded', () => {
         grid: grid(),
         tooltip: { theme: themeMode() },
         dataLabels: { enabled: true, style: { fontSize: '11px' } },
-    }).render();
+    }));
 
     // === トラック別 (donut) ===
     @if ($byTrack->isNotEmpty())
-    new ApexCharts(document.querySelector('#chart-track'), {
-        chart: { type: 'donut', height: 320, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-track', () => ({
+        chart: { type: 'donut', height: 320, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: @json($byTrack->pluck('cnt')->map(fn($v) => (int)$v)),
         labels: @json($byTrack->pluck('track_type')),
         colors: ['#16a34a', '#dc8330', '#9ca3af'],
         legend: { position: 'bottom' },
         dataLabels: { enabled: true, formatter: (val) => val.toFixed(1) + '%' },
         tooltip: { theme: themeMode() },
-    }).render();
+    }));
     @endif
 
     // === 距離別 (bar) ===
     @if ($byDistanceCat->isNotEmpty())
-    new ApexCharts(document.querySelector('#chart-distance'), {
-        chart: { type: 'bar', height: 220, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-distance', () => ({
+        chart: { type: 'bar', height: 220, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: [{ name: 'レース数', data: @json($byDistanceCat->pluck('cnt')->map(fn($v) => (int)$v)) }],
         xaxis: { categories: @json($byDistanceCat->pluck('cat')), labels: { style: { fontSize: '10px' } } },
         colors: ['#6366f1'],
@@ -637,39 +672,39 @@ document.addEventListener('DOMContentLoaded', () => {
         grid: grid(),
         tooltip: { theme: themeMode() },
         dataLabels: { enabled: false },
-    }).render();
+    }));
     @endif
 
     // === 馬場状態別 (donut) ===
     @if ($byCondition->isNotEmpty())
-    new ApexCharts(document.querySelector('#chart-condition'), {
-        chart: { type: 'donut', height: 220, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-condition', () => ({
+        chart: { type: 'donut', height: 220, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: @json($byCondition->pluck('cnt')->map(fn($v) => (int)$v)),
         labels: @json($byCondition->pluck('course_condition')),
         colors: ['#16a34a', '#84cc16', '#f59e0b', '#dc2626'],
         legend: { position: 'bottom', fontSize: '11px' },
         dataLabels: { enabled: true, formatter: (val) => val.toFixed(0) + '%' },
         tooltip: { theme: themeMode() },
-    }).render();
+    }));
     @endif
 
     // === 天候別 (donut) ===
     @if ($byWeather->isNotEmpty())
-    new ApexCharts(document.querySelector('#chart-weather'), {
-        chart: { type: 'donut', height: 220, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-weather', () => ({
+        chart: { type: 'donut', height: 220, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: @json($byWeather->pluck('cnt')->map(fn($v) => (int)$v)),
         labels: @json($byWeather->pluck('weather')),
         colors: ['#fbbf24', '#9ca3af', '#3b82f6', '#1e40af', '#e5e7eb'],
         legend: { position: 'bottom', fontSize: '11px' },
         dataLabels: { enabled: true, formatter: (val) => val.toFixed(0) + '%' },
         tooltip: { theme: themeMode() },
-    }).render();
+    }));
     @endif
 
     // === 曜日別 (bar) ===
     @if ($byWeekday->isNotEmpty())
-    new ApexCharts(document.querySelector('#chart-weekday'), {
-        chart: { type: 'bar', height: 220, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-weekday', () => ({
+        chart: { type: 'bar', height: 220, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: [{ name: 'レース数', data: @json($byWeekday->pluck('cnt')->map(fn($v) => (int)$v)) }],
         xaxis: { categories: @json($byWeekday->pluck('label')) },
         colors: ['#f43f5e'],
@@ -678,7 +713,7 @@ document.addEventListener('DOMContentLoaded', () => {
         grid: grid(),
         tooltip: { theme: themeMode() },
         dataLabels: { enabled: false },
-    }).render();
+    }));
     @endif
 
     // === 競馬場 × トラック種別 勝率ヒートマップ ===
@@ -707,8 +742,8 @@ document.addEventListener('DOMContentLoaded', () => {
             $vtSeries[] = ['name' => $tt, 'data' => $data];
         }
     @endphp
-    new ApexCharts(document.querySelector('#chart-venue-track-winrate'), {
-        chart: { type: 'heatmap', height: 220, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-venue-track-winrate', () => ({
+        chart: { type: 'heatmap', height: 220, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: @json($vtSeries),
         colors: ['#dc2626'],
         plotOptions: {
@@ -731,7 +766,7 @@ document.addEventListener('DOMContentLoaded', () => {
         xaxis: { labels: { style: { fontSize: '11px' } } },
         grid: grid(),
         tooltip: { theme: themeMode() },
-    }).render();
+    }));
     @endif
 
     // === 枠番別 勝率/複勝率（芝・ダート）===
@@ -760,8 +795,8 @@ document.addEventListener('DOMContentLoaded', () => {
             $frameShowSeries[] = ['name' => $tt, 'data' => $show];
         }
     @endphp
-    new ApexCharts(document.querySelector('#chart-frame-winrate'), {
-        chart: { type: 'bar', height: 280, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-frame-winrate', () => ({
+        chart: { type: 'bar', height: 280, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: @json($frameWinSeries),
         xaxis: { categories: @json($frameCats), title: { text: '枠番' } },
         yaxis: { labels: { formatter: (v) => v.toFixed(1) + '%' } },
@@ -771,10 +806,10 @@ document.addEventListener('DOMContentLoaded', () => {
         legend: { position: 'top' },
         grid: grid(),
         tooltip: { theme: themeMode(), y: { formatter: (v) => v.toFixed(2) + '%' } },
-    }).render();
+    }));
 
-    new ApexCharts(document.querySelector('#chart-frame-showrate'), {
-        chart: { type: 'bar', height: 280, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-frame-showrate', () => ({
+        chart: { type: 'bar', height: 280, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: @json($frameShowSeries),
         xaxis: { categories: @json($frameCats), title: { text: '枠番' } },
         yaxis: { labels: { formatter: (v) => v.toFixed(1) + '%' } },
@@ -784,7 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
         legend: { position: 'top' },
         grid: grid(),
         tooltip: { theme: themeMode(), y: { formatter: (v) => v.toFixed(2) + '%' } },
-    }).render();
+    }));
     @endif
 
     // === 競馬場別 脚質勝率 ===
@@ -814,8 +849,8 @@ document.addEventListener('DOMContentLoaded', () => {
             $vsSeries[] = ['name' => $style, 'data' => $data];
         }
     @endphp
-    new ApexCharts(document.querySelector('#chart-venue-style'), {
-        chart: { type: 'bar', height: 360, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-venue-style', () => ({
+        chart: { type: 'bar', height: 360, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: @json($vsSeries),
         xaxis: { categories: @json($vsVenues), labels: { style: { fontSize: '11px' } } },
         yaxis: { labels: { formatter: (v) => v.toFixed(1) + '%' }, title: { text: '勝率（%）' } },
@@ -825,13 +860,13 @@ document.addEventListener('DOMContentLoaded', () => {
         legend: { position: 'top' },
         grid: grid(),
         tooltip: { theme: themeMode(), y: { formatter: (v) => v.toFixed(2) + '%' } },
-    }).render();
+    }));
     @endif
 
     // === 平均出走頭数の月推移 ===
     @if ($avgFieldByMonth->isNotEmpty())
-    new ApexCharts(document.querySelector('#chart-avg-field'), {
-        chart: { type: 'line', height: 250, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280' },
+    queueChart('#chart-avg-field', () => ({
+        chart: { type: 'line', height: 250, toolbar: { show: false }, foreColor: isDark() ? '#9ca3af' : '#6b7280', animations: { enabled: false } },
         series: [{
             name: '平均頭数',
             data: @json($avgFieldByMonth->pluck('avg_field')->map(fn($v) => round((float)$v, 2)))
@@ -844,8 +879,10 @@ document.addEventListener('DOMContentLoaded', () => {
         yaxis: { min: 0, max: 18, labels: { formatter: (v) => v.toFixed(0) } },
         grid: grid(),
         tooltip: { theme: themeMode() },
-    }).render();
+    }));
     @endif
+
+    startChartObserver();
 });
 </script>
 @endpush
