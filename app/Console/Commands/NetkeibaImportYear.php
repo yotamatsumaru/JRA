@@ -146,6 +146,10 @@ class NetkeibaImportYear extends Command
         $totalSkipped = 0;
         $totalCandidates = 0;
 
+        // ETA計算用: 取込開始時刻と取込件数(このセッション内のみ)
+        $sessionStart = microtime(true);
+        $sessionFetched = 0; // このセッションで実際に scraper->fetchRace を呼んだ回数
+
         try {
             for ($m = $fromMonth; $m <= $toMonth; $m++) {
                 $this->info("\n────────────  {$year}/" . sprintf('%02d', $m) . " ────────────");
@@ -253,14 +257,32 @@ class NetkeibaImportYear extends Command
                             $data = $scraper->fetchRace($raceId);
                             $race = $importer->importFromNetkeiba($data);
                             $totalSuccess++;
+                            $sessionFetched++;
                             $doneSet[$raceId] = true;
                             $progress['done'][] = $raceId;
 
+                            // ETA表示(10件ごとに残り時間予測)
+                            $etaStr = '';
+                            if ($sessionFetched > 0 && $sessionFetched % 10 === 0) {
+                                $elapsed = microtime(true) - $sessionStart;
+                                $perRace = $elapsed / max(1, $sessionFetched);
+                                // このセッションで処理される見込み件数 = 候補総数 - 既処理(skip+success+failed - 元々あった分)
+                                $remaining = max(0, $totalCandidates - ($totalSuccess + $totalFailed + $totalSkipped));
+                                if ($remaining > 0) {
+                                    $etaSec = (int) ($perRace * $remaining);
+                                    $etaStr = sprintf(' [ETA: %s / %.1fs/race]',
+                                        $this->formatDuration($etaSec),
+                                        $perRace
+                                    );
+                                }
+                            }
+
                             $this->line(sprintf(
-                                "    ✓ [%d/%d] %s",
+                                "    ✓ [%d/%d] %s%s",
                                 $countDay,
                                 count($raceIds),
-                                $race->full_name ?? $raceId
+                                $race->full_name ?? $raceId,
+                                $etaStr
                             ));
                         } catch (\Throwable $e) {
                             $totalFailed++;
@@ -299,12 +321,19 @@ class NetkeibaImportYear extends Command
                 ]);
             }
 
+            $sessionElapsed = (int) (microtime(true) - $sessionStart);
+            $perRace = $sessionFetched > 0
+                ? (microtime(true) - $sessionStart) / $sessionFetched
+                : 0.0;
+
             $this->info("\n=================================================");
             if ($dryRun) {
                 $this->info(" [dry-run] 取得対象レース総数: {$totalCandidates}");
             } else {
                 $this->info(" 完了 — 成功: {$totalSuccess} / 失敗: {$totalFailed} / スキップ: {$totalSkipped}");
                 $this->info(" 候補総数: {$totalCandidates}");
+                $this->info(" 実行時間: " . $this->formatDuration($sessionElapsed)
+                    . ($sessionFetched > 0 ? sprintf(' (%.1fs/race × %d件)', $perRace, $sessionFetched) : ''));
                 $this->info(" 進捗ファイル: storage/app/{$progressPath}");
                 if ($totalFailed > 0) {
                     $this->warn(" エラー詳細は進捗ファイル内 errors[] を参照");
@@ -324,6 +353,20 @@ class NetkeibaImportYear extends Command
             $this->error("進捗は保存済み。再実行すれば自動でスキップして続きから処理されます");
             return self::FAILURE;
         }
+    }
+
+    /**
+     * 秒数を "1h 23m 45s" 形式の文字列に整形
+     */
+    protected function formatDuration(int $seconds): string
+    {
+        if ($seconds < 0) $seconds = 0;
+        $h = intdiv($seconds, 3600);
+        $m = intdiv($seconds % 3600, 60);
+        $s = $seconds % 60;
+        if ($h > 0) return sprintf('%dh %dm %ds', $h, $m, $s);
+        if ($m > 0) return sprintf('%dm %ds', $m, $s);
+        return sprintf('%ds', $s);
     }
 
     /**
