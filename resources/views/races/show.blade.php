@@ -118,11 +118,22 @@
         @endif
 
         {{-- ラップタイム --}}
-        @if (!empty($race->lap_times))
+        @php
+            $lapTimes = [];
+            try {
+                $lt = $race->lap_times;
+                if (is_array($lt)) $lapTimes = $lt;
+                elseif (is_string($lt) && $lt !== '') {
+                    $decoded = json_decode($lt, true);
+                    if (is_array($decoded)) $lapTimes = $decoded;
+                }
+            } catch (\Throwable $e) { $lapTimes = []; }
+        @endphp
+        @if (!empty($lapTimes))
             <div class="mt-6">
                 <h3 class="text-sm font-semibold text-gray-700 mb-2">ラップタイム</h3>
                 <div class="flex flex-wrap gap-2 text-xs font-mono">
-                    @foreach ($race->lap_times as $i => $lap)
+                    @foreach ($lapTimes as $i => $lap)
                         <span class="bg-gray-100 border rounded px-2 py-1">
                             <span class="text-gray-500">{{ ($i + 1) * 200 }}m</span>
                             <span class="ml-1 text-gray-800 font-bold">{{ $lap }}</span>
@@ -367,7 +378,7 @@
         <ul class="space-y-3">
             @foreach ($race->notes as $note)
                 <li class="border-l-4 border-primary-300 pl-3 py-1">
-                    <div class="text-xs text-gray-500">{{ $note->user?->name }} - {{ $note->created_at->format('Y/m/d H:i') }}</div>
+                    <div class="text-xs text-gray-500">{{ $note->user?->name }} - {{ $note->created_at?->format('Y/m/d H:i') }}</div>
                     @if ($note->title) <div class="font-bold">{{ $note->title }}</div> @endif
                     <div class="text-sm whitespace-pre-wrap">{{ $note->body }}</div>
                 </li>

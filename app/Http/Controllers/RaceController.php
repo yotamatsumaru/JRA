@@ -9,6 +9,7 @@ use App\Models\Trainer;
 use App\Models\Venue;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class RaceController extends Controller
@@ -65,21 +66,48 @@ class RaceController extends Controller
 
     public function show(Race $race): View
     {
-        $race->load([
-            'venue',
-            'results.horse',
-            'results.jockey',
-            'results.trainer',
-            'notes.user',
-            'payouts',
-            'bets',
-        ]);
+        try {
+            $race->load([
+                'venue',
+                'results.horse',
+                'results.jockey',
+                'results.trainer',
+                'notes.user',
+                'payouts',
+                'bets',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('RaceController@show eager load failed', [
+                'race_id' => $race->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
 
         // 払戻を券種別にまとめる
-        $payoutsByKind = $race->payouts->groupBy('kind');
+        $payoutsByKind = collect();
+        try {
+            $payoutsByKind = $race->payouts->groupBy('kind');
+        } catch (\Throwable $e) {
+            Log::error('RaceController@show payouts groupBy failed', [
+                'race_id' => $race->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
 
         // 自分の馬券（このレースに対するもの）
-        $myBets = $race->bets()->where('user_id', auth()->id())->orderBy('id')->get();
+        $myBets = collect();
+        $userId = auth()->id();
+        if ($userId) {
+            try {
+                $myBets = $race->bets()->where('user_id', $userId)->orderBy('id')->get();
+            } catch (\Throwable $e) {
+                Log::error('RaceController@show bets query failed', [
+                    'race_id' => $race->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
         $myBetSummary = [
             'count'   => $myBets->count(),
             'stake'   => (int) $myBets->sum('total_stake'),
