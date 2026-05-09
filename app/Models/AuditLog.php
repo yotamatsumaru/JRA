@@ -68,5 +68,13 @@ class AuditLog extends Model
         'scheduler.run'          => 'スケジューラ実行',
         'odds.capture'           => 'オッズ取得',
         'backup.run'             => 'バックアップ実行',
+        // Phase 4-S
+        'share.create'           => '予想スナップショット作成',
+        'share.toggle'           => '共有状態切替',
+        'share.delete'           => '共有削除',
+        // Phase 4-W
+        'watchlist.add'          => 'ウォッチリスト追加',
+        'watchlist.update'       => 'ウォッチリスト更新',
+        'watchlist.remove'       => 'ウォッチリスト削除',
     ];
 }

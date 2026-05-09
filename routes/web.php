@@ -13,12 +13,15 @@ use App\Http\Controllers\ImportController;
 use App\Http\Controllers\JockeyController;
 use App\Http\Controllers\OperationsController;
 use App\Http\Controllers\PedigreeRecommendController;
+use App\Http\Controllers\PredictionAccuracyController;
+use App\Http\Controllers\PredictionShareController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RaceController;
 use App\Http\Controllers\RaceNoteController;
 use App\Http\Controllers\RaceResultController;
 use App\Http\Controllers\ShutubaController;
 use App\Http\Controllers\VenueController;
+use App\Http\Controllers\WatchlistController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -28,6 +31,9 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
+
+// Phase 4-S: 予想スナップショット 公開閲覧 (ゲストアクセス可)
+Route::get('/share/{token}', [PredictionShareController::class, 'show'])->name('share.show');
 
 // 認証
 Route::middleware('guest')->group(function () {
@@ -125,7 +131,21 @@ Route::middleware('auth')->group(function () {
         Route::get('/horse', [AnalyticsController::class, 'horse'])->name('horse');
         Route::get('/stats', [AnalyticsController::class, 'stats'])->name('stats');
         Route::get('/roi', [AnalyticsController::class, 'roi'])->name('roi');
+
+        // Phase 4-N: 予想精度トラッキング
+        Route::get('/prediction-accuracy', [PredictionAccuracyController::class, 'index'])->name('prediction-accuracy');
+        // Phase 4-K: コース×ペース×脚質 3D 分析
+        Route::get('/pace-style', [AnalyticsController::class, 'paceStyle'])->name('pace-style');
     });
+
+    // Phase 4-W: ウォッチリスト
+    Route::resource('watchlist', WatchlistController::class)->only(['index', 'store', 'update', 'destroy']);
+
+    // Phase 4-S: 予想スナップショット共有 (認証ユーザ向け管理)
+    Route::get('/shares',                [PredictionShareController::class, 'index'])->name('shares.index');
+    Route::post('/shares/race/{race}',   [PredictionShareController::class, 'store'])->name('shares.store');
+    Route::post('/shares/{share}/toggle',[PredictionShareController::class, 'toggle'])->name('shares.toggle');
+    Route::delete('/shares/{share}',     [PredictionShareController::class, 'destroy'])->name('shares.destroy');
 
     // 管理: DBビューア (読み取り専用)
     Route::prefix('admin/db')->name('admin.db.')->group(function () {

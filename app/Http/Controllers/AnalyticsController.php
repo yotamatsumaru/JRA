@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Horse;
 use App\Models\Venue;
 use App\Models\VenueCourse;
+use App\Services\PaceStyleAnalysisService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -275,6 +276,32 @@ class AnalyticsController extends Controller
             'byCondition', 'paceTime', 'cube', 'availableDistances',
             'totalRaces', 'distCats'
         ));
+    }
+
+    /**
+     * コース × ペース × 脚質 3D 分析 (Phase 4-K)
+     */
+    public function paceStyle(Request $request, PaceStyleAnalysisService $svc): View
+    {
+        $filters = $request->only([
+            'from', 'to', 'venue_id', 'track_type', 'grade',
+            'distance_band', 'pace', 'style',
+        ]);
+
+        $data = $svc->analyze($filters);
+        $venues = Venue::orderBy('code')->get();
+        $bands  = array_keys(PaceStyleAnalysisService::DISTANCE_BANDS);
+
+        return view('analytics.pace-style', [
+            'filters'         => $filters,
+            'venues'          => $venues,
+            'bands'           => $bands,
+            'pivot'           => $data['pivot'],
+            'matrix'          => $data['paceStyleMatrix'],
+            'bandsAgg'        => $data['bands'],
+            'venuesAgg'       => $data['venues'],
+            'total'           => $data['total'],
+        ]);
     }
 
     /**

@@ -280,6 +280,9 @@
                                 <a href="{{ route('analytics.stats') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="trophy" class="w-4 h-4 text-gold-500" /><span>通算成績スタッツ</span></a>
                                 <a href="{{ route('analytics.roi') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="cash" class="w-4 h-4 text-gold-500" /><span>回収率シミュ</span></a>
                                 <div class="border-t my-1"></div>
+                                <a href="{{ route('analytics.prediction-accuracy') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="target" class="w-4 h-4 text-rose-500" /><span>予想精度トラッキング</span></a>
+                                <a href="{{ route('analytics.pace-style') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="grid" class="w-4 h-4 text-indigo-500" /><span>コース×ペース×脚質</span></a>
+                                <div class="border-t my-1"></div>
                                 <a href="{{ route('analytics.recommend.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="lightbulb" class="w-4 h-4 text-amber-500" /><span>推奨(血統+騎手+馬)</span></a>
                                 <a href="{{ route('analytics.recommend.settings') }}" class="flex items-center space-x-2 px-4 py-2.5 pl-8 hover:bg-turf-50 dark:hover:bg-gray-700 text-sm"><x-icon name="cog" class="w-3.5 h-3.5 text-amber-400" /><span>重み設定</span></a>
                             </div>
@@ -334,6 +337,16 @@
                         <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $active : $inactive }} flex items-center space-x-1.5">
                             <x-icon name="cog" class="w-4 h-4" />
                             <span>運用</span>
+                        </a>
+
+                        <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $active : $inactive }} flex items-center space-x-1.5">
+                            <x-icon name="star" class="w-4 h-4" />
+                            <span>ウォッチ</span>
+                        </a>
+
+                        <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $active : $inactive }} flex items-center space-x-1.5">
+                            <x-icon name="share" class="w-4 h-4" />
+                            <span>共有</span>
                         </a>
 
                         <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $active : $inactive }} flex items-center space-x-1.5">
@@ -440,6 +453,9 @@
                         <a href="{{ route('analytics.stats') }}"    class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> 通算成績スタッツ</a>
                         <a href="{{ route('analytics.roi') }}"      class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="cash" class="w-4 h-4" /> 回収率シミュ</a>
                         <div class="border-t border-turf-700 my-1"></div>
+                        <a href="{{ route('analytics.prediction-accuracy') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="target" class="w-4 h-4" /> 予想精度トラッキング</a>
+                        <a href="{{ route('analytics.pace-style') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="grid" class="w-4 h-4" /> コース×ペース×脚質</a>
+                        <div class="border-t border-turf-700 my-1"></div>
                         <a href="{{ route('analytics.recommend.index') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="lightbulb" class="w-4 h-4" /> 推奨(血統+騎手+馬)</a>
                         <a href="{{ route('analytics.recommend.settings') }}" class="{{ $mSub }} pl-7 text-xs" @click="menuOpen=false"><x-icon name="cog" class="w-3.5 h-3.5" /> 重み設定</a>
                     </div>
@@ -491,6 +507,14 @@
 
                 <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $mActive : $mLink }}" @click="menuOpen=false">
                     <x-icon name="cog" class="w-4 h-4" /> 運用ダッシュボード
+                </a>
+
+                <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="star" class="w-4 h-4" /> ウォッチリスト
+                </a>
+
+                <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="share" class="w-4 h-4" /> 予想共有
                 </a>
 
                 <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $mActive : $mLink }}" @click="menuOpen=false">

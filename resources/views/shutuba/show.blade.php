@@ -54,8 +54,62 @@
                 <x-icon name="sparkles" class="w-4 h-4" />
                 <span>上書き提案</span>
             </button>
+            {{-- Phase 4-S: 予想を共有 --}}
+            <button type="button" @click="shareDialog.open = true"
+                class="inline-flex items-center space-x-1.5 bg-sky-500 hover:bg-sky-600 text-white px-3 py-2 rounded-md text-xs font-medium"
+                title="現在の印・メモを公開URLで共有">
+                <x-icon name="share" class="w-4 h-4" />
+                <span>予想を共有</span>
+            </button>
         </x-slot>
     </x-page-header>
+
+    {{-- Phase 4-S: 共有ダイアログ --}}
+    <div x-show="shareDialog.open" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @keydown.escape.window="shareDialog.open = false">
+        <form method="POST" action="{{ route('shares.store', $race) }}"
+              class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-5 space-y-3"
+              @click.outside="shareDialog.open = false">
+            @csrf
+            <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">予想を共有 (読み取り専用URL)</h3>
+                <button type="button" @click="shareDialog.open = false" class="text-gray-400 hover:text-gray-600">
+                    <x-icon name="x-mark" class="w-5 h-5" />
+                </button>
+            </div>
+            <p class="text-[11px] text-gray-500 dark:text-gray-400">
+                現在の印・スコア・メモのスナップショットを生成し、ログイン不要で閲覧できる公開URLを発行します。
+            </p>
+            <label class="block text-xs">
+                <span class="text-gray-600 dark:text-gray-300">タイトル (省略可)</span>
+                <input type="text" name="title" maxlength="120"
+                    placeholder="{{ $race->name }} 予想"
+                    class="mt-1 w-full rounded border-gray-300 dark:bg-gray-900 dark:border-gray-600 text-sm">
+            </label>
+            <label class="block text-xs">
+                <span class="text-gray-600 dark:text-gray-300">コメント (省略可)</span>
+                <textarea name="comment" rows="3" maxlength="2000"
+                    class="mt-1 w-full rounded border-gray-300 dark:bg-gray-900 dark:border-gray-600 text-sm"></textarea>
+            </label>
+            <label class="block text-xs">
+                <span class="text-gray-600 dark:text-gray-300">有効期限</span>
+                <select name="expires_in" class="mt-1 w-full rounded border-gray-300 dark:bg-gray-900 dark:border-gray-600 text-sm">
+                    <option value="">無期限</option>
+                    <option value="1">1日</option>
+                    <option value="7" selected>7日</option>
+                    <option value="30">30日</option>
+                    <option value="90">90日</option>
+                </select>
+            </label>
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button type="button" @click="shareDialog.open = false"
+                    class="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">キャンセル</button>
+                <button type="submit"
+                    class="px-3 py-1.5 text-xs font-medium bg-sky-500 hover:bg-sky-600 text-white rounded">URLを発行</button>
+            </div>
+        </form>
+    </div>
 
     {{-- Phase 3-I: リアルタイムオッズ --}}
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4"
@@ -591,6 +645,9 @@
         return {
             past: {},
             copyLabel: '印をコピー',
+
+            // Phase 4-S: 共有ダイアログ
+            shareDialog: { open: false },
 
             // Phase 3-I: リアルタイムオッズ
             liveOdds: {
