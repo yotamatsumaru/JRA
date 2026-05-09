@@ -89,5 +89,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/image', [ImportController::class, 'imageForm'])->name('image');
         Route::post('/image', [ImportController::class, 'imageStore'])->name('image.store');
         Route::get('/logs', [ImportController::class, 'logs'])->name('logs');
+        Route::get('/progress', [ImportController::class, 'progress'])->name('progress');
+        Route::get('/progress.json', [ImportController::class, 'progressJson'])->name('progress.json');
     });
 });

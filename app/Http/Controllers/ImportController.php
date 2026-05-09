@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Horse;
 use App\Models\ImportLog;
+use App\Models\Race;
 use App\Services\CsvImportService;
 use App\Services\NetkeibaScraper;
 use App\Services\OpenAIVisionService;
 use App\Services\RaceImportService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class ImportController extends Controller
@@ -183,5 +187,139 @@ class ImportController extends Controller
             ->orderByDesc('id')
             ->paginate(30);
         return view('import.logs', compact('logs'));
+    }
+
+    // ─── 進捗ダッシュボード ───────────────────────
+    /**
+     * バックグラウンド取込の進捗ファイル + DB集計を表示
+     * (php artisan netkeiba:year / netkeiba:fill-pedigree が書く JSON を読む)
+     */
+    public function progress(): View
+    {
+        $data = $this->buildProgressPayload();
+        return view('import.progress', $data);
+    }
+
+    /**
+     * 自動更新用 JSON エンドポイント
+     */
+    public function progressJson(): JsonResponse
+    {
+        return response()->json($this->buildProgressPayload());
+    }
+
+    /**
+     * 進捗ペイロードを構築(Blade/JSON共通)
+     */
+    protected function buildProgressPayload(): array
+    {
+        // ===== netkeiba:year の進捗ファイル一覧 =====
+        $yearProgress = [];
+        try {
+            $files = Storage::files();
+            foreach ($files as $file) {
+                if (!preg_match('/^netkeiba_year_(\d{4})\.json$/', $file, $m)) continue;
+                $year = (int) $m[1];
+                $json = json_decode(Storage::get($file), true);
+                if (!is_array($json)) continue;
+
+                $doneCount = count($json['done'] ?? []);
+                $errorsCount = count($json['errors'] ?? []);
+                $yearProgress[] = [
+                    'year'       => $year,
+                    'success'    => (int) ($json['success'] ?? 0),
+                    'failed'     => (int) ($json['failed'] ?? 0),
+                    'done_count' => $doneCount,
+                    'errors'     => $errorsCount,
+                    'updated_at' => $json['updated_at'] ?? null,
+                    'file'       => $file,
+                ];
+            }
+            usort($yearProgress, fn($a, $b) => $b['year'] <=> $a['year']);
+        } catch (\Throwable $e) {
+            // ignore
+        }
+
+        // ===== netkeiba:fill-pedigree の進捗ファイル =====
+        $pedigreeProgress = null;
+        try {
+            if (Storage::exists('netkeiba_pedigree_progress.json')) {
+                $json = json_decode(Storage::get('netkeiba_pedigree_progress.json'), true);
+                if (is_array($json)) {
+                    $pedigreeProgress = [
+                        'done_count'   => count($json['done'] ?? []),
+                        'failed_count' => count($json['failed'] ?? []),
+                        'updated_at'   => $json['updated_at'] ?? null,
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            // ignore
+        }
+
+        // ===== DB 側の年別レース数 =====
+        $racesByYear = [];
+        try {
+            $rows = Race::query()
+                ->selectRaw('YEAR(race_date) AS y, COUNT(*) AS c')
+                ->whereNotNull('race_date')
+                ->groupByRaw('YEAR(race_date)')
+                ->orderByDesc('y')
+                ->limit(20)
+                ->get();
+            foreach ($rows as $r) {
+                $racesByYear[(int) $r->y] = (int) $r->c;
+            }
+        } catch (\Throwable $e) {
+            // ignore
+        }
+
+        // ===== 馬データの血統入力状況 =====
+        $horseStats = [
+            'total'              => 0,
+            'pedigree_filled'    => 0,
+            'pedigree_missing'   => 0,
+        ];
+        try {
+            $horseStats['total'] = Horse::count();
+            $horseStats['pedigree_filled'] = Horse::query()
+                ->whereNotNull('father')
+                ->whereNotNull('mother')
+                ->count();
+            $horseStats['pedigree_missing'] = $horseStats['total'] - $horseStats['pedigree_filled'];
+        } catch (\Throwable $e) {
+            // ignore
+        }
+
+        // ===== 直近の ImportLog =====
+        $recentLogs = [];
+        try {
+            $recentLogs = ImportLog::query()
+                ->orderByDesc('id')
+                ->limit(10)
+                ->get(['id', 'source', 'reference', 'status', 'records_imported', 'records_failed', 'started_at', 'finished_at'])
+                ->map(fn($l) => [
+                    'id'        => $l->id,
+                    'source'    => $l->source,
+                    'reference' => $l->reference,
+                    'status'    => $l->status,
+                    'imported'  => $l->records_imported,
+                    'failed'    => $l->records_failed,
+                    'started'   => optional($l->started_at)->format('Y-m-d H:i'),
+                    'finished'  => optional($l->finished_at)->format('Y-m-d H:i'),
+                ])
+                ->all();
+        } catch (\Throwable $e) {
+            // ignore
+        }
+
+        return [
+            'yearProgress'     => $yearProgress,
+            'pedigreeProgress' => $pedigreeProgress,
+            'racesByYear'      => $racesByYear,
+            'horseStats'       => $horseStats,
+            'recentLogs'       => $recentLogs,
+            'generatedAt'      => now()->format('Y-m-d H:i:s'),
+        ];
     }
 }

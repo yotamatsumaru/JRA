@@ -4,7 +4,14 @@
 @section('content')
 <div class="space-y-6">
 
-    <x-page-header title="データ取込" subtitle="4つの方法でレースデータを取り込めます" icon="upload" />
+    <div class="flex items-center justify-between">
+        <x-page-header title="データ取込" subtitle="4つの方法でレースデータを取り込めます" icon="upload" />
+        <a href="{{ route('import.progress') }}"
+           class="inline-flex items-center space-x-2 px-4 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 text-sm font-medium">
+            <x-icon name="activity" class="w-4 h-4" />
+            <span>取込進捗ダッシュボード</span>
+        </a>
+    </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <a href="{{ route('import.netkeiba') }}" class="group bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 hover:shadow-lg hover:ring-sky-300 dark:hover:ring-sky-700 transition-all p-6 block">
