@@ -34,6 +34,7 @@ use Illuminate\Support\Facades\Storage;
  *   php artisan netkeiba:purge --force                    # 確認プロンプトをスキップ
  *   php artisan netkeiba:purge --force-bets               # 馬券があっても削除（馬券も連動削除される）
  *   php artisan netkeiba:purge --orphans                  # 孤立した馬・騎手・調教師も削除
+ *   php artisan netkeiba:purge --wipe-all                 # 馬・騎手・調教師も含めて全部消す（最強）
  *   php artisan netkeiba:purge --keep-progress            # 進捗ファイルは残す
  */
 class NetkeibaPurge extends Command
@@ -45,6 +46,7 @@ class NetkeibaPurge extends Command
                             {--force : 確認プロンプトをスキップ}
                             {--force-bets : 馬券が紐づくレースも削除（馬券も連動削除）}
                             {--orphans : 孤立した馬・騎手・調教師も削除}
+                            {--wipe-all : 馬・騎手・調教師テーブルを TRUNCATE で全削除（最強。--force-bets を含意）}
                             {--keep-progress : 進捗ファイル(netkeiba_year_*.json)は残す}
                             {--keep-logs : import_logs は残す}';
 
@@ -58,12 +60,19 @@ class NetkeibaPurge extends Command
         $force = (bool) $this->option('force');
         $forceBets = (bool) $this->option('force-bets');
         $orphans = (bool) $this->option('orphans');
+        $wipeAll = (bool) $this->option('wipe-all');
         $keepProgress = (bool) $this->option('keep-progress');
         $keepLogs = (bool) $this->option('keep-logs');
 
         if ($month && !$year) {
             $this->error('--month は --year と併用してください');
             return self::FAILURE;
+        }
+
+        // --wipe-all は --force-bets と --orphans を含意
+        if ($wipeAll) {
+            $forceBets = true;
+            $orphans = true;
         }
 
         // ========== 削除対象レースのクエリ構築 ==========
@@ -143,7 +152,11 @@ class NetkeibaPurge extends Command
             }
         }
 
-        if ($orphans) {
+        if ($wipeAll) {
+            $this->newLine();
+            $this->warn(' 💣 全削除モード   : 馬・騎手・調教師テーブルも TRUNCATE で全削除');
+            $this->warn('                    (取込済データに含まれない馬も全部消えます)');
+        } elseif ($orphans) {
             $this->line(' 孤立データ削除   : 有効 (馬・騎手・調教師の孤立分も削除)');
         }
 
@@ -161,6 +174,9 @@ class NetkeibaPurge extends Command
             $msg = "本当に削除しますか？";
             if ($protectedRaceCount > 0 && $forceBets) {
                 $msg .= " (馬券データも連動削除されます)";
+            }
+            if ($wipeAll) {
+                $msg = "💣 馬・騎手・調教師テーブルも全部消えますが本当に削除しますか？";
             }
             if (!$this->confirm($msg, false)) {
                 $this->info('キャンセルしました');
@@ -212,8 +228,15 @@ class NetkeibaPurge extends Command
                 $this->info(sprintf('✓ 進捗ファイル %d 個を削除', count($progressFiles)));
             }
 
-            // 孤立データ削除
-            if ($orphans) {
+            // 孤立データ / 全削除
+            if ($wipeAll) {
+                $this->newLine();
+                $this->info('馬・騎手・調教師テーブルを TRUNCATE …');
+                $wipeStats = $this->wipeMasterTables();
+                foreach ($wipeStats as $label => $cnt) {
+                    $this->info(sprintf('✓ %s %s 件を削除', $label, number_format($cnt)));
+                }
+            } elseif ($orphans) {
                 $this->newLine();
                 $this->info('孤立データの削除…');
                 $orphanStats = $this->purgeOrphans();
@@ -234,6 +257,31 @@ class NetkeibaPurge extends Command
             $this->error('削除エラー: ' . $e->getMessage());
             return self::FAILURE;
         }
+    }
+
+    /**
+     * 馬・騎手・調教師テーブルを TRUNCATE で全削除
+     *  - 外部キー制約を一時無効化
+     *  - 件数を返却
+     */
+    protected function wipeMasterTables(): array
+    {
+        $stats = [
+            '馬'     => DB::table('horses')->count(),
+            '騎手'   => DB::table('jockeys')->count(),
+            '調教師' => DB::table('trainers')->count(),
+        ];
+
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        try {
+            DB::table('horses')->truncate();
+            DB::table('jockeys')->truncate();
+            DB::table('trainers')->truncate();
+        } finally {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
+
+        return $stats;
     }
 
     /**

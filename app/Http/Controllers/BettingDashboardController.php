@@ -448,9 +448,18 @@ class BettingDashboardController extends Controller
             return $this->exportPayoutsCsv($q);
         }
 
-        // 集計サマリ（フィルタ後）
-        $sumQuery = clone $q;
-        $sumQuery->reorder();
+        // 集計サマリ（フィルタ後）— $q は select 済みなので、サマリ用に独立クエリを再構築
+        $sumQuery = Payout::query()
+            ->join('races', 'payouts.race_id', '=', 'races.id')
+            ->leftJoin('venues', 'races.venue_id', '=', 'venues.id');
+        if ($kind)       $sumQuery->where('payouts.kind', $kind);
+        if ($venueId)    $sumQuery->where('races.venue_id', $venueId);
+        if ($from)       $sumQuery->whereDate('races.race_date', '>=', $from);
+        if ($to)         $sumQuery->whereDate('races.race_date', '<=', $to);
+        if ($minAmount)  $sumQuery->where('payouts.amount', '>=', (int) $minAmount);
+        if ($maxAmount)  $sumQuery->where('payouts.amount', '<=', (int) $maxAmount);
+        if ($popularity) $sumQuery->where('payouts.popularity', (int) $popularity);
+
         $summaryRow = $sumQuery->selectRaw('
                 COUNT(*) as cnt,
                 COALESCE(AVG(payouts.amount), 0) as avg_amt,
