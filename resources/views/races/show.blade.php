@@ -28,11 +28,20 @@
         </div>
     </div>
 
+    {{-- ガード: リレーションが null になっていても落ちないよう全て collect() に統一 --}}
+    @php
+        $results       = $race->results  ?? collect();
+        $payouts       = $race->payouts  ?? collect();
+        $notes         = $race->notes    ?? collect();
+        $myBets        = $myBets         ?? collect();
+        $payoutsByKind = $payoutsByKind  ?? collect();
+    @endphp
+
     {{-- 出走結果 --}}
     <div class="bg-white rounded-lg shadow p-6">
-        <h2 class="font-semibold text-gray-700 mb-3">出走結果（{{ $race->results->count() }}頭）</h2>
+        <h2 class="font-semibold text-gray-700 mb-3">出走結果（{{ $results->count() }}頭）</h2>
 
-        @if ($race->results->isEmpty())
+        @if ($results->isEmpty())
             <p class="text-sm text-gray-500 mb-4">まだ結果が登録されていません。下のフォームから入力してください。</p>
         @else
             <div class="overflow-x-auto">
@@ -59,7 +68,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach ($race->results->sortBy(fn($r) => $r->finish_position_int ?? 99) as $r)
+                        @foreach ($results->sortBy(fn($r) => $r->finish_position_int ?? 99) as $r)
                         <tr class="border-b hover:bg-gray-50 {{ $r->finish_position_int == 1 ? 'bg-yellow-50' : '' }}">
                             <td class="px-2 py-2 text-center font-bold">{{ $r->finish_position }}</td>
                             <td class="px-2 py-2 text-center">{{ $r->frame_number }}</td>
@@ -238,7 +247,7 @@
     </div>
 
     {{-- 公式払戻 --}}
-    @if ($race->payouts->isNotEmpty())
+    @if ($payouts->isNotEmpty())
     <div class="bg-white rounded-lg shadow p-6">
         <h2 class="font-semibold text-gray-700 mb-3">公式払戻</h2>
         <div class="overflow-x-auto">
@@ -372,11 +381,11 @@
     @endif
 
     {{-- メモ --}}
-    @if ($race->notes->isNotEmpty())
+    @if ($notes->isNotEmpty())
     <div class="bg-white rounded-lg shadow p-6">
         <h2 class="font-semibold text-gray-700 mb-3">レースメモ</h2>
         <ul class="space-y-3">
-            @foreach ($race->notes as $note)
+            @foreach ($notes as $note)
                 <li class="border-l-4 border-primary-300 pl-3 py-1">
                     <div class="text-xs text-gray-500">{{ $note->user?->name }} - {{ $note->created_at?->format('Y/m/d H:i') }}</div>
                     @if ($note->title) <div class="font-bold">{{ $note->title }}</div> @endif
