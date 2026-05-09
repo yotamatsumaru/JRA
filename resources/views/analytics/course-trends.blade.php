@@ -177,7 +177,7 @@
 
     {{-- 注釈 --}}
     <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900 leading-relaxed">
-        <p class="font-semibold mb-1">📌 データの読み方</p>
+        <p class="inline-flex items-center gap-1.5 font-semibold mb-1"><x-icon name="info" class="w-4 h-4" /><span>データの読み方</span></p>
         <ul class="list-disc list-inside space-y-0.5">
             <li><strong>直線/高低差/コーナー数/スタート位置</strong>: JRA公式コース図に準拠した静的情報</li>
             <li><strong>想定脚質/想定枠/想定P</strong>: 過去5年程度の傾向を踏まえた中粒度の事前期待値(管理者が執筆)</li>

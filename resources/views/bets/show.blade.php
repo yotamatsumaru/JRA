@@ -86,7 +86,7 @@
                         </td>
                         <td class="px-3 py-2 text-center">
                             @if ($leg->is_hit)
-                                <span class="text-emerald-600 font-bold">✓</span>
+                                <x-icon name="check" class="w-4 h-4 inline-block text-emerald-600" />
                             @else
                                 <span class="text-gray-300">-</span>
                             @endif

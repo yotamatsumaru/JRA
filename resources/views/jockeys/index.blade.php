@@ -57,7 +57,7 @@
                     <td class="px-3 py-2">
                         @php $rank = ($jockeys->currentPage() - 1) * $jockeys->perPage() + $i + 1; @endphp
                         @if ($rank === 1)
-                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gold-100 dark:bg-gold-900/40 text-gold-700 dark:text-gold-300 text-xs font-bold">🏆</span>
+                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gold-100 dark:bg-gold-900/40 text-gold-700 dark:text-gold-300"><x-icon name="trophy" class="w-3.5 h-3.5" /></span>
                         @elseif ($rank === 2)
                             <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold">2</span>
                         @elseif ($rank === 3)
