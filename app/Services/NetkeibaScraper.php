@@ -710,6 +710,14 @@ class NetkeibaScraper
         $data['results'] = $results;
         $data['horses_count'] = count($results);
 
+        // ============ ラップタイム / 前後半3F ============
+        $lap = $this->extractLapTimes($crawler, $html);
+        if ($lap) {
+            if (!empty($lap['lap_times'])) $data['lap_times'] = $lap['lap_times'];
+            if (!empty($lap['first_3f']))  $data['first_3f']  = $lap['first_3f'];
+            if (!empty($lap['last_3f']))   $data['last_3f']   = $lap['last_3f'];
+        }
+
         // ============ 払戻データ ============
         $data['payouts'] = $this->parsePayoutTables($crawler);
 
@@ -795,6 +803,14 @@ class NetkeibaScraper
         // ============ 結果テーブル ============
         $data['results'] = $this->parseResultTableNew($crawler);
         $data['horses_count'] = count($data['results']);
+
+        // ============ ラップタイム / 前後半3F ============
+        $lap = $this->extractLapTimes($crawler, $html);
+        if ($lap) {
+            if (!empty($lap['lap_times'])) $data['lap_times'] = $lap['lap_times'];
+            if (!empty($lap['first_3f']))  $data['first_3f']  = $lap['first_3f'];
+            if (!empty($lap['last_3f']))   $data['last_3f']   = $lap['last_3f'];
+        }
 
         // ============ 払戻テーブル ============
         $data['payouts'] = $this->parsePayoutTablesNew($crawler);
@@ -959,6 +975,113 @@ class NetkeibaScraper
         });
 
         return $results;
+    }
+
+    /**
+     * ラップタイム / 前後半3F を抽出
+     *
+     * netkeiba は2系統あり、両方をカバーする:
+     *   db.netkeiba.com   : <table summary="ラップタイム"> または class="race_lap_cell"
+     *   race.netkeiba.com : <table class="Race_HaronTime">
+     *
+     * 抽出対象:
+     *   - lap_times[] : 200m毎のラップ秒 (例: [12.5, 11.0, 11.2, ...])
+     *   - first_3f    : 前半3F (例: "34.5")
+     *   - last_3f     : 後半3F (例: "35.1")
+     *
+     * netkeiba は通常 "ペース 35.7 - 36.5" の形で前半-後半3F を表示する。
+     * lap_times が取れた場合は、前半3F = 先頭3つの合計、後半3F = 末尾3つの合計でも算出可。
+     * パース失敗を許容し、可能な範囲で部分的に返す。
+     *
+     * @return array{lap_times?:array<float>, first_3f?:string, last_3f?:string}|null
+     */
+    protected function extractLapTimes(Crawler $crawler, string $html): ?array
+    {
+        $result = [];
+
+        // ============ 1) ラップタイム配列の抽出 ============
+        // 候補セレクタ:
+        //   - table summary="ラップタイム" (db.netkeiba.com 旧)
+        //   - table.race_lap_cell           (db.netkeiba.com)
+        //   - table.Race_HaronTime          (race.netkeiba.com)
+        $lapText = '';
+        $lapSelectors = [
+            'table[summary="ラップタイム"]',
+            'table.race_lap_cell',
+            'table.Race_HaronTime',
+            'div.race_lap_cell table',
+        ];
+        foreach ($lapSelectors as $sel) {
+            try {
+                $node = $crawler->filter($sel);
+                if ($node->count() > 0) {
+                    $lapText = $node->first()->text('');
+                    if ($lapText !== '') break;
+                }
+            } catch (\Throwable $e) {
+                // 次の候補へ
+            }
+        }
+
+        // セレクタで取れなかった場合、HTMLから「ラップタイム」「ペース」の周辺テキストを探す
+        if ($lapText === '') {
+            // 「ラップタイム」または「ペース」を含む table タグを抽出
+            if (preg_match('/<table[^>]*>(?:(?!<table).)*?(?:ラップタイム|ペース).*?<\/table>/su', $html, $m)) {
+                // tag を除去してテキスト化
+                $stripped = preg_replace('/<[^>]+>/', ' ', $m[0]);
+                $lapText = $stripped !== null ? $stripped : '';
+            }
+        }
+
+        if ($lapText !== '') {
+            // 「12.5 - 11.0 - 11.2 - 11.5 - ...」形式の数値列を抽出
+            // ハイフン/全角ハイフン/ダッシュ系を許容、空白を含めて分解
+            $normalized = preg_replace('/[\s\x{3000}\x{00A0}]+/u', ' ', $lapText);
+            $normalized = str_replace(['ー', '−', '–', '—', '－'], '-', $normalized);
+
+            // 全数値抽出 (連続したラップ列を取りたい)
+            if (preg_match_all('/\d{1,2}\.\d/', $normalized, $matches)) {
+                $allNumbers = array_map('floatval', $matches[0]);
+
+                // ペース表記 (前半3F-後半3F = 例 34.5 - 35.1) は通常 ラップ列の後に来る
+                // 200m ラップは通常 9.0〜13.5 秒程度、3Fは 32〜40 秒程度なので分離可能
+                $lapTimes = [];
+                $threeFs  = [];
+                foreach ($allNumbers as $n) {
+                    if ($n >= 8.0 && $n < 16.0) {
+                        $lapTimes[] = $n;
+                    } elseif ($n >= 30.0 && $n < 50.0) {
+                        $threeFs[] = $n;
+                    }
+                }
+
+                // 妥当なラップ数 (距離/200m ≒ 5〜18個) のみ採用
+                if (count($lapTimes) >= 4 && count($lapTimes) <= 20) {
+                    $result['lap_times'] = $lapTimes;
+                }
+
+                // ペース表記から前後半3F (上位2つを採用)
+                if (count($threeFs) >= 2) {
+                    $result['first_3f'] = number_format($threeFs[0], 1, '.', '');
+                    $result['last_3f']  = number_format($threeFs[1], 1, '.', '');
+                }
+            }
+        }
+
+        // ============ 2) lap_times から前後半3F を補完算出 ============
+        // ペース表記が拾えなかった場合、ラップ配列から先頭3F・末尾3F を計算
+        if (!empty($result['lap_times']) && count($result['lap_times']) >= 6) {
+            if (empty($result['first_3f'])) {
+                $first = array_slice($result['lap_times'], 0, 3);
+                $result['first_3f'] = number_format(array_sum($first), 1, '.', '');
+            }
+            if (empty($result['last_3f'])) {
+                $last = array_slice($result['lap_times'], -3);
+                $result['last_3f'] = number_format(array_sum($last), 1, '.', '');
+            }
+        }
+
+        return $result ?: null;
     }
 
     /**

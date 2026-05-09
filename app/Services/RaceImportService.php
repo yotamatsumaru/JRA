@@ -62,6 +62,9 @@ class RaceImportService
                     'course_condition' => $data['course_condition'] ?? null,
                     'weather' => $data['weather'] ?? null,
                     'horses_count' => $data['horses_count'] ?? null,
+                    'first_3f' => $data['first_3f'] ?? null,
+                    'last_3f' => $data['last_3f'] ?? null,
+                    'lap_times' => $data['lap_times'] ?? null,
                 ]
             );
 
