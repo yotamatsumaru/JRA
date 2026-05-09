@@ -3,83 +3,93 @@
 @section('title', '馬×コース優位性分析')
 
 @section('content')
-<div class="space-y-4">
+<div class="space-y-3 sm:space-y-4">
     {{-- ヘッダー --}}
     <div class="flex items-center justify-between flex-wrap gap-2">
         <div>
-            <h1 class="text-2xl font-bold text-gray-800">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800">
                 <span class="text-rose-600">🏇</span> 馬 × コース優位性分析
             </h1>
-            <p class="text-sm text-gray-500">出走馬ごとに、競馬場・トラック・距離・馬場状態別の成績を比較できます。</p>
+            <p class="text-xs sm:text-sm text-gray-500">出走馬ごとに、競馬場・トラック・距離・馬場状態別の成績を比較できます。</p>
         </div>
     </div>
 
     {{-- KPI カード --}}
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div class="bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-lg p-4 shadow">
-            <div class="text-xs opacity-80">対象馬数</div>
-            <div class="text-2xl font-bold">{{ $summary['total_horses'] }} 頭</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+        <div class="bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-lg p-3 sm:p-4 shadow">
+            <div class="text-[11px] sm:text-xs opacity-80">対象馬数</div>
+            <div class="text-xl sm:text-2xl font-bold">{{ $summary['total_horses'] }} 頭</div>
         </div>
-        <div class="bg-gradient-to-br from-sky-500 to-sky-600 text-white rounded-lg p-4 shadow">
-            <div class="text-xs opacity-80">平均出走数</div>
-            <div class="text-2xl font-bold">{{ $summary['avg_runs'] }} 回</div>
+        <div class="bg-gradient-to-br from-sky-500 to-sky-600 text-white rounded-lg p-3 sm:p-4 shadow">
+            <div class="text-[11px] sm:text-xs opacity-80">平均出走数</div>
+            <div class="text-xl sm:text-2xl font-bold">{{ $summary['avg_runs'] }} 回</div>
         </div>
-        <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-lg p-4 shadow">
-            <div class="text-xs opacity-80">平均複勝率</div>
-            <div class="text-2xl font-bold">{{ $summary['avg_show'] }}%</div>
+        <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-lg p-3 sm:p-4 shadow">
+            <div class="text-[11px] sm:text-xs opacity-80">平均複勝率</div>
+            <div class="text-xl sm:text-2xl font-bold">{{ $summary['avg_show'] }}%</div>
         </div>
-        <div class="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-lg p-4 shadow">
-            <div class="text-xs opacity-80">トップ馬</div>
-            <div class="text-base font-bold truncate">
+        <div class="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-lg p-3 sm:p-4 shadow">
+            <div class="text-[11px] sm:text-xs opacity-80">トップ馬</div>
+            <div class="text-sm sm:text-base font-bold truncate">
                 {{ $summary['best_horse']->name ?? '-' }}
                 <span class="text-xs opacity-80">({{ $summary['best_horse']->show_rate ?? 0 }}%)</span>
             </div>
         </div>
     </div>
 
-    {{-- フィルタフォーム --}}
-    <form method="GET" class="bg-white rounded-lg shadow p-4 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
-        <div class="col-span-2">
-            <label class="block text-xs text-gray-500 mb-1">馬名キーワード</label>
-            <input type="text" name="keyword" value="{{ $filters['keyword'] }}"
-                   placeholder="例: ディープ" class="w-full border rounded px-2 py-1.5">
+    {{-- フィルタフォーム (スマホは折り畳み) --}}
+    <form method="GET" class="bg-white rounded-lg shadow p-3 sm:p-4" x-data="{ openFilter: window.innerWidth >= 640 }">
+        <button type="button" @click="openFilter = !openFilter"
+                class="sm:hidden w-full flex items-center justify-between text-sm font-semibold text-gray-700 mb-2">
+            <span>🔍 絞り込み・並び替え</span>
+            <span x-text="openFilter ? '▲' : '▼'"></span>
+        </button>
+        <div x-show="openFilter" x-cloak class="grid grid-cols-2 md:grid-cols-6 gap-2 sm:gap-3 text-sm">
+            <div class="col-span-2">
+                <label class="block text-xs text-gray-500 mb-1">馬名キーワード</label>
+                <input type="text" name="keyword" value="{{ $filters['keyword'] }}"
+                       placeholder="例: ディープ" class="w-full border rounded px-2 py-1.5">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">最低出走数</label>
+                <input type="number" name="min_runs" min="1" value="{{ $filters['minRuns'] }}"
+                       class="w-full border rounded px-2 py-1.5">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">並び順</label>
+                <select name="sort" class="w-full border rounded px-2 py-1.5">
+                    <option value="show_rate"  @selected($filters['sort']==='show_rate')>複勝率</option>
+                    <option value="win_rate"   @selected($filters['sort']==='win_rate')>勝率</option>
+                    <option value="place_rate" @selected($filters['sort']==='place_rate')>連対率</option>
+                    <option value="runs"       @selected($filters['sort']==='runs')>出走数</option>
+                    <option value="wins"       @selected($filters['sort']==='wins')>勝数</option>
+                    <option value="avg_finish" @selected($filters['sort']==='avg_finish')>平均着順</option>
+                    <option value="name"       @selected($filters['sort']==='name')>馬名</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">期間 From</label>
+                <input type="date" name="from" value="{{ $filters['from'] }}" class="w-full border rounded px-2 py-1.5">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">期間 To</label>
+                <input type="date" name="to" value="{{ $filters['to'] }}" class="w-full border rounded px-2 py-1.5">
+            </div>
         </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">最低出走数</label>
-            <input type="number" name="min_runs" min="1" value="{{ $filters['minRuns'] }}"
-                   class="w-full border rounded px-2 py-1.5">
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">並び順</label>
-            <select name="sort" class="w-full border rounded px-2 py-1.5">
-                <option value="show_rate"  @selected($filters['sort']==='show_rate')>複勝率</option>
-                <option value="win_rate"   @selected($filters['sort']==='win_rate')>勝率</option>
-                <option value="place_rate" @selected($filters['sort']==='place_rate')>連対率</option>
-                <option value="runs"       @selected($filters['sort']==='runs')>出走数</option>
-                <option value="wins"       @selected($filters['sort']==='wins')>勝数</option>
-                <option value="avg_finish" @selected($filters['sort']==='avg_finish')>平均着順</option>
-                <option value="name"       @selected($filters['sort']==='name')>馬名</option>
-            </select>
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">期間 From</label>
-            <input type="date" name="from" value="{{ $filters['from'] }}" class="w-full border rounded px-2 py-1.5">
-        </div>
-        <div>
-            <label class="block text-xs text-gray-500 mb-1">期間 To</label>
-            <input type="date" name="to" value="{{ $filters['to'] }}" class="w-full border rounded px-2 py-1.5">
-        </div>
-        <div class="col-span-2 md:col-span-6 flex justify-end gap-2">
-            <a href="{{ route('analytics.horse') }}" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">リセット</a>
-            <button class="px-4 py-1.5 bg-rose-600 text-white rounded hover:bg-rose-700">絞り込む</button>
+        <div x-show="openFilter" x-cloak class="mt-3 flex justify-end gap-2">
+            <a href="{{ route('analytics.horse') }}" class="flex-1 sm:flex-none text-center px-3 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 active:bg-gray-400 text-sm">リセット</a>
+            <button class="flex-1 sm:flex-none px-4 py-2 bg-rose-600 text-white rounded hover:bg-rose-700 active:bg-rose-800 text-sm font-medium">絞り込む</button>
         </div>
     </form>
 
     {{-- 馬一覧テーブル --}}
-    <div class="bg-white rounded-lg shadow overflow-x-auto">
+    <div class="bg-white rounded-lg shadow">
         @if ($rows->isEmpty())
             <p class="p-6 text-center text-gray-500">該当する馬がいません。フィルタ条件を緩めてください。</p>
         @else
+        <div class="px-2 pt-2 sm:hidden text-[11px] text-gray-500">→ 横スクロールで全列表示</div>
+        <div class="table-scroll">
+        <div class="min-w-[820px] sm:min-w-0">
         <table class="w-full text-sm">
             <thead class="bg-gray-100 text-xs text-gray-600">
                 <tr>
@@ -141,6 +151,8 @@
                 @endforeach
             </tbody>
         </table>
+        </div>{{-- /min-w --}}
+        </div>{{-- /table-scroll --}}
         @endif
     </div>
 
@@ -155,34 +167,53 @@
                 'to'       => $filters['to'] ?: null,
             ], fn($v) => $v !== null && $v !== ''));
         @endphp
+        {{-- スマホでは半透明オーバーレイでバックドロップ --}}
+        <div
+            x-data="{ open: true }"
+            x-show="open"
+            x-cloak
+            x-transition.opacity
+            class="sm:hidden fixed inset-0 bg-black/40 z-30"
+            @click="window.location.href = @js($closeUrl)"
+        ></div>
         <div
             id="horse-detail"
             x-data="{ open: true, closeUrl: @js($closeUrl) }"
             x-show="open"
             x-transition:enter="transition ease-out duration-200"
-            x-transition:enter-start="translate-x-full opacity-0"
-            x-transition:enter-end="translate-x-0 opacity-100"
+            x-transition:enter-start="translate-y-full sm:translate-y-0 sm:translate-x-full opacity-0"
+            x-transition:enter-end="translate-y-0 sm:translate-x-0 opacity-100"
             x-cloak
             @keydown.escape.window="open = false; window.location.href = closeUrl;"
-            class="fixed top-0 right-0 h-screen w-full sm:w-[480px] lg:w-[560px] z-40 bg-white shadow-2xl ring-2 ring-rose-300 flex flex-col"
+            class="fixed inset-x-0 bottom-0 sm:inset-x-auto sm:top-0 sm:right-0 sm:h-screen
+                   max-h-[85vh] sm:max-h-none h-auto sm:h-screen
+                   w-full sm:w-[480px] lg:w-[560px]
+                   z-40 bg-white shadow-2xl ring-2 ring-rose-300
+                   rounded-t-2xl sm:rounded-none
+                   flex flex-col safe-area-bottom"
         >
+            {{-- スマホ用ドラッグハンドル --}}
+            <div class="sm:hidden pt-2 pb-1 flex justify-center">
+                <div class="w-10 h-1.5 bg-gray-300 rounded-full"></div>
+            </div>
+
             {{-- ヘッダー --}}
             <div class="bg-rose-50 border-b px-4 py-3 flex items-center justify-between flex-wrap gap-2">
-                <h2 class="font-semibold text-gray-700 text-base">
+                <h2 class="font-semibold text-gray-700 text-sm sm:text-base flex-1 min-w-0">
                     <span class="text-rose-700">▶</span>
-                    {{ $horseModel->name }}
-                    <span class="text-xs text-gray-500">
+                    <span class="truncate inline-block max-w-[55vw] align-middle">{{ $horseModel->name }}</span>
+                    <span class="text-xs text-gray-500 hidden sm:inline">
                         @if ($horseModel->sex) ({{ $horseModel->sex }}) @endif
                         @if ($horseModel->father) / 父: {{ $horseModel->father }} @endif
                     </span>
                 </h2>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1.5 flex-shrink-0">
                     <a href="{{ route('horses.show', $horseModel->id) }}"
-                       class="text-xs px-3 py-1 bg-rose-600 text-white rounded hover:bg-rose-700">
-                        個別ページ →
+                       class="text-xs px-2.5 py-1.5 bg-rose-600 text-white rounded hover:bg-rose-700 active:bg-rose-800 whitespace-nowrap">
+                        個別 →
                     </a>
                     <a href="{{ $closeUrl }}"
-                       class="text-xs px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">× 閉じる</a>
+                       class="text-xs px-2.5 py-1.5 bg-gray-200 rounded hover:bg-gray-300 active:bg-gray-400 whitespace-nowrap">× 閉じる</a>
                 </div>
             </div>
 
@@ -368,13 +399,18 @@
             </div>
         </div>
 
-        {{-- ページ本体に右余白を追加して被らないように --}}
+        {{-- ページ本体に右余白を追加して被らないように (sm以上のみ。スマホはボトムシート扱い) --}}
         <style>
             @media (min-width: 640px) {
                 body { padding-right: 480px; }
             }
             @media (min-width: 1024px) {
                 body { padding-right: 560px; }
+            }
+            /* スマホではサイドパネルが下から出るので右余白は不要。
+               下に余白を入れて最下行が隠れないように */
+            @media (max-width: 639px) {
+                body { padding-bottom: 30vh; }
             }
         </style>
     @endif

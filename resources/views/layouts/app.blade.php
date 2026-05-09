@@ -2,8 +2,13 @@
 <html lang="ja" x-data="{ darkMode: localStorage.getItem('jra_dark') === 'true' }" :class="{ 'dark': darkMode }" x-init="$watch('darkMode', v => localStorage.setItem('jra_dark', v))">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="theme-color" content="#15803d" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#052e16" media="(prefers-color-scheme: dark)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
 
     <title>@yield('title', 'JRA Analyzer') - {{ config('app.name', 'JRA Analyzer') }}</title>
 
@@ -118,6 +123,42 @@
         .dark .apexcharts-tooltip { background: #1f2937 !important; color: #f9fafb !important; border-color: #374151 !important; }
         .dark .apexcharts-legend-text { color: #d1d5db !important; }
         .dark .apexcharts-xaxis-label, .dark .apexcharts-yaxis-label { fill: #9ca3af !important; }
+
+        /* ===== スマホ最適化 ===== */
+        html { -webkit-text-size-adjust: 100%; }
+        body {
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+        }
+        /* iOS Safe Area */
+        .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        .safe-area-top    { padding-top: env(safe-area-inset-top); }
+
+        /* スマホで横スクロールできるテーブルラッパ */
+        .table-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+        }
+        .table-scroll::-webkit-scrollbar { height: 6px; }
+        .table-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .dark .table-scroll::-webkit-scrollbar-thumb { background: #4b5563; }
+
+        /* スマホ時のフォーム入力でズームを防ぐ (iOS 16px未満で自動ズーム発生) */
+        @media (max-width: 640px) {
+            input[type="text"], input[type="number"], input[type="date"],
+            input[type="email"], input[type="password"], input[type="search"],
+            select, textarea {
+                font-size: 16px !important;
+            }
+        }
+
+        /* タッチ操作で押しやすいボタン最小サイズ */
+        @media (max-width: 640px) {
+            .btn, button, [role="button"], a.btn-touch {
+                min-height: 40px;
+            }
+        }
     </style>
 
     @stack('head')
@@ -311,25 +352,103 @@
             </div>
         </div>
 
-        <div x-show="menuOpen" x-cloak class="md:hidden bg-turf-800 dark:bg-gray-800">
-            <div class="px-2 py-2 space-y-1">
-                <a href="{{ route('dashboard') }}" class="block px-3 py-2 rounded hover:bg-turf-600">ダッシュボード</a>
-                <a href="{{ route('races.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">レース</a>
-                <a href="{{ route('horses.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">馬</a>
-                <a href="{{ route('jockeys.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">騎手</a>
-                <a href="{{ route('venues.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">競馬場</a>
-                <a href="{{ route('analytics.venue') }}" class="block px-3 py-2 rounded hover:bg-turf-600">分析</a>
-                <a href="{{ route('betting.dashboard') }}" class="block px-3 py-2 rounded hover:bg-turf-600">馬券・収支</a>
-                <a href="{{ route('import.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">取込</a>
-                <a href="{{ route('notes.index') }}" class="block px-3 py-2 rounded hover:bg-turf-600">メモ</a>
-                <button @click="darkMode = !darkMode" class="block w-full text-left px-3 py-2 rounded hover:bg-turf-600">
+        {{-- ============== モバイルメニュー (フルパネル) ============== --}}
+        <div
+            x-show="menuOpen"
+            x-cloak
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0 -translate-y-2"
+            x-transition:enter-end="opacity-100 translate-y-0"
+            class="md:hidden bg-turf-800 dark:bg-gray-800 max-h-[calc(100vh-4rem)] overflow-y-auto safe-area-bottom"
+        >
+            <div class="px-2 py-2 space-y-0.5 text-sm">
+                @php
+                    $mLink   = 'flex items-center gap-2 px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700';
+                    $mActive = 'flex items-center gap-2 px-3 py-2.5 rounded bg-turf-900/80 ring-1 ring-white/10';
+                    $mSub    = 'flex items-center gap-2 pl-8 pr-3 py-2 rounded hover:bg-turf-600 active:bg-turf-700 text-[13px] text-turf-100';
+                @endphp
+
+                <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="home" class="w-4 h-4" /> ダッシュボード
+                </a>
+                <a href="{{ route('races.index') }}" class="{{ request()->routeIs('races.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="flag" class="w-4 h-4" /> レース
+                </a>
+                <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <span class="text-base leading-none">🐎</span> 馬
+                </a>
+                <a href="{{ route('jockeys.index') }}" class="{{ request()->routeIs('jockeys.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="user" class="w-4 h-4" /> 騎手
+                </a>
+                <a href="{{ route('venues.index') }}" class="{{ request()->routeIs('venues.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="map" class="w-4 h-4" /> 競馬場
+                </a>
+
+                {{-- 分析(折り畳み) --}}
+                <div x-data="{ o: {{ request()->routeIs('analytics.*') ? 'true' : 'false' }} }" class="rounded">
+                    <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
+                        <span class="flex items-center gap-2"><x-icon name="chart" class="w-4 h-4" /> 分析</span>
+                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
+                    </button>
+                    <div x-show="o" x-cloak class="space-y-0.5">
+                        <a href="{{ route('analytics.venue') }}"    class="{{ $mSub }}" @click="menuOpen=false">📍 競馬場別傾向</a>
+                        <a href="{{ route('analytics.pace') }}"     class="{{ $mSub }}" @click="menuOpen=false">⚡ ペース分析</a>
+                        <a href="{{ route('analytics.pedigree') }}" class="{{ $mSub }}" @click="menuOpen=false">🧬 血統傾向</a>
+                        <a href="{{ route('analytics.jockey') }}"   class="{{ $mSub }}" @click="menuOpen=false">👤 騎手×コース</a>
+                        <a href="{{ route('analytics.horse') }}"    class="{{ $mSub }}" @click="menuOpen=false">🏆 馬×コース優位性</a>
+                        <a href="{{ route('analytics.stats') }}"    class="{{ $mSub }}" @click="menuOpen=false">📊 通算成績スタッツ</a>
+                        <a href="{{ route('analytics.roi') }}"      class="{{ $mSub }}" @click="menuOpen=false">💰 回収率シミュ</a>
+                    </div>
+                </div>
+
+                {{-- 取込(折り畳み) --}}
+                <div x-data="{ o: {{ request()->routeIs('import.*') ? 'true' : 'false' }} }" class="rounded">
+                    <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
+                        <span class="flex items-center gap-2"><x-icon name="upload" class="w-4 h-4" /> 取込</span>
+                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
+                    </button>
+                    <div x-show="o" x-cloak class="space-y-0.5">
+                        <a href="{{ route('import.netkeiba') }}" class="{{ $mSub }}" @click="menuOpen=false">🌐 netkeibaから取込</a>
+                        <a href="{{ route('import.csv') }}"      class="{{ $mSub }}" @click="menuOpen=false">📄 CSV取込</a>
+                        <a href="{{ route('import.image') }}"    class="{{ $mSub }}" @click="menuOpen=false">📷 画像取込(GPT-4o)</a>
+                        <a href="{{ route('import.logs') }}"     class="{{ $mSub }}" @click="menuOpen=false">📋 取込ログ</a>
+                    </div>
+                </div>
+
+                {{-- 馬券(折り畳み) --}}
+                <div x-data="{ o: {{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? 'true' : 'false' }} }" class="rounded">
+                    <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
+                        <span class="flex items-center gap-2"><x-icon name="cash" class="w-4 h-4" /> 馬券</span>
+                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
+                    </button>
+                    <div x-show="o" x-cloak class="space-y-0.5">
+                        <a href="{{ route('betting.dashboard') }}"     class="{{ $mSub }}" @click="menuOpen=false">📊 収支ダッシュボード</a>
+                        <a href="{{ route('bets.index') }}"            class="{{ $mSub }}" @click="menuOpen=false">📋 買い目一覧</a>
+                        <a href="{{ route('bets.create') }}"           class="{{ $mSub }}" @click="menuOpen=false">➕ 馬券を登録</a>
+                        <a href="{{ route('betting.payouts.list') }}"  class="{{ $mSub }}" @click="menuOpen=false">💰 払戻金一覧</a>
+                        <a href="{{ route('betting.payouts') }}"       class="{{ $mSub }}" @click="menuOpen=false">📈 払戻傾向</a>
+                    </div>
+                </div>
+
+                <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $mActive : $mLink }}" @click="menuOpen=false">
+                    <x-icon name="pencil" class="w-4 h-4" /> メモ
+                </a>
+
+                <div class="border-t border-turf-700 dark:border-gray-700 my-2"></div>
+
+                <button @click="darkMode = !darkMode" class="w-full flex items-center gap-2 px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
                     <span x-show="!darkMode">🌙 ダークモード</span>
                     <span x-show="darkMode" x-cloak>☀️ ライトモード</span>
                 </button>
                 @auth
+                <a href="{{ route('profile.edit') }}" class="flex items-center gap-2 px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700" @click="menuOpen=false">
+                    <x-icon name="cog" class="w-4 h-4" /> プロフィール
+                </a>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
-                    <button type="submit" class="block w-full text-left px-3 py-2 rounded hover:bg-red-700">ログアウト</button>
+                    <button type="submit" class="w-full flex items-center gap-2 px-3 py-2.5 rounded hover:bg-red-700 text-red-200">
+                        <x-icon name="logout" class="w-4 h-4" /> ログアウト
+                    </button>
                 </form>
                 @endauth
             </div>
