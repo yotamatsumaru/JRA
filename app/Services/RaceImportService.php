@@ -93,7 +93,12 @@ class RaceImportService
     {
         try {
             $results = $race->results()->select(['corner_positions'])->get();
-            $pace = Race::detectPace($results, $race->horses_count);
+            $pace = Race::detectPace(
+                $results,
+                $race->horses_count,
+                $race->first_3f,
+                $race->last_3f
+            );
             if ($pace !== null && $pace !== $race->pace) {
                 $race->pace = $pace;
                 $race->save();

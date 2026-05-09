@@ -113,24 +113,46 @@ class Race extends Model
     }
 
     /**
-     * レース結果の通過順位からペース(H/M/S)を判定
+     * ペース(H/M/S)を判定 (案2: 前後半3Fラップ差ベース、フォールバックは通過順)
      *
-     * 判定ロジック:
-     *   1コーナー時点で出走頭数の前 1/3 (=逃げ・先行) に居た馬の数を集計し、
-     *   逃げ/先行の "団子度合い" でハイ/ミドル/スローを推定する。
+     * 主判定: races.first_3f と races.last_3f の差
+     *   - first_3f が last_3f より 0.6 秒以上速い → 'H' (ハイ)
+     *   - first_3f が last_3f より 0.6 秒以上遅い → 'S' (スロー)
+     *   - それ以外                                → 'M' (ミドル)
+     *   ※ JRA 公式の前後半3F差判定に近い基準
      *
-     *   - 先行馬が多い (頭数の40%超) → ハイペース ('H')
-     *   - 普通                       → ミドル   ('M')
-     *   - 先行馬が少ない (頭数の20%未満) → スロー ('S')
+     * フォールバック (ラップ未取得時): 通過順から推定。
+     *   1コーナーで「前 1/4 以内」に何頭居たかの密度で判定する。
+     *   - density >= 0.90 (前1/4枠がほぼ埋まる) → 'H' (先行集団が密集 = ハイ)
+     *   - density <= 0.55 (前1/4枠がスカスカ)   → 'S' (前が手薄 = スロー)
+     *   - それ以外                              → 'M'
      *
-     * 通過順データがそろっていない場合は null。
+     *   ※ 旧ロジックは「前1/3以内/全頭」という分母の取り方が原因で
+     *     leadRatio が常に約 1/3 周辺になり 'S' が構造的に出ない欠陥があった。
      *
-     * @param iterable $results  RaceResult のコレクション。corner_positions が必須。
-     * @param int|null $horsesCount  出走頭数(レコード数より優先)
+     * @param iterable        $results       RaceResult のコレクション。corner_positions が望ましい。
+     * @param int|null        $horsesCount   出走頭数(レコード数より優先)
+     * @param string|int|null $firstHalf3f   前半3F (秒, "34.5" など) — Race::first_3f
+     * @param string|int|null $lastHalf3f    後半3F (秒, "35.1" など) — Race::last_3f
      * @return string|null  'H' | 'M' | 'S' | null
      */
-    public static function detectPace(iterable $results, ?int $horsesCount = null): ?string
-    {
+    public static function detectPace(
+        iterable $results,
+        ?int $horsesCount = null,
+        $firstHalf3f = null,
+        $lastHalf3f = null
+    ): ?string {
+        // ===== 主判定: 前後半3Fラップ差 =====
+        $first = self::parseLapSeconds($firstHalf3f);
+        $last  = self::parseLapSeconds($lastHalf3f);
+        if ($first !== null && $last !== null) {
+            $diff = $first - $last; // + なら前半が遅い、- なら前半が速い
+            if ($diff <= -0.6) return 'H'; // 前半の方が0.6秒以上速い → ハイ
+            if ($diff >=  0.6) return 'S'; // 前半の方が0.6秒以上遅い → スロー
+            return 'M';
+        }
+
+        // ===== フォールバック: 通過順から推定 =====
         $firsts = [];
         foreach ($results as $r) {
             $corner = is_object($r) ? ($r->corner_positions ?? null) : ($r['corner_positions'] ?? null);
@@ -146,18 +168,44 @@ class Race extends Model
         $hc = $horsesCount ?: count($firsts);
         if ($hc < 6) return null; // 少頭数はペース判定の意味が薄い
 
-        // 1コーナーで前 1/3 に居た馬の頭数
-        $threshold = max(2, (int) ceil($hc / 3));
+        // 1コーナーで前 1/4 以内に居た馬の頭数
+        $threshold = max(2, (int) ceil($hc / 4));
         $leadCount = 0;
         foreach ($firsts as $p) {
             if ($p <= $threshold) $leadCount++;
         }
+        // 「前1/4枠の埋まり具合」 (分母を $threshold にすることで構造バイアスを排除)
+        $density = $leadCount / $threshold;
 
-        $leadRatio = $leadCount / $hc;
         return match (true) {
-            $leadRatio >= 0.40 => 'H',
-            $leadRatio <  0.20 => 'S',
-            default            => 'M',
+            $density >= 0.90 => 'H',
+            $density <= 0.55 => 'S',
+            default          => 'M',
         };
+    }
+
+    /**
+     * "34.5" / "0:34.5" / 34.5 などのラップ表記を秒(float)に変換
+     */
+    protected static function parseLapSeconds($v): ?float
+    {
+        if ($v === null || $v === '') return null;
+        if (is_numeric($v)) {
+            $f = (float) $v;
+            return ($f > 0 && $f < 120) ? $f : null;
+        }
+        $s = trim((string) $v);
+        if ($s === '') return null;
+        // "M:SS.s" 形式
+        if (preg_match('/^(\d+):(\d{1,2}(?:\.\d+)?)$/', $s, $m)) {
+            $sec = (int) $m[1] * 60 + (float) $m[2];
+            return ($sec > 0 && $sec < 120) ? $sec : null;
+        }
+        // "34.5" / "34" など
+        if (preg_match('/^\d+(?:\.\d+)?$/', $s)) {
+            $sec = (float) $s;
+            return ($sec > 0 && $sec < 120) ? $sec : null;
+        }
+        return null;
     }
 }
