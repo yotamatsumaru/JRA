@@ -72,6 +72,10 @@ class RaceImportService
                 $this->createResult($race, $row);
             }
 
+            // ============ ペース自動判定 ============
+            // 結果保存後に通過順データから H/M/S を判定して races.pace に保存
+            $this->recalcPace($race);
+
             // ============ 払戻データ ============
             $this->savePayouts($race, $data['payouts'] ?? []);
 
@@ -80,6 +84,28 @@ class RaceImportService
 
             return $race;
         });
+    }
+
+    /**
+     * レース結果の通過順位から races.pace を再計算して保存
+     */
+    public function recalcPace(Race $race): ?string
+    {
+        try {
+            $results = $race->results()->select(['corner_positions'])->get();
+            $pace = Race::detectPace($results, $race->horses_count);
+            if ($pace !== null && $pace !== $race->pace) {
+                $race->pace = $pace;
+                $race->save();
+            }
+            return $pace;
+        } catch (\Throwable $e) {
+            Log::warning('ペース判定失敗', [
+                'race_id' => $race->id,
+                'error'   => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 
     /**

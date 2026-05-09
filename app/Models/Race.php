@@ -111,4 +111,53 @@ class Race extends Model
             $this->distance
         );
     }
+
+    /**
+     * レース結果の通過順位からペース(H/M/S)を判定
+     *
+     * 判定ロジック:
+     *   1コーナー時点で出走頭数の前 1/3 (=逃げ・先行) に居た馬の数を集計し、
+     *   逃げ/先行の "団子度合い" でハイ/ミドル/スローを推定する。
+     *
+     *   - 先行馬が多い (頭数の40%超) → ハイペース ('H')
+     *   - 普通                       → ミドル   ('M')
+     *   - 先行馬が少ない (頭数の20%未満) → スロー ('S')
+     *
+     * 通過順データがそろっていない場合は null。
+     *
+     * @param iterable $results  RaceResult のコレクション。corner_positions が必須。
+     * @param int|null $horsesCount  出走頭数(レコード数より優先)
+     * @return string|null  'H' | 'M' | 'S' | null
+     */
+    public static function detectPace(iterable $results, ?int $horsesCount = null): ?string
+    {
+        $firsts = [];
+        foreach ($results as $r) {
+            $corner = is_object($r) ? ($r->corner_positions ?? null) : ($r['corner_positions'] ?? null);
+            if (!$corner) continue;
+            $parts = preg_split('/[-]/', $corner);
+            $firstCorner = (int) ($parts[0] ?? 0);
+            if ($firstCorner > 0) {
+                $firsts[] = $firstCorner;
+            }
+        }
+        if (empty($firsts)) return null;
+
+        $hc = $horsesCount ?: count($firsts);
+        if ($hc < 6) return null; // 少頭数はペース判定の意味が薄い
+
+        // 1コーナーで前 1/3 に居た馬の頭数
+        $threshold = max(2, (int) ceil($hc / 3));
+        $leadCount = 0;
+        foreach ($firsts as $p) {
+            if ($p <= $threshold) $leadCount++;
+        }
+
+        $leadRatio = $leadCount / $hc;
+        return match (true) {
+            $leadRatio >= 0.40 => 'H',
+            $leadRatio <  0.20 => 'S',
+            default            => 'M',
+        };
+    }
 }
