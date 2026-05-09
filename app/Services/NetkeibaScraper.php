@@ -166,7 +166,111 @@ class NetkeibaScraper
         $contentType = $response->getHeaderLine('Content-Type');
         $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
 
-        return $this->parseHorseHtml($horseId, $html);
+        $data = $this->parseHorseHtml($horseId, $html);
+
+        // 2025-07 以降のリニューアルで /horse/{id}/ には血統テーブルが
+        // 直接埋め込まれず、AJAX エンドポイントから JSON で取得する仕様に
+        // 変更された。そのため血統(父/母/母父)は別エンドポイントから補完する。
+        try {
+            $pedigree = $this->fetchPedigreeAjax($horseId);
+            foreach (['father', 'mother', 'mother_father'] as $k) {
+                if (!empty($pedigree[$k]) && empty($data[$k])) {
+                    $data[$k] = $pedigree[$k];
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba: pedigree ajax fetch failed for horse_id={$horseId}: " . $e->getMessage());
+        }
+
+        return $data;
+    }
+
+    /**
+     * 血統情報を AJAX エンドポイントから取得
+     *
+     * https://db.netkeiba.com/horse/ajax_horse_pedigree.html?id={id}&input=UTF-8&output=json
+     * レスポンス: {"status":"OK","data":"<HTML断片>"}
+     * data の中には旧来と同じ <table class="blood_table"> が含まれる。
+     * 構造は rowspan を多用したマトリクスなので、td.b_ml(父系) / td.b_fml(母系)
+     * のクラスを使って父/母/母父を堅く取得する。
+     *
+     * @param string $horseId
+     * @return array  ['father' => ?, 'mother' => ?, 'mother_father' => ?]
+     */
+    protected function fetchPedigreeAjax(string $horseId): array
+    {
+        $this->respectInterval();
+
+        Log::info("Netkeiba fetch pedigree ajax: horse_id={$horseId}");
+
+        $response = $this->http->get('/horse/ajax_horse_pedigree.html', [
+            'query' => [
+                'id'     => $horseId,
+                'input'  => 'UTF-8',
+                'output' => 'json',
+            ],
+            'headers' => [
+                'X-Requested-With' => 'XMLHttpRequest',
+                'Referer'          => "https://db.netkeiba.com/horse/{$horseId}/",
+                'Accept'           => 'application/json, text/javascript, */*; q=0.01',
+            ],
+        ]);
+
+        $status = $response->getStatusCode();
+        if ($status !== 200) {
+            throw new \RuntimeException("netkeiba pedigree HTTP {$status} for horse_id={$horseId}");
+        }
+
+        $body = $response->getBody()->getContents();
+        $json = json_decode($body, true);
+        if (!is_array($json) || (($json['status'] ?? '') !== 'OK') || empty($json['data'])) {
+            Log::warning("Netkeiba: pedigree ajax invalid json for horse_id={$horseId}");
+            return [];
+        }
+
+        $fragment = $json['data'];
+
+        // 旧 blood_table (rowspan マトリクス) を classで判定して取得
+        // 構造例:
+        //   <tr><td rowspan=2 class=b_ml>父</td><td class=b_ml>父父</td></tr>
+        //   <tr>                                <td class=b_fml>父母</td></tr>
+        //   <tr><td rowspan=2 class=b_fml>母</td><td class=b_ml>母父</td></tr>
+        //   <tr>                                <td class=b_fml>母母</td></tr>
+        // → 1番目の b_ml(rowspan=2) = 父
+        //   2番目の b_fml(rowspan=2) = 母
+        //   2番目の b_ml             = 母父
+        $result = [];
+        try {
+            $crawler = new Crawler($fragment);
+            $bloodTable = $crawler->filter('table.blood_table')->first();
+            if ($bloodTable->count() === 0) {
+                Log::warning("Netkeiba: blood_table not found in pedigree ajax for horse_id={$horseId}");
+                return [];
+            }
+
+            $bml = [];   // class b_ml の td
+            $bfml = [];  // class b_fml の td
+            $bloodTable->filter('td')->each(function (Crawler $td) use (&$bml, &$bfml) {
+                $cls = $td->attr('class') ?? '';
+                $a = $td->filter('a')->first();
+                $text = $a->count() > 0 ? $this->cleanText($a->text('')) : $this->cleanText($td->text(''));
+                if ($text === '') return;
+                if (str_contains($cls, 'b_ml')) {
+                    $bml[] = $text;
+                } elseif (str_contains($cls, 'b_fml')) {
+                    $bfml[] = $text;
+                }
+            });
+
+            // 父 = b_ml 1番目, 母父 = b_ml 2番目, 母 = b_fml 1番目
+            if (!empty($bml[0]))  $result['father']        = mb_substr($bml[0], 0, 50);
+            if (!empty($bfml[0])) $result['mother']        = mb_substr($bfml[0], 0, 50);
+            if (!empty($bml[1]))  $result['mother_father'] = mb_substr($bml[1], 0, 50);
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba: pedigree ajax parse failed for horse_id={$horseId}: " . $e->getMessage());
+        }
+
+        return $result;
     }
 
     /**
@@ -186,28 +290,9 @@ class NetkeibaScraper
         }
 
         // ============ 血統テーブル ============
-        // <table class="blood_table"> セル順は通常 [父, 父父, 父母, 母, 母父, 母母]
-        try {
-            $bloodTable = $crawler->filter('table.blood_table')->first();
-            if ($bloodTable->count() > 0) {
-                $parents = [];
-                $bloodTable->filter('td')->each(function (Crawler $td) use (&$parents) {
-                    $a = $td->filter('a')->first();
-                    if ($a->count() > 0) {
-                        $parents[] = $this->cleanText($a->text(''));
-                    } else {
-                        $parents[] = $this->cleanText($td->text(''));
-                    }
-                });
-                if (count($parents) >= 5) {
-                    if (!empty($parents[0])) $data['father']        = mb_substr($parents[0], 0, 50);
-                    if (!empty($parents[3])) $data['mother']        = mb_substr($parents[3], 0, 50);
-                    if (!empty($parents[4])) $data['mother_father'] = mb_substr($parents[4], 0, 50);
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::warning("Netkeiba: blood_table parse failed for horse_id={$horseId}: " . $e->getMessage());
-        }
+        // 2025-07 以降、/horse/{id}/ には血統テーブルが直接埋め込まれず
+        // AJAX エンドポイントから JSON で読み込む仕様に変更された。
+        // 血統(父/母/母父)は fetchHorse() 側で fetchPedigreeAjax() を別途呼ぶ。
 
         // ============ プロフィールテーブル ============
         // <table class="db_prof_table"> 行ごとに <th>項目名</th><td>値</td>
