@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Http\Controllers\DashboardController;
 use App\Models\Horse;
 use App\Models\Jockey;
 use App\Models\Payout;
@@ -84,6 +85,10 @@ class RaceImportService
 
             // ============ 馬券の自動精算 ============
             $this->autoSettleBets($race);
+
+            // ============ ダッシュボード集計キャッシュを破棄 ============
+            // 結果が変わったので 24h キャッシュを無効化して次表示時に再計算させる
+            DashboardController::flushAggregatesCache();
 
             return $race;
         });
@@ -326,6 +331,9 @@ class RaceImportService
             foreach ($data['results'] ?? [] as $row) {
                 $this->createResult($race, $row);
             }
+
+            // ダッシュボード集計キャッシュを破棄 (画像取込でも結果が増えるため)
+            DashboardController::flushAggregatesCache();
 
             return $race;
         });

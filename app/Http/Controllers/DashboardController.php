@@ -15,12 +15,20 @@ use App\Services\WatchlistService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
+    /** ライト集計キャッシュキー (KPI / 月別 / 競馬場別 / ランキング 等) */
+    public const CACHE_KEY_LIGHT = 'dashboard:aggregates:v2';
+    /** 重量集計キャッシュキー (競馬場×トラック ヒートマップ / 枠番別 / 脚質傾向) */
+    public const CACHE_KEY_HEAVY = 'dashboard:heavy:v2';
+    /** 集計キャッシュ TTL (秒) — 24時間。取込完了時に Cache::forget で破棄。 */
+    public const CACHE_TTL_SECONDS = 86400;
+
     public function index(WatchlistService $watchlistService, PredictionAccuracyService $accuracyService): View
     {
         // ========= Phase 5-D: パーソナル サマリ (ログインユーザー) =========
@@ -32,24 +40,57 @@ class DashboardController extends Controller
             fn() => $this->buildPersonalSummary($userId, $watchlistService, $accuracyService)
         );
 
-        // ========= グローバル集計はまとめて 10 分キャッシュ =========
-        // すべてのユーザーで共通なので 1 度計算すれば 10 分間は再計算不要
-        $aggregates = Cache::remember(
-            'dashboard:aggregates:v1',
-            now()->addMinutes(10),
-            fn() => $this->buildAggregates()
+        // ========= ライト集計のみ 24h キャッシュ =========
+        // 全ユーザー共通。取込完了時に Cache::forget で破棄するので長くて OK。
+        // 重量3種 (venueTrackWinRate / frameWinRates / venueStyleStats) は
+        // /dashboard/aggregates.json で遅延ロードするためここには含めない。
+        $light = Cache::remember(
+            self::CACHE_KEY_LIGHT,
+            now()->addSeconds(self::CACHE_TTL_SECONDS),
+            fn() => $this->buildLightAggregates()
         );
+
+        // 重量3種は初回ビューで「空コレクション」を渡しておく → スケルトン表示用
+        $heavyPlaceholder = [
+            'venueTrackWinRate' => collect(),
+            'frameWinRates'     => collect(),
+            'venueStyleStats'   => collect(),
+        ];
 
         return view('dashboard.index', array_merge(
             ['personal' => $personal],
-            $aggregates
+            $light,
+            $heavyPlaceholder,
+            ['heavyDeferred' => true] // ビュー側で「読込中スケルトン」を出す目印
         ));
     }
 
     /**
-     * グローバル集計をまとめて構築 (キャッシュ対象)
+     * 重量集計のみを返す JSON エンドポイント (遅延ロード用)
+     *  - 24h キャッシュ。取込完了時に Cache::forget で破棄
+     *  - フロント側で fetch('/dashboard/aggregates.json') して chart に流し込む
      */
-    private function buildAggregates(): array
+    public function aggregatesJson(): JsonResponse
+    {
+        $heavy = Cache::remember(
+            self::CACHE_KEY_HEAVY,
+            now()->addSeconds(self::CACHE_TTL_SECONDS),
+            fn() => $this->buildHeavyAggregates()
+        );
+
+        return response()->json([
+            'venueTrackWinRate' => $heavy['venueTrackWinRate']->values(),
+            'frameWinRates'     => $heavy['frameWinRates']->values(),
+            'venueStyleStats'   => $heavy['venueStyleStats']->values(),
+        ])->setEncodingOptions(JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * ライト集計を構築 (キャッシュ対象, 24h)
+     *  - KPI / 月別 / 競馬場別 / ランキング / 直近開催 など
+     *  - 重量3種は含まない (遅延ロード対象)
+     */
+    private function buildLightAggregates(): array
     {
         // ========= 基本 KPI =========
         $stats = [
@@ -200,7 +241,41 @@ class DashboardController extends Controller
             ->limit(10)
             ->get(), collect());
 
-        // ========= 競馬場別傾向 (Venue Trend) =========
+        // 直近開催日のレース一覧
+        $latestDateRaces = collect();
+        $latestDate = $stats['last_race_date'] ?? null;
+        if ($latestDate) {
+            $latestDateRaces = $this->safe(fn() => Race::with('venue:id,name')
+                ->withCount('results')
+                ->whereDate('race_date', $latestDate)
+                ->orderBy('venue_id')
+                ->orderBy('race_number')
+                ->get(), collect());
+        }
+
+        return compact(
+            'stats',
+            'byGrade', 'byMonth', 'byVenue',
+            'byTrack', 'byDistanceCat', 'byCondition', 'byWeather', 'byWeekday',
+            'avgFieldByMonth',
+            'topJockeys', 'topTrainers', 'topSires', 'topPrizeHorses',
+            'latestDate', 'latestDateRaces'
+        );
+    }
+
+    /**
+     * 重量集計を構築 (キャッシュ対象, 24h, 遅延ロード経由でのみ呼ばれる)
+     *  - 競馬場×トラック種別 勝率ヒートマップ
+     *  - 全場合算 枠番別 勝率/複勝率
+     *  - 競馬場別 脚質傾向
+     *
+     * いずれも race_results.finish_position_int フィルタ + JOIN race を含むため
+     * 件数が増えるとフルテーブルスキャンに近くなる。
+     * → 2026_05_14 マイグレーションで以下のインデックスを追加済:
+     *    finish_position_int, (race_id, frame_number) 等
+     */
+    private function buildHeavyAggregates(): array
+    {
         // A) 競馬場 × トラック種別 勝率ヒートマップ
         $venueTrackWinRate = $this->safe(function () {
             return DB::table('race_results')
@@ -260,27 +335,16 @@ class DashboardController extends Controller
                 ->get();
         }, collect());
 
-        // 直近開催日のレース一覧
-        $latestDateRaces = collect();
-        $latestDate = $stats['last_race_date'] ?? null;
-        if ($latestDate) {
-            $latestDateRaces = $this->safe(fn() => Race::with('venue:id,name')
-                ->withCount('results')
-                ->whereDate('race_date', $latestDate)
-                ->orderBy('venue_id')
-                ->orderBy('race_number')
-                ->get(), collect());
-        }
+        return compact('venueTrackWinRate', 'frameWinRates', 'venueStyleStats');
+    }
 
-        return compact(
-            'stats',
-            'byGrade', 'byMonth', 'byVenue',
-            'byTrack', 'byDistanceCat', 'byCondition', 'byWeather', 'byWeekday',
-            'avgFieldByMonth',
-            'topJockeys', 'topTrainers', 'topSires', 'topPrizeHorses',
-            'venueTrackWinRate', 'frameWinRates', 'venueStyleStats',
-            'latestDate', 'latestDateRaces'
-        );
+    /**
+     * ダッシュボード集計キャッシュをすべて破棄 (取込完了などから呼ばれる)
+     */
+    public static function flushAggregatesCache(): void
+    {
+        Cache::forget(self::CACHE_KEY_LIGHT);
+        Cache::forget(self::CACHE_KEY_HEAVY);
     }
 
     /**

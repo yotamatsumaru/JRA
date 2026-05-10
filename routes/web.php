@@ -50,6 +50,9 @@ Route::middleware('auth')->group(function () {
 
     // ダッシュボード
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    // 重量集計のみ遅延ロード (競馬場×トラック ヒートマップ / 枠番別 / 脚質傾向)
+    Route::get('/dashboard/aggregates.json', [DashboardController::class, 'aggregatesJson'])
+        ->name('dashboard.aggregates.json');
 
     // プロフィール
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
