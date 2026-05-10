@@ -80,7 +80,7 @@
         $thr = $thresholds[$metric] ?? [0,0,0,0];
     @endphp
 
-    <div class="bg-white rounded-lg shadow p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
         <div class="mb-3 flex items-center justify-between flex-wrap gap-2">
             <h2 class="font-semibold text-gray-700">
                 {{ $trackType }} × {{ $metricLabels[$metric] ?? $metric }} (父TOP{{ $top }} × {{

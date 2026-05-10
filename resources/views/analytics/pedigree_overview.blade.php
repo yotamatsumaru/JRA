@@ -36,21 +36,21 @@
 
     {{-- 血統カバー率 KPI --}}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
             <div class="text-xs text-gray-500">登録馬数</div>
             <div class="text-2xl font-bold text-gray-800 mt-1">{{ number_format($kpi['total_horses']) }}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
             <div class="text-xs text-gray-500">父データあり</div>
             <div class="text-2xl font-bold text-purple-600 mt-1">{{ $kpi['father_pct'] }}%</div>
             <div class="text-xs text-gray-500 mt-1">{{ number_format($kpi['father_filled']) }} 頭 / 種牡馬 {{ number_format($kpi['unique_fathers']) }}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
             <div class="text-xs text-gray-500">母データあり</div>
             <div class="text-2xl font-bold text-rose-500 mt-1">{{ $kpi['mother_pct'] }}%</div>
             <div class="text-xs text-gray-500 mt-1">{{ number_format($kpi['mother_filled']) }} 頭</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
             <div class="text-xs text-gray-500">母父データあり</div>
             <div class="text-2xl font-bold text-amber-500 mt-1">{{ $kpi['m_father_pct'] }}%</div>
             <div class="text-xs text-gray-500 mt-1">{{ number_format($kpi['m_father_filled']) }} 頭 / {{ number_format($kpi['unique_m_fathers']) }} 系統</div>
@@ -58,7 +58,7 @@
     </div>
 
     {{-- 父TOP20 (ApexChart) --}}
-    <div class="bg-white rounded-lg shadow p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
         <div class="flex items-center justify-between mb-3">
             <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700">
                 <x-icon name="crown" class="w-5 h-5 text-purple-600" />
@@ -110,7 +110,7 @@
     </div>
 
     {{-- 母父TOP20 --}}
-    <div class="bg-white rounded-lg shadow p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
         <div class="flex items-center justify-between mb-3">
             <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700">
                 <x-icon name="flower" class="w-5 h-5 text-rose-500" />

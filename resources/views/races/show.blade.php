@@ -9,7 +9,7 @@
         <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
                 <div class="text-xs sm:text-sm text-gray-500">{{ $race->race_date?->format('Y年m月d日') }} {{ $race->venue?->name }} {{ $race->race_number }}R</div>
-                <h1 class="text-xl sm:text-2xl font-bold text-gray-800 mt-1 break-words">
+                <h1 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100 mt-1 break-words">
                     {{ $race->name }}
                     @if ($race->grade) <span class="ml-2 text-sm bg-amber-500 text-white px-2 py-0.5 rounded">{{ $race->grade }}</span> @endif
                 </h1>
@@ -23,7 +23,7 @@
                 </div>
             </div>
             <div class="flex space-x-2 shrink-0">
-                <a href="{{ route('races.edit', $race) }}" class="text-sm text-gray-500 hover:text-primary-600 px-3 py-1 border rounded">編集</a>
+                <a href="{{ route('races.edit', $race) }}" class="text-sm text-gray-500 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 px-3 py-1 border dark:border-gray-600 rounded">編集</a>
             </div>
         </div>
     </div>
@@ -46,7 +46,7 @@
         @else
             <div class="table-scroll -mx-4 sm:mx-0">
                 <table class="w-full text-sm min-w-[1100px]">
-                    <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+                    <thead class="bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300 uppercase">
                         <tr>
                             <th class="px-2 py-2">着</th>
                             <th class="px-2 py-2">枠</th>
@@ -69,7 +69,7 @@
                     </thead>
                     <tbody>
                         @foreach ($results->sortBy(fn($r) => $r->finish_position_int ?? 99) as $r)
-                        <tr class="border-b hover:bg-gray-50 {{ $r->finish_position_int == 1 ? 'bg-yellow-50' : '' }}">
+                        <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60 {{ $r->finish_position_int == 1 ? 'bg-yellow-50 dark:bg-yellow-900/20' : '' }}">
                             <td class="px-2 py-2 text-center font-bold">{{ $r->finish_position }}</td>
                             <td class="px-2 py-2 text-center">{{ $r->frame_number }}</td>
                             <td class="px-2 py-2 text-center">{{ $r->horse_number }}</td>
@@ -354,7 +354,7 @@
         {{-- 結果追加フォーム --}}
         <details class="mt-6">
             <summary class="cursor-pointer text-sm text-primary-600 hover:underline py-2">＋ 出走馬の結果を追加</summary>
-            <form method="POST" action="{{ route('races.results.store', $race) }}" class="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-sm bg-gray-50 p-3 sm:p-4 rounded">
+            <form method="POST" action="{{ route('races.results.store', $race) }}" class="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-sm bg-gray-50 dark:bg-gray-900/40 p-3 sm:p-4 rounded">
                 @csrf
                 <div>
                     <label class="block text-xs text-gray-600 mb-1">着順</label>
@@ -445,7 +445,7 @@
         <h2 class="font-semibold text-gray-700 mb-3">公式払戻</h2>
         <div class="table-scroll">
             <table class="w-full text-sm min-w-[480px]">
-                <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+                <thead class="bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300 uppercase">
                     <tr>
                         <th class="text-left px-3 py-2">券種</th>
                         <th class="text-left px-3 py-2">組合せ</th>
@@ -460,10 +460,10 @@
                     @endphp
                     @foreach ($sortedKinds as $kind)
                         @foreach ($payoutsByKind[$kind] as $i => $p)
-                            <tr class="border-b hover:bg-gray-50">
+                            <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60">
                                 <td class="px-3 py-2">
                                     @if ($i === 0)
-                                        <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold">{{ $p->kind_label }}</span>
+                                        <span class="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded font-bold">{{ $p->kind_label }}</span>
                                     @endif
                                 </td>
                                 <td class="px-3 py-2 font-mono">{{ $p->combination }}</td>
@@ -523,7 +523,7 @@
 
         <div class="table-scroll">
             <table class="w-full text-sm min-w-[700px]">
-                <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+                <thead class="bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300 uppercase">
                     <tr>
                         <th class="text-left px-3 py-2">券種</th>
                         <th class="text-left px-3 py-2">買い方</th>
@@ -537,7 +537,7 @@
                 </thead>
                 <tbody>
                 @foreach ($myBets as $b)
-                    <tr class="border-b hover:bg-gray-50">
+                    <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60">
                         <td class="px-3 py-2">{{ $b->kind_label }}</td>
                         <td class="px-3 py-2 text-xs text-gray-600">{{ $b->method_label }}</td>
                         <td class="px-3 py-2 text-right">{{ $b->points }}</td>

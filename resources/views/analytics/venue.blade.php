@@ -36,7 +36,7 @@
     </form>
 
     @if ($venue)
-    <div class="bg-white rounded-lg shadow p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
         <h2 class="text-lg font-bold text-primary-700">{{ $venue->name }} / {{ $trackType }} @if ($distance) / {{ $distance }}m @endif</h2>
         @if ($venue->characteristics)
             <p class="mt-2 text-sm text-gray-600">{{ $venue->characteristics }}</p>
@@ -45,8 +45,8 @@
     @endif
 
     {{-- 枠順×着順ヒートマップ --}}
-    <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">枠番別 成績ヒートマップ</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">枠番別 成績ヒートマップ</h2>
         @if ($frameStats->isEmpty())
             <p class="text-sm text-gray-500">データがありません。レース結果が蓄積されると表示されます。</p>
         @else
@@ -99,8 +99,8 @@
     </div>
 
     {{-- 脚質別 --}}
-    <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">脚質別成績</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">脚質別成績</h2>
         @if ($styleStats->isEmpty())
             <p class="text-sm text-gray-500">データがありません</p>
         @else

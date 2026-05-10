@@ -6,9 +6,9 @@
 
     <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex justify-between items-start gap-3">
         <div class="min-w-0 flex-1">
-            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 break-words">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100 break-words">
                 {{ $jockey->name }}
-                @if ($jockey->belonging) <span class="ml-2 text-sm bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{{ $jockey->belonging }}</span> @endif
+                @if ($jockey->belonging) <span class="ml-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-2 py-0.5 rounded">{{ $jockey->belonging }}</span> @endif
             </h1>
             @if ($jockey->name_kana) <div class="text-sm text-gray-500 mt-1">{{ $jockey->name_kana }}</div> @endif
         </div>
@@ -82,7 +82,7 @@
         @else
         <div class="table-scroll">
             <table class="w-full text-sm min-w-[680px]">
-                <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+                <thead class="bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300 uppercase">
                     <tr>
                         <th class="text-left px-2 py-2">日付</th>
                         <th class="text-left px-2 py-2">場</th>
@@ -94,7 +94,7 @@
                 </thead>
                 <tbody>
                     @foreach ($recentResults as $r)
-                    <tr class="border-b hover:bg-gray-50">
+                    <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60">
                         <td class="px-2 py-2">{{ $r->race?->race_date?->format('Y/m/d') }}</td>
                         <td class="px-2 py-2">{{ $r->race?->venue?->name }}</td>
                         <td class="px-2 py-2"><a href="{{ route('races.show', $r->race) }}" class="text-primary-600 hover:underline">{{ $r->race?->name }}</a></td>

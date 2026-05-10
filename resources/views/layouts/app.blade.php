@@ -165,6 +165,114 @@
                 min-height: 40px;
             }
         }
+
+        /* =====================================================
+           ダークモード defensive 補正
+           Tailwind の dark: variant が抜けているビュー向けに、
+           汎用クラスのダーク時挙動をまとめて補正する。
+           ナビ(.bg-gradient-to-r)・トースト(.fixed)・モーダル(.fixed)
+           などはレイアウト側で個別に dark: が振られているため、
+           ここで上書きしないよう :not セレクタで除外する。
+           ===================================================== */
+        .dark .bg-white:not(nav):not(.bg-gradient-to-r):not(.toast-keep) {
+            background-color: #1f2937; /* gray-800 */
+            color: #e5e7eb;            /* gray-200 */
+        }
+        .dark .bg-gray-50:not(.bg-keep) {
+            background-color: #111827; /* gray-900 */
+            color: #e5e7eb;
+        }
+        .dark .bg-gray-100:not(.bg-keep) {
+            background-color: #1f2937; /* gray-800 */
+            color: #e5e7eb;
+        }
+        .dark .bg-gray-200:not(.bg-keep) {
+            background-color: #374151; /* gray-700 */
+            color: #e5e7eb;
+        }
+
+        /* テキスト色の取りこぼし */
+        .dark .text-gray-900:not(.text-keep) { color: #f3f4f6; }   /* gray-100 */
+        .dark .text-gray-800:not(.text-keep) { color: #e5e7eb; }   /* gray-200 */
+        .dark .text-gray-700:not(.text-keep) { color: #d1d5db; }   /* gray-300 */
+        .dark .text-gray-600:not(.text-keep) { color: #9ca3af; }   /* gray-400 */
+        .dark .text-black:not(.text-keep)    { color: #f3f4f6; }
+
+        /* ボーダー色の取りこぼし */
+        .dark .border-gray-100:not(.border-keep),
+        .dark .border-gray-200:not(.border-keep),
+        .dark .border-gray-300:not(.border-keep) {
+            border-color: #374151; /* gray-700 */
+        }
+        /* `border` / `border-b` / `border-t` だけで色未指定だと
+           Tailwind は #e5e7eb (gray-200) を当ててしまい、ダーク時に白浮きする。
+           CSS変数 --tw-border-opacity 経由で書かれている場合に対応するのは難しいので、
+           Tailwind の border ユーティリティ群で「色クラスを併記していないもの」を狙い撃ちするより、
+           `dark` スコープ全体でデフォルト境界色を gray-700 に再設定する方が安全。 */
+        .dark { border-color: #374151; }
+        .dark .border        { border-color: #374151; }
+        .dark .border-t      { border-top-color: #374151; }
+        .dark .border-b      { border-bottom-color: #374151; }
+        .dark .border-l      { border-left-color: #374151; }
+        .dark .border-r      { border-right-color: #374151; }
+        .dark .border-y > *,
+        .dark .divide-x > *  { border-color: #374151; }
+
+        /* hover:bg-gray-* / hover:bg-* のライト前提色をダーク時に弱める */
+        .dark .hover\:bg-gray-50:hover,
+        .dark .hover\:bg-gray-100:hover { background-color: #374151 !important; }
+        .dark .hover\:bg-gray-200:hover { background-color: #4b5563 !important; }
+        .dark .hover\:bg-rose-50:hover  { background-color: rgba(244,63,94,0.15) !important; }
+        .dark .hover\:bg-emerald-50:hover { background-color: rgba(16,185,129,0.15) !important; }
+        .dark .hover\:bg-purple-50:hover { background-color: rgba(168,85,247,0.15) !important; }
+        .dark .hover\:bg-amber-50:hover  { background-color: rgba(245,158,11,0.15) !important; }
+        .dark .hover\:bg-sky-50:hover    { background-color: rgba(14,165,233,0.15) !important; }
+
+        /* フォーム要素 (input/select/textarea) のダーク対応
+           Tailwind 既定の input は white 背景 / 黒文字なので、
+           ダーク時は灰背景 + 明るい文字にする */
+        .dark input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=color]):not([type=submit]):not([type=button]):not([type=reset]),
+        .dark select,
+        .dark textarea {
+            background-color: #1f2937;
+            color: #f3f4f6;
+            border-color: #4b5563;
+        }
+        .dark input::placeholder,
+        .dark textarea::placeholder {
+            color: #9ca3af;
+        }
+        .dark input:focus,
+        .dark select:focus,
+        .dark textarea:focus {
+            border-color: #22c55e; /* turf-500 */
+        }
+
+        /* テーブルのデフォルト罫線 (border / divide-y) もダーク対応 */
+        .dark table { border-color: #374151; }
+        .dark thead { background-color: #111827; }
+        .dark tbody tr { border-color: #374151; }
+        .dark .divide-y > * + * { border-color: #374151 !important; }
+
+        /* code / pre / kbd */
+        .dark code, .dark pre {
+            background-color: #111827;
+            color: #e5e7eb;
+        }
+        .dark kbd {
+            background-color: #374151 !important;
+            color: #f3f4f6;
+            border-color: #4b5563;
+        }
+
+        /* shadow が白浮きしないよう、ダーク時は黒寄りシャドウに上書き */
+        .dark .shadow    { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.5); }
+        .dark .shadow-md { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5), 0 2px 4px -2px rgba(0,0,0,0.4); }
+        .dark .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.55), 0 4px 6px -4px rgba(0,0,0,0.4); }
+        .dark .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.6), 0 8px 10px -6px rgba(0,0,0,0.4); }
+
+        /* リング(ring-1 / ring-black/5 など)もダーク時は白寄りに */
+        .dark .ring-1 { box-shadow: 0 0 0 1px rgba(255,255,255,0.08); }
     </style>
 
     @stack('head')
@@ -241,40 +349,18 @@
                             $inactive = 'hover:bg-turf-600/70 px-3 py-2 rounded-md text-sm font-medium transition-colors';
                         @endphp
 
-                        <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="home" class="w-4 h-4" />
-                            <span>ダッシュボード</span>
-                        </a>
-                        <a href="{{ route('races.index') }}" class="{{ request()->routeIs('races.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="flag" class="w-4 h-4" />
-                            <span>レース</span>
-                        </a>
-                        <a href="{{ route('shutuba.index') }}" class="{{ request()->routeIs('shutuba.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="target" class="w-4 h-4" />
-                            <span>出馬表</span>
-                        </a>
-                        <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="horse" class="w-4 h-4" />
-                            <span>馬</span>
-                        </a>
-                        <a href="{{ route('jockeys.index') }}" class="{{ request()->routeIs('jockeys.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="user" class="w-4 h-4" />
-                            <span>騎手</span>
-                        </a>
-                        <a href="{{ route('trainers.index') }}" class="{{ request()->routeIs('trainers.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="user" class="w-4 h-4" />
-                            <span>調教師</span>
-                        </a>
-                        <a href="{{ route('venues.index') }}" class="{{ request()->routeIs('venues.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="map" class="w-4 h-4" />
-                            <span>競馬場</span>
-                        </a>
+                        <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? $active : $inactive }}">ダッシュボード</a>
+                        <a href="{{ route('races.index') }}" class="{{ request()->routeIs('races.*') ? $active : $inactive }}">レース</a>
+                        <a href="{{ route('shutuba.index') }}" class="{{ request()->routeIs('shutuba.*') ? $active : $inactive }}">出馬表</a>
+                        <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $active : $inactive }}">馬</a>
+                        <a href="{{ route('jockeys.index') }}" class="{{ request()->routeIs('jockeys.*') ? $active : $inactive }}">騎手</a>
+                        <a href="{{ route('trainers.index') }}" class="{{ request()->routeIs('trainers.*') ? $active : $inactive }}">調教師</a>
+                        <a href="{{ route('venues.index') }}" class="{{ request()->routeIs('venues.*') ? $active : $inactive }}">競馬場</a>
 
                         <div class="relative" x-data="{ open: false }">
-                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('analytics.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                                <x-icon name="chart" class="w-4 h-4" />
+                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('analytics.*') ? $active : $inactive }} flex items-center space-x-1">
                                 <span>分析</span>
-                                <x-icon name="chevron-down" class="w-3 h-3" />
+                                <x-icon name="chevron-down" class="w-3 h-3 opacity-70" />
                             </button>
                             <div x-show="open" x-cloak x-transition class="absolute mt-2 w-52 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
                                 <a href="{{ route('analytics.venue') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-turf-600" /><span>競馬場別傾向</span></a>
@@ -299,10 +385,9 @@
                         </div>
 
                         <div class="relative" x-data="{ open: false }">
-                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('import.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                                <x-icon name="upload" class="w-4 h-4" />
+                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('import.*') ? $active : $inactive }} flex items-center space-x-1">
                                 <span>取込</span>
-                                <x-icon name="chevron-down" class="w-3 h-3" />
+                                <x-icon name="chevron-down" class="w-3 h-3 opacity-70" />
                             </button>
                             <div x-show="open" x-cloak x-transition class="absolute mt-2 w-52 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
                                 <a href="{{ route('import.netkeiba') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="globe" class="w-4 h-4 text-sky-500" /><span>netkeibaから取込</span></a>
@@ -313,10 +398,9 @@
                         </div>
 
                         <div class="relative" x-data="{ open: false }">
-                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('admin.db.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                                <x-icon name="database" class="w-4 h-4" />
+                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('admin.db.*') ? $active : $inactive }} flex items-center space-x-1">
                                 <span>DB</span>
-                                <x-icon name="chevron-down" class="w-3 h-3" />
+                                <x-icon name="chevron-down" class="w-3 h-3 opacity-70" />
                             </button>
                             <div x-show="open" x-cloak x-transition class="absolute mt-2 w-52 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
                                 <a href="{{ route('admin.db.index') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="home" class="w-4 h-4 text-turf-600" /><span>DBトップ</span></a>
@@ -326,10 +410,9 @@
                         </div>
 
                         <div class="relative" x-data="{ open: false }">
-                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                                <x-icon name="cash" class="w-4 h-4" />
+                            <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? $active : $inactive }} flex items-center space-x-1">
                                 <span>馬券</span>
-                                <x-icon name="chevron-down" class="w-3 h-3" />
+                                <x-icon name="chevron-down" class="w-3 h-3 opacity-70" />
                             </button>
                             <div x-show="open" x-cloak x-transition class="absolute mt-2 w-56 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-md shadow-xl z-50 ring-1 ring-black/5 overflow-hidden">
                                 <a href="{{ route('betting.dashboard') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="chart" class="w-4 h-4 text-gold-500" /><span>収支ダッシュボード</span></a>
@@ -344,25 +427,10 @@
                             </div>
                         </div>
 
-                        <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="cog" class="w-4 h-4" />
-                            <span>運用</span>
-                        </a>
-
-                        <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="star" class="w-4 h-4" />
-                            <span>ウォッチ</span>
-                        </a>
-
-                        <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="share" class="w-4 h-4" />
-                            <span>共有</span>
-                        </a>
-
-                        <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $active : $inactive }} flex items-center space-x-1.5">
-                            <x-icon name="pencil" class="w-4 h-4" />
-                            <span>メモ</span>
-                        </a>
+                        <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $active : $inactive }}">運用</a>
+                        <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $active : $inactive }}">ウォッチ</a>
+                        <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $active : $inactive }}">共有</a>
+                        <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $active : $inactive }}">メモ</a>
                     </div>
                 </div>
 
@@ -436,33 +504,19 @@
                     $mSub    = 'flex items-center gap-2 pl-8 pr-3 py-2 rounded hover:bg-turf-600 active:bg-turf-700 text-[13px] text-turf-100';
                 @endphp
 
-                <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="home" class="w-4 h-4" /> ダッシュボード
-                </a>
-                <a href="{{ route('races.index') }}" class="{{ request()->routeIs('races.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="flag" class="w-4 h-4" /> レース
-                </a>
-                <a href="{{ route('shutuba.index') }}" class="{{ request()->routeIs('shutuba.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="target" class="w-4 h-4" /> 出馬表
-                </a>
-                <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="horse" class="w-4 h-4" /> 馬
-                </a>
-                <a href="{{ route('jockeys.index') }}" class="{{ request()->routeIs('jockeys.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="user" class="w-4 h-4" /> 騎手
-                </a>
-                <a href="{{ route('trainers.index') }}" class="{{ request()->routeIs('trainers.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="user" class="w-4 h-4" /> 調教師
-                </a>
-                <a href="{{ route('venues.index') }}" class="{{ request()->routeIs('venues.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="map" class="w-4 h-4" /> 競馬場
-                </a>
+                <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? $mActive : $mLink }}" @click="menuOpen=false">ダッシュボード</a>
+                <a href="{{ route('races.index') }}" class="{{ request()->routeIs('races.*') ? $mActive : $mLink }}" @click="menuOpen=false">レース</a>
+                <a href="{{ route('shutuba.index') }}" class="{{ request()->routeIs('shutuba.*') ? $mActive : $mLink }}" @click="menuOpen=false">出馬表</a>
+                <a href="{{ route('horses.index') }}" class="{{ request()->routeIs('horses.*') ? $mActive : $mLink }}" @click="menuOpen=false">馬</a>
+                <a href="{{ route('jockeys.index') }}" class="{{ request()->routeIs('jockeys.*') ? $mActive : $mLink }}" @click="menuOpen=false">騎手</a>
+                <a href="{{ route('trainers.index') }}" class="{{ request()->routeIs('trainers.*') ? $mActive : $mLink }}" @click="menuOpen=false">調教師</a>
+                <a href="{{ route('venues.index') }}" class="{{ request()->routeIs('venues.*') ? $mActive : $mLink }}" @click="menuOpen=false">競馬場</a>
 
                 {{-- 分析(折り畳み) --}}
                 <div x-data="{ o: {{ request()->routeIs('analytics.*') ? 'true' : 'false' }} }" class="rounded">
                     <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
-                        <span class="flex items-center gap-2"><x-icon name="chart" class="w-4 h-4" /> 分析</span>
-                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
+                        <span>分析</span>
+                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform opacity-70" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
                         <a href="{{ route('analytics.venue') }}"        class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="map" class="w-4 h-4" /> 競馬場別傾向</a>
@@ -489,8 +543,8 @@
                 {{-- 取込(折り畳み) --}}
                 <div x-data="{ o: {{ request()->routeIs('import.*') ? 'true' : 'false' }} }" class="rounded">
                     <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
-                        <span class="flex items-center gap-2"><x-icon name="upload" class="w-4 h-4" /> 取込</span>
-                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
+                        <span>取込</span>
+                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform opacity-70" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
                         <a href="{{ route('import.netkeiba') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="globe" class="w-4 h-4" /> netkeibaから取込</a>
@@ -503,8 +557,8 @@
                 {{-- DBビューア(折り畳み) --}}
                 <div x-data="{ o: {{ request()->routeIs('admin.db.*') ? 'true' : 'false' }} }" class="rounded">
                     <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
-                        <span class="flex items-center gap-2"><x-icon name="database" class="w-4 h-4" /> DBビューア</span>
-                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
+                        <span>DBビューア</span>
+                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform opacity-70" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
                         <a href="{{ route('admin.db.index') }}"  class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="home" class="w-4 h-4" /> DBトップ</a>
@@ -516,8 +570,8 @@
                 {{-- 馬券(折り畳み) --}}
                 <div x-data="{ o: {{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? 'true' : 'false' }} }" class="rounded">
                     <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
-                        <span class="flex items-center gap-2"><x-icon name="cash" class="w-4 h-4" /> 馬券</span>
-                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform" ::class="o ? 'rotate-180' : ''" />
+                        <span>馬券</span>
+                        <x-icon name="chevron-down" class="w-3 h-3 transition-transform opacity-70" ::class="o ? 'rotate-180' : ''" />
                     </button>
                     <div x-show="o" x-cloak class="space-y-0.5">
                         <a href="{{ route('betting.dashboard') }}"     class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="chart" class="w-4 h-4" /> 収支ダッシュボード</a>
@@ -530,21 +584,10 @@
                     </div>
                 </div>
 
-                <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="cog" class="w-4 h-4" /> 運用ダッシュボード
-                </a>
-
-                <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="star" class="w-4 h-4" /> ウォッチリスト
-                </a>
-
-                <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="share" class="w-4 h-4" /> 予想共有
-                </a>
-
-                <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $mActive : $mLink }}" @click="menuOpen=false">
-                    <x-icon name="pencil" class="w-4 h-4" /> メモ
-                </a>
+                <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $mActive : $mLink }}" @click="menuOpen=false">運用ダッシュボード</a>
+                <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $mActive : $mLink }}" @click="menuOpen=false">ウォッチリスト</a>
+                <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $mActive : $mLink }}" @click="menuOpen=false">予想共有</a>
+                <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $mActive : $mLink }}" @click="menuOpen=false">メモ</a>
 
                 <div class="border-t border-turf-700 dark:border-gray-700 my-2"></div>
 

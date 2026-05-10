@@ -6,7 +6,7 @@
 
     <div class="bg-white rounded-lg shadow p-6">
         <div class="text-xs text-gray-500">{{ $venue->code }} / {{ $venue->region }}</div>
-        <h1 class="text-2xl font-bold text-gray-800 mt-1">{{ $venue->name }}</h1>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mt-1">{{ $venue->name }}</h1>
         <div class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
             <div><span class="text-gray-500">回り:</span> {{ $venue->direction ?? '-' }}</div>
             <div><span class="text-gray-500">芝直線:</span> {{ $venue->turf_straight ?? '-' }}m</div>
@@ -14,7 +14,7 @@
             <div><a href="{{ route('analytics.venue', ['venue_id' => $venue->id]) }}" class="text-primary-600 hover:underline">→ 詳細傾向分析</a></div>
         </div>
         @if ($venue->characteristics)
-            <p class="mt-4 text-sm text-gray-700 whitespace-pre-wrap">{{ $venue->characteristics }}</p>
+            <p class="mt-4 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ $venue->characteristics }}</p>
         @endif
     </div>
 
@@ -98,7 +98,7 @@
             </thead>
             <tbody>
                 @foreach ($recentRaces as $r)
-                <tr class="border-b hover:bg-gray-50">
+                <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60">
                     <td class="py-1">{{ $r->race_date?->format('Y/m/d') }}</td>
                     <td class="py-1">{{ $r->race_number }}R</td>
                     <td class="py-1"><a href="{{ route('races.show', $r) }}" class="text-primary-600 hover:underline">{{ $r->name }}</a></td>

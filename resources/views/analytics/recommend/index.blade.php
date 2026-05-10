@@ -15,7 +15,7 @@
     @include('analytics.recommend._nav', ['active' => 'index'])
 
     {{-- 現在の重み設定サマリ --}}
-    <div class="bg-white rounded-lg shadow p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
         <div class="flex items-center justify-between mb-3">
             <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700"><x-icon name="cog" class="w-5 h-5 text-amber-500" /><span>現在の重み設定</span></h2>
             <a href="{{ route('analytics.recommend.settings') }}"
@@ -136,7 +136,7 @@
     </div>
 
     {{-- スコアリングの説明 --}}
-    <div class="bg-white rounded-lg shadow p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
         <h2 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 mb-3">
             <x-icon name="scale" class="w-5 h-5 text-gray-600" />
             <span>スコアリングの仕組み</span>

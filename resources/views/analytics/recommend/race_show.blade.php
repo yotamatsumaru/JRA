@@ -270,7 +270,7 @@
                             </div>
                             <div class="text-right">
                                 <div class="text-[10px] text-gray-500">合計</div>
-                                <div class="text-2xl font-bold text-gray-800">{{ number_format($total, 1) }}</div>
+                                <div class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ number_format($total, 1) }}</div>
                             </div>
                         </div>
 

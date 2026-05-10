@@ -5,14 +5,14 @@
 <div class="space-y-6">
     <div class="flex items-end justify-between flex-wrap gap-2">
         <div>
-            <h1 class="text-2xl font-bold text-gray-800">ペース分析</h1>
+            <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">ペース分析</h1>
             <p class="text-sm text-gray-600">レースのペース（H=ハイ／M=ミドル／S=スロー）と上位入線（3着以内）の脚質の関係を分析します。</p>
         </div>
         <div class="text-xs text-gray-500">対象レース総数(pace 入力済): <b>{{ number_format($totalRaces) }}</b> レース</div>
     </div>
 
     {{-- ============ フィルター ============ --}}
-    <form method="get" class="bg-white rounded-lg shadow p-4">
+    <form method="get" class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 text-sm">
             <div>
                 <label class="block text-xs text-gray-500 mb-1">競馬場</label>
@@ -82,8 +82,8 @@
     @endphp
 
     {{-- ============ ペース × 脚質 ピボット ============ --}}
-    <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">ペース × 脚質ピボット（上位3着以内）</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">ペース × 脚質ピボット（上位3着以内）</h2>
         <div class="table-scroll">
         <table class="w-full text-sm min-w-[480px]">
             <thead class="bg-gray-100 text-xs text-gray-600">
@@ -124,19 +124,19 @@
         </div>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">グラフで見る (脚質構成比)</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">グラフで見る (脚質構成比)</h2>
         <div id="pace-chart"></div>
     </div>
 
     {{-- ============ 距離カテゴリ別 ペース分布 ============ --}}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="bg-white rounded-lg shadow p-4">
-            <h2 class="font-semibold text-gray-700 mb-3">距離カテゴリ別 ペース分布</h2>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+            <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">距離カテゴリ別 ペース分布</h2>
             <div id="dist-chart"></div>
         </div>
         <div class="bg-white rounded-lg shadow p-4 table-scroll">
-            <h2 class="font-semibold text-gray-700 mb-3">距離カテゴリ別 (件数)</h2>
+            <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">距離カテゴリ別 (件数)</h2>
             <table class="w-full text-sm min-w-[520px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
@@ -171,8 +171,8 @@
     </div>
 
     {{-- ============ コース別 ペース分布 ============ --}}
-    <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">コース別 ペース分布 (競馬場×トラック)</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">コース別 ペース分布 (競馬場×トラック)</h2>
         @if (empty($byCoursePivot))
             <p class="text-sm text-gray-500">データがありません</p>
         @else
@@ -214,7 +214,7 @@
     {{-- ============ 馬場状態別 + 平均タイム ============ --}}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white rounded-lg shadow p-4 table-scroll">
-            <h2 class="font-semibold text-gray-700 mb-3">馬場状態別 ペース分布</h2>
+            <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">馬場状態別 ペース分布</h2>
             <table class="w-full text-sm min-w-[420px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
@@ -247,7 +247,7 @@
             </table>
         </div>
         <div class="bg-white rounded-lg shadow p-4 table-scroll">
-            <h2 class="font-semibold text-gray-700 mb-3">ペース別 平均勝ちタイム / 上がり3F (1着のみ)</h2>
+            <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">ペース別 平均勝ちタイム / 上がり3F (1着のみ)</h2>
             <table class="w-full text-sm min-w-[480px]">
                 <thead class="bg-gray-100 text-xs text-gray-600">
                     <tr>
@@ -274,8 +274,8 @@
     </div>
 
     {{-- ============ 距離カテゴリ × ペース × 脚質 (3次元) ============ --}}
-    <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">距離 × ペース × 決着脚質 (3着以内)</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">距離 × ペース × 決着脚質 (3着以内)</h2>
         <p class="text-xs text-gray-500 mb-3">距離カテゴリごとにペース別の決着脚質を見ます。「同じスローでも短距離と長距離では決まり方が違う」を可視化。</p>
         <div class="table-scroll">
         <table class="w-full text-sm min-w-[560px]">

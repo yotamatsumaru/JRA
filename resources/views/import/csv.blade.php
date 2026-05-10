@@ -3,34 +3,34 @@
 
 @section('content')
 <div class="max-w-2xl mx-auto space-y-6">
-    <h1 class="inline-flex items-center gap-2 text-2xl font-bold text-gray-800">
-        <x-icon name="document" class="w-7 h-7 text-emerald-600" />
+    <h1 class="inline-flex items-center gap-2 text-2xl font-bold text-gray-800 dark:text-gray-100">
+        <x-icon name="document" class="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
         <span>CSV取込</span>
     </h1>
 
-    <form method="POST" action="{{ route('import.csv.store') }}" enctype="multipart/form-data" class="bg-white rounded-lg shadow p-6 space-y-4">
+    <form method="POST" action="{{ route('import.csv.store') }}" enctype="multipart/form-data" class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-6 space-y-4">
         @csrf
         <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">CSVファイル <span class="text-red-500">*</span></label>
-            <input type="file" name="csv_file" accept=".csv,.txt" required class="w-full border rounded px-3 py-2 bg-gray-50">
-            <p class="text-xs text-gray-500 mt-1">最大10MBまで。UTF-8 推奨。</p>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CSVファイル <span class="text-red-500">*</span></label>
+            <input type="file" name="csv_file" accept=".csv,.txt" required class="w-full border dark:border-gray-600 rounded px-3 py-2 bg-gray-50 dark:bg-gray-900 dark:text-gray-100">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">最大10MBまで。UTF-8 推奨。</p>
         </div>
 
         <div class="flex justify-end space-x-2">
-            <a href="{{ route('import.index') }}" class="text-gray-500 hover:text-gray-700 px-4 py-2">戻る</a>
+            <a href="{{ route('import.index') }}" class="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-4 py-2">戻る</a>
             <button type="submit" class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded">取込開始</button>
         </div>
     </form>
 
-    <div class="bg-white rounded-lg shadow p-4 text-sm">
-        <h3 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 mb-2">
-            <x-icon name="list" class="w-4 h-4 text-gray-500" />
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4 text-sm">
+        <h3 class="inline-flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200 mb-2">
+            <x-icon name="list" class="w-4 h-4 text-gray-500 dark:text-gray-400" />
             <span>CSVフォーマット仕様</span>
         </h3>
-        <p class="mb-2 text-gray-600">1行目はヘッダ行。以下の列が利用可能です（必須:race_date, venue_code, race_number, horse_number, horse_name）:</p>
+        <p class="mb-2 text-gray-600 dark:text-gray-300">1行目はヘッダ行。以下の列が利用可能です（必須:race_date, venue_code, race_number, horse_number, horse_name）:</p>
         <div class="overflow-x-auto">
-            <table class="w-full text-xs border">
-                <thead class="bg-gray-100">
+            <table class="w-full text-xs border dark:border-gray-700">
+                <thead class="bg-gray-100 dark:bg-gray-800">
                     <tr>
                         <th class="px-2 py-1 text-left border-r">列名</th>
                         <th class="px-2 py-1 text-left border-r">必須</th>
@@ -64,7 +64,7 @@
                 </tbody>
             </table>
         </div>
-        <p class="mt-2 text-xs text-gray-500">※ (race_id, horse_number) で重複判定。同じ組み合わせのレコードは更新されます。</p>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">※ (race_id, horse_number) で重複判定。同じ組み合わせのレコードは更新されます。</p>
     </div>
 </div>
 @endsection

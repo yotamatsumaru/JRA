@@ -36,7 +36,7 @@
     </div>
 
     {{-- フィルタ --}}
-    <form method="GET" x-data="{ open: window.innerWidth >= 640 }" class="bg-white rounded-lg shadow p-4">
+    <form method="GET" x-data="{ open: window.innerWidth >= 640 }" class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
         <input type="hidden" name="kind" value="{{ $kind }}">
         <button type="button" @click="open = !open" class="w-full flex items-center justify-between mb-3 text-sm font-semibold text-gray-700 sm:hidden">
             <span>フィルタ</span>
@@ -96,21 +96,21 @@
 
     {{-- KPIサマリ --}}
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
             <div class="text-xs text-gray-500">対象レース</div>
             <div class="text-2xl font-bold text-gray-800 mt-1">{{ number_format($simulation['races']) }}</div>
             <div class="text-xs text-gray-500 mt-1">{{ $kindLabel }}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
             <div class="text-xs text-gray-500">購入点数</div>
             <div class="text-2xl font-bold text-gray-800 mt-1">{{ number_format($simulation['bets']) }}</div>
             <div class="text-xs text-gray-500 mt-1">1点 100円換算</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
             <div class="text-xs text-gray-500">投資総額</div>
             <div class="text-2xl font-bold text-gray-700 mt-1">¥{{ number_format($simulation['stake']) }}</div>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
             <div class="text-xs text-gray-500">払戻総額</div>
             <div class="text-2xl font-bold text-emerald-700 mt-1">¥{{ number_format($simulation['winnings']) }}</div>
             <div class="text-xs text-gray-500 mt-1">的中: {{ number_format($simulation['hits']) }}件 ({{ $simulation['hit_rate'] }}%)</div>
@@ -131,32 +131,32 @@
 
         {{-- 人気別 (単勝/複勝のみ表示) --}}
         @if (!empty($charts['by_popularity']))
-        <div class="bg-white rounded-lg shadow p-4">
-            <h3 class="font-semibold text-gray-700 mb-3">人気別 回収率</h3>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+            <h3 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">人気別 回収率</h3>
             <div id="chart-roi-popularity" style="min-height: 300px;"></div>
         </div>
         @endif
 
         {{-- オッズ帯別 (単勝のみ) --}}
         @if (!empty($charts['by_odds_band']))
-        <div class="bg-white rounded-lg shadow p-4">
-            <h3 class="font-semibold text-gray-700 mb-3">オッズ帯別 回収率</h3>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+            <h3 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">オッズ帯別 回収率</h3>
             <div id="chart-roi-odds-band" style="min-height: 300px;"></div>
         </div>
         @endif
 
         {{-- 競馬場別 --}}
         @if (!empty($charts['by_venue']))
-        <div class="bg-white rounded-lg shadow p-4">
-            <h3 class="font-semibold text-gray-700 mb-3">競馬場別 回収率</h3>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+            <h3 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">競馬場別 回収率</h3>
             <div id="chart-roi-venue" style="min-height: 300px;"></div>
         </div>
         @endif
 
         {{-- トラック別 --}}
         @if (!empty($charts['by_track']))
-        <div class="bg-white rounded-lg shadow p-4">
-            <h3 class="font-semibold text-gray-700 mb-3">トラック別 回収率</h3>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+            <h3 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">トラック別 回収率</h3>
             <div id="chart-roi-track" style="min-height: 300px;"></div>
         </div>
         @endif
@@ -164,7 +164,7 @@
         {{-- 距離帯別 --}}
         @if (!empty($charts['by_distance']))
         <div class="bg-white rounded-lg shadow p-4 lg:col-span-2">
-            <h3 class="font-semibold text-gray-700 mb-3">距離帯別 回収率</h3>
+            <h3 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">距離帯別 回収率</h3>
             <div id="chart-roi-distance" style="min-height: 300px;"></div>
         </div>
         @endif
@@ -176,11 +176,11 @@
         $detailTitle = $charts['by_popularity'] ? '人気別 内訳' : '競馬場別 内訳';
     @endphp
     @if (!empty($detailRows))
-    <div class="bg-white rounded-lg shadow p-4">
-        <h3 class="font-semibold text-gray-700 mb-3">{{ $detailTitle }}</h3>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h3 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">{{ $detailTitle }}</h3>
         <div class="table-scroll">
             <table class="w-full text-sm min-w-[640px]">
-                <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+                <thead class="bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300 uppercase">
                     <tr>
                         <th class="text-left px-3 py-2">区分</th>
                         <th class="text-right px-3 py-2">点数</th>
@@ -193,7 +193,7 @@
                 </thead>
                 <tbody>
                     @foreach ($detailRows as $row)
-                        <tr class="border-b hover:bg-gray-50">
+                        <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60">
                             <td class="px-3 py-2 font-semibold">{{ $row['label'] }}</td>
                             <td class="px-3 py-2 text-right">{{ number_format($row['bets']) }}</td>
                             <td class="px-3 py-2 text-right">{{ number_format($row['hits']) }}</td>

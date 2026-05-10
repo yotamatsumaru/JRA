@@ -3,11 +3,11 @@
 
 @section('content')
 <div class="space-y-4">
-    <h1 class="text-2xl font-bold text-gray-800">取込ログ</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">取込ログ</h1>
 
-    <div class="bg-white rounded-lg shadow overflow-x-auto">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 overflow-x-auto">
         <table class="w-full text-sm">
-            <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+            <thead class="bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300 uppercase">
                 <tr>
                     <th class="text-left px-3 py-2">日時</th>
                     <th class="text-left px-3 py-2">ユーザー</th>
@@ -22,10 +22,10 @@
             </thead>
             <tbody>
                 @forelse ($logs as $log)
-                <tr class="border-b hover:bg-gray-50">
+                <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60">
                     <td class="px-3 py-2 text-xs">{{ $log->created_at->format('Y/m/d H:i:s') }}</td>
                     <td class="px-3 py-2 text-xs">{{ $log->user?->name }}</td>
-                    <td class="px-3 py-2"><span class="text-xs bg-gray-200 px-2 py-0.5 rounded">{{ $log->source }}</span></td>
+                    <td class="px-3 py-2"><span class="text-xs bg-gray-200 dark:bg-gray-700 dark:text-gray-200 px-2 py-0.5 rounded">{{ $log->source }}</span></td>
                     <td class="px-3 py-2 text-xs">{{ \Str::limit($log->reference, 50) }}</td>
                     <td class="px-3 py-2 text-center">
                         @php

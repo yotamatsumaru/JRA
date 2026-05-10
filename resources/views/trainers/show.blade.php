@@ -7,10 +7,10 @@
     {{-- ヘッダー --}}
     <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex justify-between items-start gap-3">
         <div class="min-w-0 flex-1">
-            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 break-words">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100 break-words">
                 {{ $trainer->name }}
-                @if ($trainer->belonging) <span class="ml-2 text-sm bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{{ $trainer->belonging }}</span> @endif
-                @if (!$trainer->is_active) <span class="ml-2 text-xs bg-gray-300 text-gray-700 px-2 py-0.5 rounded">引退</span> @endif
+                @if ($trainer->belonging) <span class="ml-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-2 py-0.5 rounded">{{ $trainer->belonging }}</span> @endif
+                @if (!$trainer->is_active) <span class="ml-2 text-xs bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200 px-2 py-0.5 rounded">引退</span> @endif
             </h1>
             @if ($trainer->name_kana) <div class="text-sm text-gray-500 mt-1">{{ $trainer->name_kana }}</div> @endif
         </div>
@@ -155,7 +155,7 @@
                 </thead>
                 <tbody>
                     @forelse ($recentResults as $r)
-                        <tr class="border-b last:border-0 hover:bg-turf-50/40">
+                        <tr class="border-b dark:border-gray-700 last:border-0 hover:bg-turf-50/40 dark:hover:bg-gray-800/60">
                             <td class="py-1.5 text-xs text-gray-500">{{ $r->race?->race_date?->format('Y/m/d') }}</td>
                             <td class="py-1.5 text-xs">{{ $r->race?->venue?->name }}</td>
                             <td class="py-1.5">

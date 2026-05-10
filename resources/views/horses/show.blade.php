@@ -7,9 +7,9 @@
     {{-- ヘッダー --}}
     <div class="bg-white rounded-lg shadow p-4 sm:p-6 flex justify-between items-start gap-3">
         <div class="min-w-0 flex-1">
-            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 break-words">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100 break-words">
                 {{ $horse->name }}
-                @if ($horse->sex) <span class="text-sm bg-gray-200 text-gray-700 px-2 py-0.5 rounded">{{ $horse->sex }}</span> @endif
+                @if ($horse->sex) <span class="text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-2 py-0.5 rounded">{{ $horse->sex }}</span> @endif
             </h1>
             <div class="mt-2 text-xs sm:text-sm text-gray-600 space-y-1">
                 @if ($horse->name_kana)<div>{{ $horse->name_kana }}</div>@endif
@@ -23,7 +23,7 @@
         </div>
         <div class="flex items-start gap-2 shrink-0">
             <x-watchlist-button type="horse" :targetId="$horse->id" :label="$horse->name" />
-            <a href="{{ route('horses.edit', $horse) }}" class="text-sm text-gray-500 hover:text-primary-600 px-3 py-1 border rounded">編集</a>
+            <a href="{{ route('horses.edit', $horse) }}" class="text-sm text-gray-500 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 px-3 py-1 border dark:border-gray-600 rounded">編集</a>
         </div>
     </div>
 
@@ -105,7 +105,7 @@
         @else
         <div class="table-scroll">
             <table class="w-full text-sm min-w-[820px]">
-                <thead class="bg-gray-100 text-xs text-gray-600 uppercase">
+                <thead class="bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300 uppercase">
                     <tr>
                         <th class="text-left px-2 py-2">日付</th>
                         <th class="text-left px-2 py-2">場</th>
@@ -120,7 +120,7 @@
                 </thead>
                 <tbody>
                     @foreach ($horse->results->sortByDesc(fn($r) => $r->race->race_date) as $r)
-                    <tr class="border-b hover:bg-gray-50">
+                    <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/60">
                         <td class="px-2 py-2">{{ $r->race?->race_date?->format('Y/m/d') }}</td>
                         <td class="px-2 py-2">{{ $r->race?->venue?->name }}</td>
                         <td class="px-2 py-2"><a href="{{ route('races.show', $r->race) }}" class="text-primary-600 hover:underline">{{ $r->race?->name }}</a></td>

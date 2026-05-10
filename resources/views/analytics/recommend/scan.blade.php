@@ -79,19 +79,19 @@
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div class="bg-white rounded-lg shadow p-3 border-l-4 border-emerald-500">
             <div class="text-[11px] text-gray-500">該当セル数</div>
-            <div class="text-2xl font-bold text-gray-800">{{ number_format($stats['total_cells']) }}</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ number_format($stats['total_cells']) }}</div>
         </div>
         <div class="bg-white rounded-lg shadow p-3 border-l-4 border-rose-500">
             <div class="text-[11px] text-gray-500">複回値 ≥ 100</div>
-            <div class="text-2xl font-bold text-gray-800">{{ number_format($stats['positive_roi']) }}</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ number_format($stats['positive_roi']) }}</div>
         </div>
         <div class="bg-white rounded-lg shadow p-3 border-l-4 border-amber-500">
             <div class="text-[11px] text-gray-500">スコア ≥ 60</div>
-            <div class="text-2xl font-bold text-gray-800">{{ number_format($stats['high_score']) }}</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ number_format($stats['high_score']) }}</div>
         </div>
         <div class="bg-white rounded-lg shadow p-3 border-l-4 border-sky-500">
             <div class="text-[11px] text-gray-500">平均複回値</div>
-            <div class="text-2xl font-bold text-gray-800">{{ $stats['avg_roi'] }}</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ $stats['avg_roi'] }}</div>
         </div>
     </div>
 

@@ -7,8 +7,8 @@
     <p class="text-xs sm:text-sm text-gray-600">父馬を選択すると、その産駒が好走している競馬場・距離が分析されます。</p>
 
     {{-- 父馬選択 --}}
-    <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">父馬を選択（出走数上位50）</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">父馬を選択（出走数上位50）</h2>
         <div class="flex flex-wrap gap-2">
             @forelse ($fatherList as $f)
                 <a href="{{ route('analytics.pedigree', ['father' => $f->father]) }}"
@@ -22,8 +22,8 @@
     </div>
 
     @if ($father)
-    <div class="bg-white rounded-lg shadow p-4">
-        <h2 class="font-semibold text-gray-700 mb-3">{{ $father }} の産駒成績（場×トラック×距離）</h2>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-black/40 p-4">
+        <h2 class="font-semibold text-gray-700 dark:text-gray-200 mb-3">{{ $father }} の産駒成績（場×トラック×距離）</h2>
         @if ($stats->isEmpty())
             <p class="text-sm text-gray-500">データがありません</p>
         @else

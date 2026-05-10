@@ -3,8 +3,8 @@
 
 @section('content')
 <div class="text-center space-y-6">
-    <h2 class="text-2xl font-bold text-gray-800">中央競馬を、もっと深く。</h2>
-    <p class="text-sm text-gray-600 leading-relaxed">
+    <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">中央競馬を、もっと深く。</h2>
+    <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
         レース結果を蓄積し、競馬場別傾向・脚質・血統・騎手×コース相性を可視化。<br>
         netkeibaスクレイピング・CSV・スクショ画像（GPT-4o）から取込可能。
     </p>
@@ -15,12 +15,12 @@
             ログイン
         </a>
         <a href="{{ route('register') }}"
-           class="block w-full bg-white border border-primary-600 text-primary-600 hover:bg-primary-50 py-2 rounded-lg font-medium transition">
+           class="block w-full bg-white dark:bg-gray-700 border border-primary-600 text-primary-600 dark:text-primary-300 hover:bg-primary-50 dark:hover:bg-gray-600 py-2 rounded-lg font-medium transition">
             新規登録
         </a>
     </div>
 
-    <div class="border-t pt-4 mt-6 text-xs text-gray-500 grid grid-cols-2 gap-2 text-left">
+    <div class="border-t dark:border-gray-700 pt-4 mt-6 text-xs text-gray-500 dark:text-gray-400 grid grid-cols-2 gap-2 text-left">
         <div class="inline-flex items-center gap-1.5"><x-icon name="flag" class="w-4 h-4 text-emerald-600" /><span>全10競馬場対応</span></div>
         <div class="inline-flex items-center gap-1.5"><x-icon name="horse" class="w-4 h-4 text-rose-500" /><span>出走全頭データ管理</span></div>
         <div class="inline-flex items-center gap-1.5"><x-icon name="chart" class="w-4 h-4 text-sky-500" /><span>ApexChartsで可視化</span></div>
