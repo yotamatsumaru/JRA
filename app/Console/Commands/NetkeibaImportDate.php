@@ -101,7 +101,12 @@ class NetkeibaImportDate extends Command
                     $count++;
 
                     try {
-                        $data = $scraper->fetchRace($raceId);
+                        // 認証された日付（このループで処理中の $date）を scraper に渡し、
+                        // HTML 全文走査による誤った日付抽出を防ぐ
+                        $data = $scraper->fetchRace($raceId, $date);
+                        if (empty($data['race_date'])) {
+                            $data['race_date'] = $date;
+                        }
                         $race = $importer->importFromNetkeiba($data);
                         $this->info("  ✓ [{$count}/" . count($raceIds) . "] {$race->full_name}");
                         $totalSuccess++;

@@ -353,12 +353,12 @@ class NetkeibaScraper
      *   2) https://race.netkeiba.com/race/result.html?race_id={id}         (新DB; 最近のレース向け)
      * 1) が 200 以外を返した場合、自動で 2) にフォールバックする。
      */
-    public function fetchRace(string $raceId): array
+    public function fetchRace(string $raceId, ?string $expectedDate = null): array
     {
         // ============ 1) db.netkeiba.com を試す ============
         $this->respectInterval();
         $dbUrl = "/race/{$raceId}/";
-        Log::info("Netkeiba fetch (db): {$dbUrl}");
+        Log::info("Netkeiba fetch (db): {$dbUrl}" . ($expectedDate ? " (expectedDate={$expectedDate})" : ''));
 
         $dbStatus = null;
         try {
@@ -373,7 +373,7 @@ class NetkeibaScraper
                     @file_put_contents($path, $html);
                 }
 
-                $data = $this->parseRaceHtml($raceId, $html);
+                $data = $this->parseRaceHtml($raceId, $html, $expectedDate);
                 // db ページが返っても結果テーブルが空なら新DBにもチャレンジする
                 if (!empty($data['results'])) {
                     return $data;
@@ -408,7 +408,7 @@ class NetkeibaScraper
             @file_put_contents($path, $html);
         }
 
-        return $this->parseRaceResultHtml($raceId, $html);
+        return $this->parseRaceResultHtml($raceId, $html, $expectedDate);
     }
 
     /**
@@ -427,11 +427,11 @@ class NetkeibaScraper
      * @param string $raceId
      * @return array
      */
-    public function fetchShutuba(string $raceId): array
+    public function fetchShutuba(string $raceId, ?string $expectedDate = null): array
     {
         $this->respectInterval();
         $url = "/race/shutuba.html?race_id={$raceId}";
-        Log::info("Netkeiba fetch shutuba: {$url}");
+        Log::info("Netkeiba fetch shutuba: {$url}" . ($expectedDate ? " (expectedDate={$expectedDate})" : ''));
 
         $response = $this->httpRace->get($url);
         $status = $response->getStatusCode();
@@ -447,7 +447,7 @@ class NetkeibaScraper
             @file_put_contents($path, $html);
         }
 
-        return $this->parseShutubaHtml($raceId, $html);
+        return $this->parseShutubaHtml($raceId, $html, $expectedDate);
     }
 
     /**
@@ -465,7 +465,7 @@ class NetkeibaScraper
      *
      * 出馬表ページは結果ページと列構成が異なるため、ヘッダ行から列インデックスを動的に判定する。
      */
-    protected function parseShutubaHtml(string $raceId, string $html): array
+    protected function parseShutubaHtml(string $raceId, string $html, ?string $expectedDate = null): array
     {
         $html = preg_replace('/<!--.*?-->/su', '', $html);
         $crawler = new Crawler($html);
@@ -517,15 +517,11 @@ class NetkeibaScraper
         }
 
         // ============ 開催日 ============
-        try {
-            $bodyText = $this->cleanText($crawler->filter('body')->text(''));
-        } catch (\Throwable $e) {
-            $bodyText = '';
-        }
-        if (preg_match('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $bodyText, $m)) {
-            $data['race_date'] = sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
-        } elseif (preg_match('/(\d{1,2})月(\d{1,2})日/u', $bodyText, $m)) {
-            $data['race_date'] = sprintf('%s-%02d-%02d', $year, $m[1], $m[2]);
+        // expectedDate（呼び出し側が知っている本当の開催日）を最優先で採用し、
+        // それが無ければ狭い DOM ノードから race_id 年と一致するものだけを抽出する。
+        $rd = $this->extractRaceDateFromCrawler($crawler, $raceId, $expectedDate);
+        if ($rd !== null) {
+            $data['race_date'] = $rd;
         }
 
         // ============ 出馬表テーブル ============
@@ -1003,7 +999,7 @@ class NetkeibaScraper
     /**
      * netkeibaのHTMLをパースして構造化データに変換
      */
-    protected function parseRaceHtml(string $raceId, string $html): array
+    protected function parseRaceHtml(string $raceId, string $html, ?string $expectedDate = null): array
     {
         // パース前に HTML コメントを除去（<!--img ...--> がレース名等に紛れ込むのを防止）
         $html = preg_replace('/<!--.*?-->/su', '', $html);
@@ -1039,12 +1035,10 @@ class NetkeibaScraper
         $data['name'] = $name ?: "Race {$raceId}";
 
         // ============ 開催日 ============
-        // smalltxt や race_data に「YYYY年MM月DD日」が入る
-        $allText = $this->cleanText($crawler->filter('body')->text(''));
-        if (preg_match('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $allText, $m)) {
-            $data['race_date'] = sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
-        } elseif (preg_match('/(\d{1,2})月(\d{1,2})日/u', $allText, $m)) {
-            $data['race_date'] = sprintf('%s-%02d-%02d', $year, $m[1], $m[2]);
+        // 狭い DOM ノードから race_id 年と一致する日付のみ採用する
+        $rd = $this->extractRaceDateFromCrawler($crawler, $raceId, $expectedDate);
+        if ($rd !== null) {
+            $data['race_date'] = $rd;
         }
 
         // ============ レース詳細（距離・トラック・馬場・天候） ============
@@ -1052,7 +1046,11 @@ class NetkeibaScraper
         try {
             $diaryText = $this->cleanText($crawler->filter('.data_intro')->text(''));
         } catch (\Throwable $e) {
-            $diaryText = $allText;
+            try {
+                $diaryText = $this->cleanText($crawler->filter('body')->text(''));
+            } catch (\Throwable $e2) {
+                $diaryText = '';
+            }
         }
 
         // トラック+方向+距離: 「芝右1600m」「ダ左1200m」「障2910m」
@@ -1110,7 +1108,7 @@ class NetkeibaScraper
      *   - table#All_Result_Table    : 結果テーブル (tr.HorseList)
      *   - table.Payout_Detail_Table : 払戻テーブル
      */
-    protected function parseRaceResultHtml(string $raceId, string $html): array
+    protected function parseRaceResultHtml(string $raceId, string $html, ?string $expectedDate = null): array
     {
         $html = preg_replace('/<!--.*?-->/su', '', $html);
         $crawler = new Crawler($html);
@@ -1165,14 +1163,10 @@ class NetkeibaScraper
         }
 
         // ============ RaceData02 から開催日・場名 ============
-        // 開催日は body 全体テキストから「YYYY年MM月DD日」を拾うのが確実
-        try {
-            $bodyText = $this->cleanText($crawler->filter('body')->text(''));
-        } catch (\Throwable $e) {
-            $bodyText = '';
-        }
-        if (preg_match('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $bodyText, $m)) {
-            $data['race_date'] = sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
+        // 狭い DOM ノードから race_id 年と一致する日付のみ採用する
+        $rd = $this->extractRaceDateFromCrawler($crawler, $raceId, $expectedDate);
+        if ($rd !== null) {
+            $data['race_date'] = $rd;
         }
 
         // ============ 結果テーブル ============
@@ -1875,6 +1869,91 @@ class NetkeibaScraper
         }
 
         return $out;
+    }
+
+    /**
+     * race_id と HTML から開催日(YYYY-MM-DD)を厳密に抽出する
+     *
+     * 抽出ロジック:
+     *   1) $expectedDate が渡されており、race_id の年と一致すればそれを最優先で採用
+     *   2) 狭い DOM ノードを順番に試す（ヘッダ・サイドバー・広告に含まれる無関係な日付を避ける）
+     *      - dl#RaceList_DateList dd.Active
+     *      - .RaceList_Item02 .RaceList_Itemtitle
+     *      - .RaceData02
+     *      - .smalltxt / .race_data dt
+     *      - パンくず .Race_Crumb / #breadcrumb
+     *      - <title>
+     *   3) 各候補から「YYYY年M月D日」を拾い、race_id 先頭4桁の年と一致するものを採用
+     *   4) どうしても見つからなければ <body> 全体走査（年が一致するもののみ採用）
+     *   5) それでもなければ null（呼び出し側で扱う）
+     */
+    protected function extractRaceDateFromCrawler(Crawler $crawler, string $raceId, ?string $expectedDate = null): ?string
+    {
+        $year = substr($raceId, 0, 4);
+
+        // 1) 認証された日付（呼び出し側が知っている本当の開催日）が race_id の年と一致 → 即採用
+        if ($expectedDate !== null && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $expectedDate, $em)) {
+            if ($em[1] === $year) {
+                return $expectedDate;
+            }
+        }
+
+        // 2) 狭いノードから順に「年が一致する YYYY年M月D日」を探す
+        $selectors = [
+            'dl#RaceList_DateList dd.Active',
+            'dl.RaceList_DateList dd.Active',
+            '#RaceList_DateList dd.Active',
+            '.RaceList_Item02 .RaceList_Itemtitle',
+            '.RaceList_NameBox .RaceData01',
+            '.RaceData02',
+            '.smalltxt',
+            '.race_data dt',
+            '.Race_Crumb',
+            '#breadcrumb',
+            'title',
+        ];
+
+        foreach ($selectors as $sel) {
+            $text = '';
+            try {
+                $node = $crawler->filter($sel);
+                if ($node->count() > 0) {
+                    $text = $this->cleanText($node->first()->text(''));
+                }
+            } catch (\Throwable $e) {
+                $text = '';
+            }
+            if ($text === '') continue;
+
+            // 年付きが見つかれば年一致を確認
+            if (preg_match_all('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $text, $ms, PREG_SET_ORDER)) {
+                foreach ($ms as $m) {
+                    if ($m[1] === $year) {
+                        return sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
+                    }
+                }
+            }
+            // 年なしの「M月D日」だが、狭いノードなのでこれは race_id の年と組み合わせて採用
+            if (preg_match('/(\d{1,2})月(\d{1,2})日/u', $text, $m)) {
+                return sprintf('%s-%02d-%02d', $year, $m[1], $m[2]);
+            }
+        }
+
+        // 3) 最後の保険: body 全文から「年が一致する」ものだけを採用
+        try {
+            $bodyText = $this->cleanText($crawler->filter('body')->text(''));
+        } catch (\Throwable $e) {
+            $bodyText = '';
+        }
+        if ($bodyText !== '' && preg_match_all('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $bodyText, $ms, PREG_SET_ORDER)) {
+            foreach ($ms as $m) {
+                if ($m[1] === $year) {
+                    return sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]);
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

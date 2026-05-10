@@ -132,7 +132,13 @@ class NetkeibaImportShutubaDate extends Command
                     $count++;
 
                     try {
-                        $data = $scraper->fetchShutuba($raceId);
+                        // 認証された日付（このループで処理中の $date）を scraper に渡し、
+                        // HTML 全文走査による誤った日付抽出を防ぐ
+                        $data = $scraper->fetchShutuba($raceId, $date);
+                        // scraper 側で何らかの理由で race_date が抜けていても、入力日で確実に補う
+                        if (empty($data['race_date'])) {
+                            $data['race_date'] = $date;
+                        }
                         $race = $importer->importShutuba($data);
                         $entries = count($data['results'] ?? []);
                         $this->info("  ✓ [{$count}/" . count($raceIds) . "] {$race->full_name} ({$entries}頭)");
