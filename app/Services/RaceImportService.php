@@ -36,6 +36,11 @@ class RaceImportService
 
     /**
      * netkeibaから取得した整形済データをDBに保存
+     *
+     * デッドロック対策: DB::transaction の第2引数で 3 回まで自動リトライ。
+     * 大量並列取込で horses/jockeys/trainers の firstOrCreate がギャップロックを
+     * 取り合って SQLSTATE 40001 (Deadlock) が発生することがあるが、Laravel が
+     * 検出して自動的にトランザクション全体を再実行してくれる。
      */
     public function importFromNetkeiba(array $data): Race
     {
@@ -91,7 +96,7 @@ class RaceImportService
             DashboardController::flushAggregatesCache();
 
             return $race;
-        });
+        }, 3); // ★ デッドロック時に最大3回まで自動再試行
     }
 
     /**
@@ -140,7 +145,7 @@ class RaceImportService
             }
 
             return $race;
-        });
+        }, 3); // ★ デッドロック時に最大3回まで自動再試行
     }
 
     /**
@@ -336,7 +341,7 @@ class RaceImportService
             DashboardController::flushAggregatesCache();
 
             return $race;
-        });
+        }, 3); // ★ デッドロック時に最大3回まで自動再試行
     }
 
     /**
