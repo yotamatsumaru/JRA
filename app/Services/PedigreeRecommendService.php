@@ -199,45 +199,74 @@ class PedigreeRecommendService
     {
         if (!$jockeyId) return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'none'];
 
-        $key = 'rec:jockey:' . md5($jockeyId . '|' . json_encode($cond) . '|' . $minRuns);
+        // キャッシュキーには騎手スコアに影響する条件のみ含める(pace 等は無関係)
+        $cacheKey = [
+            'venue_id'   => $cond['venue_id']   ?? null,
+            'track_type' => $cond['track_type'] ?? null,
+            'distance'   => $cond['distance']   ?? null,
+        ];
+        $key = 'rec:jockey:v2:' . md5($jockeyId . '|' . json_encode($cacheKey) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($jockeyId, $cond, $minRuns) {
             // ステップフォールバック: 厳→緩 の順に試し、最初に minRuns を満たした集計を使う
-            //   1) venue + track_type
-            //   2) track_type のみ
-            //   3) 全条件
+            //   1) venue + track_type + distance±200m (距離得意)
+            //   2) venue + track_type           (コース得意)
+            //   3) track_type のみ               (馬場種得意)
+            //   4) venue のみ                    (場所得意)
+            //   5) 全条件                        (騎手の素の腕)
+            $dist  = (int) ($cond['distance'] ?? 0);
             $scopes = [
-                ['venue_id' => $cond['venue_id'] ?? null, 'track_type' => $cond['track_type'] ?? null, 'label' => 'venue+track'],
-                ['venue_id' => null,                       'track_type' => $cond['track_type'] ?? null, 'label' => 'track'],
-                ['venue_id' => null,                       'track_type' => null,                        'label' => 'all'],
+                ['venue_id' => $cond['venue_id'] ?? null, 'track_type' => $cond['track_type'] ?? null, 'dist_range' => $dist > 0 ? [$dist-200, $dist+200] : null, 'label' => 'venue+track+dist'],
+                ['venue_id' => $cond['venue_id'] ?? null, 'track_type' => $cond['track_type'] ?? null, 'dist_range' => null,                                     'label' => 'venue+track'],
+                ['venue_id' => null,                       'track_type' => $cond['track_type'] ?? null, 'dist_range' => null,                                     'label' => 'track'],
+                ['venue_id' => $cond['venue_id'] ?? null, 'track_type' => null,                        'dist_range' => null,                                     'label' => 'venue'],
+                ['venue_id' => null,                       'track_type' => null,                        'dist_range' => null,                                     'label' => 'all'],
             ];
 
-            $best = null;
+            // 騎手はそもそも何百走もあるはずなので、騎手専用の最低出走数を 3 まで緩和。
+            // (中央デビュー直後の若手騎手でも 3 走以上はある)
+            $hardMin = max(3, min($minRuns, 10));
+
+            $lastRow = null;
+            $lastLabel = 'insufficient';
             foreach ($scopes as $sc) {
                 $q = DB::table('race_results')
                     ->join('races', 'races.id', '=', 'race_results.race_id')
                     ->where('race_results.jockey_id', $jockeyId)
                     ->whereNotNull('race_results.finish_position_int');
-                if (!empty($sc['venue_id']))   $q->where('races.venue_id', $sc['venue_id']);
-                if (!empty($sc['track_type'])) $q->where('races.track_type', $sc['track_type']);
+                if (!empty($sc['venue_id']))    $q->where('races.venue_id', $sc['venue_id']);
+                if (!empty($sc['track_type']))  $q->where('races.track_type', $sc['track_type']);
+                if (!empty($sc['dist_range'])) $q->whereBetween('races.distance', $sc['dist_range']);
 
                 $row = $q->selectRaw("count(*) as runs,
                     SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
                     SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows
                 ")->first();
                 $runs = (int) ($row->runs ?? 0);
+
+                // minRuns 以上のサンプルが得られたらここで採用
                 if ($runs >= $minRuns) {
                     $res = $this->packShowSubscore($row, $minRuns);
                     $res['scope'] = $sc['label'];
                     return $res;
                 }
-                // 最後に全条件の結果は退避(緩めても満たないとき表示用)
-                if ($sc['label'] === 'all') {
-                    $best = $this->packShowSubscore($row, max(1, min($minRuns, 3)));
-                    $best['scope'] = 'all_relaxed';
+                // 最低 hardMin 以上で「all」スコープなら、緩い基準で確定採用
+                if ($sc['label'] === 'all' && $runs >= $hardMin) {
+                    $res = $this->packShowSubscore($row, $hardMin);
+                    $res['scope'] = 'all_relaxed';
+                    return $res;
                 }
+                $lastRow = $row;
+                $lastLabel = $sc['label'];
             }
-            // すべて満たないが、最低3走以上あれば緩い基準で評価
-            return $best ?? ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'insufficient'];
+
+            // ここまで来たら全レース通算でも 3 走未満。若手騎手などのケース。
+            $runs = (int) ($lastRow->runs ?? 0);
+            if ($runs > 0) {
+                $res = $this->packShowSubscore($lastRow, 1);  // 1 走でも評価
+                $res['scope'] = 'minimal';
+                return $res;
+            }
+            return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'no_history'];
         });
     }
 
@@ -252,7 +281,11 @@ class PedigreeRecommendService
      */
     public function horseScore(int $horseId, array $cond, int $minRuns): array
     {
-        $key = 'rec:horse:' . md5($horseId . '|' . json_encode($cond) . '|' . $minRuns);
+        $cacheKey = [
+            'track_type' => $cond['track_type'] ?? null,
+            'distance'   => $cond['distance']   ?? null,
+        ];
+        $key = 'rec:horse:v2:' . md5($horseId . '|' . json_encode($cacheKey) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($horseId, $cond, $minRuns) {
             // ステップフォールバック: 距離±200 → ±400 → track のみ → 全レース
             $track = $cond['track_type'] ?? null;
@@ -369,7 +402,12 @@ class PedigreeRecommendService
             return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'none'];
         }
 
-        $key = 'rec:frame:' . md5($frame . '|' . json_encode($cond) . '|' . $minRuns);
+        $cacheKey = [
+            'venue_id'   => $cond['venue_id']   ?? null,
+            'track_type' => $cond['track_type'] ?? null,
+            'distance'   => $cond['distance']   ?? null,
+        ];
+        $key = 'rec:frame:v2:' . md5($frame . '|' . json_encode($cacheKey) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($frame, $cond, $minRuns) {
             $track = $cond['track_type'] ?? null;
             $venue = $cond['venue_id']   ?? null;
@@ -423,19 +461,30 @@ class PedigreeRecommendService
     public function courseScore(int $horseId, array $cond, int $minRuns): array
     {
         $dir = $cond['direction'] ?? null;
-        $key = 'rec:course:' . md5($horseId . '|' . json_encode($cond) . '|' . $minRuns);
+        $cacheKey = [
+            'track_type' => $cond['track_type'] ?? null,
+            'direction'  => $dir,
+        ];
+        $key = 'rec:course:v2:' . md5($horseId . '|' . json_encode($cacheKey) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($horseId, $cond, $minRuns, $dir) {
             $track = $cond['track_type'] ?? null;
 
-            // 個体馬向け緩和: 最低3走でも評価
-            $indMin = max(1, min($minRuns, 3));
+            // 個体馬向け緩和: 最低1走でも評価(0だと若駒救済が効かない)
+            $indMin = 1;
 
+            // 段階フォールバック: 厳→緩
+            //   1) track + direction
+            //   2) track のみ (direction が DB 欠損のレースを救う)
+            //   3) direction のみ
+            //   4) 全レース (個体馬の素の連対率)
             $scopes = [
                 ['track' => $track, 'direction' => $dir,  'label' => 'track+dir'],
                 ['track' => $track, 'direction' => null,  'label' => 'track'],
+                ['track' => null,   'direction' => $dir,  'label' => 'dir'],
                 ['track' => null,   'direction' => null,  'label' => 'all'],
             ];
 
+            $lastRow = null;
             foreach ($scopes as $sc) {
                 $q = DB::table('race_results')
                     ->join('races', 'races.id', '=', 'race_results.race_id')
@@ -449,11 +498,19 @@ class PedigreeRecommendService
                     SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows
                 ")->first();
                 $runs = (int) ($row->runs ?? 0);
-                if ($runs >= $indMin) {
+                if ($runs >= max(3, $indMin)) {
                     $res = $this->packShowSubscore($row, $indMin);
                     $res['scope'] = $sc['label'];
                     return $res;
                 }
+                $lastRow = $row;
+            }
+            // 全レース通算でも3走未満。1走でも評価する。
+            $runs = (int) ($lastRow->runs ?? 0);
+            if ($runs > 0) {
+                $res = $this->packShowSubscore($lastRow, 1);
+                $res['scope'] = 'minimal';
+                return $res;
             }
             return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'no_history'];
         });
