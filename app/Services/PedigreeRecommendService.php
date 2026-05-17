@@ -208,18 +208,41 @@ class PedigreeRecommendService
         $key = 'rec:jockey:v3:' . md5($jockeyId . '|' . json_encode($cacheKey) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($jockeyId, $cond, $minRuns) {
             // 騎手 ID 解決:
-            // 出馬表取込みは `Jockey::firstOrCreate(['name'=>...])`(netkeiba_id なし)、
-            // 過去レース取込みは netkeiba_id 優先で別行を作るため、
-            // 「同じ騎手」が複数の jockeys.id を持っている可能性がある。
-            // → 名前で名寄せして全 ID 分の過去成績を合算する。
-            $name = DB::table('jockeys')->where('id', $jockeyId)->value('name');
+            // 出馬表取込みと過去レース取込みで同じ騎手が異なる jockeys.id に
+            // 紐付くことがあるため、可能なすべての経路で「同一人物」の全 ID を集める。
+            //   経路A) name 完全一致の jockeys.id
+            //   経路B) netkeiba_id 完全一致の jockeys.id
+            //   経路C) name の正規化マッチ(スペース・全角空白を除いて比較)
+            $row0 = DB::table('jockeys')->where('id', $jockeyId)
+                ->select('name', 'netkeiba_id')->first();
+            $name      = $row0->name        ?? null;
+            $netkeiba  = $row0->netkeiba_id ?? null;
+
             $jockeyIds = [$jockeyId];
+
+            // 経路A: name 完全一致
             if ($name !== null && $name !== '') {
-                $idsByName = DB::table('jockeys')->where('name', $name)->pluck('id')->all();
-                if (!empty($idsByName)) {
-                    $jockeyIds = array_values(array_unique(array_map('intval', $idsByName)));
+                $ids = DB::table('jockeys')->where('name', $name)->pluck('id')->all();
+                $jockeyIds = array_merge($jockeyIds, $ids);
+            }
+            // 経路B: netkeiba_id 完全一致
+            if ($netkeiba !== null && $netkeiba !== '') {
+                $ids = DB::table('jockeys')->where('netkeiba_id', $netkeiba)->pluck('id')->all();
+                $jockeyIds = array_merge($jockeyIds, $ids);
+            }
+            // 経路C: 表記ゆれ(全/半角スペース除去後の一致)
+            //   例: '国分優' と '国分 優作' は別文字列だが、normalize すれば 1 つに揃う場合がある。
+            //   ここではあくまでスペース類だけ除去して比較する(過剰一致を避けるため2文字以上必須)。
+            if ($name !== null && mb_strlen($name) >= 2) {
+                $norm = preg_replace('/[\s\x{3000}]+/u', '', $name);
+                if ($norm !== '' && $norm !== $name) {
+                    $ids = DB::table('jockeys')
+                        ->whereRaw("REPLACE(REPLACE(name,' ',''),'　','') = ?", [$norm])
+                        ->pluck('id')->all();
+                    $jockeyIds = array_merge($jockeyIds, $ids);
                 }
             }
+            $jockeyIds = array_values(array_unique(array_map('intval', $jockeyIds)));
 
             // ステップフォールバック: 厳→緩 の順に試し、最初に minRuns を満たした集計を使う
             //   1) venue + track_type + distance±200m (距離得意)
