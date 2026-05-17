@@ -271,6 +271,17 @@
                     {{ $label }}
                 </a>
             @endforeach
+
+            {{-- 強制再計算: 既存スコアキャッシュを破棄して全頭を再集計 --}}
+            @php
+                $recalcParams = ['recompute' => 1, 'sort' => $sort];
+                if ($filter_mark) $recalcParams['filter_mark'] = $filter_mark;
+            @endphp
+            <a href="{{ route('shutuba.show', array_merge([$race], $recalcParams)) }}"
+                class="ml-3 px-2 py-1 rounded border bg-amber-500 text-white border-amber-500 hover:bg-amber-600"
+                title="全頭のスコアキャッシュを破棄して再計算(0 が直らないときに使う)">
+                ↻ 再計算
+            </a>
         </div>
     </div>
 

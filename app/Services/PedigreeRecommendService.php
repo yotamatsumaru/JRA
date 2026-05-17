@@ -597,18 +597,88 @@ class PedigreeRecommendService
     }
 
     /**
+     * 強制再計算時に、この馬・騎手に紐づく Cache::remember キーを破棄する
+     *
+     * 各 *Score() メソッドのキー構築と同じロジックでキーを再構築して forget する。
+     * (キー構築が変わるたびにここも合わせる必要があるので、近い場所に置いておく)
+     */
+    protected function forgetHorseCaches(
+        int     $horseId,
+        ?int    $jockeyId,
+        ?string $father,
+        ?string $mFather,
+        ?int    $frame,
+        array   $cond,
+        int     $minRuns
+    ): void {
+        $jockeyCacheKey = [
+            'venue_id'   => $cond['venue_id']   ?? null,
+            'track_type' => $cond['track_type'] ?? null,
+            'distance'   => $cond['distance']   ?? null,
+        ];
+        $horseCacheKey = [
+            'track_type' => $cond['track_type'] ?? null,
+            'distance'   => $cond['distance']   ?? null,
+        ];
+        $frameCacheKey = [
+            'venue_id'   => $cond['venue_id']   ?? null,
+            'track_type' => $cond['track_type'] ?? null,
+            'distance'   => $cond['distance']   ?? null,
+        ];
+        $courseCacheKey = [
+            'venue_id'   => $cond['venue_id']   ?? null,
+            'track_type' => $cond['track_type'] ?? null,
+            'distance'   => $cond['distance']   ?? null,
+            'direction'  => $cond['direction']  ?? null,
+        ];
+        $keys = [
+            // 血統 (father / mother_father)
+            $father  ? 'rec:father:'  . md5($father  . '|' . json_encode($cond) . '|' . $minRuns) : null,
+            $mFather ? 'rec:mfather:' . md5($mFather . '|' . json_encode($cond) . '|' . $minRuns) : null,
+            // 騎手
+            $jockeyId ? 'rec:jockey:v3:' . md5($jockeyId . '|' . json_encode($jockeyCacheKey) . '|' . $minRuns) : null,
+            // 馬
+            'rec:horse:v2:' . md5($horseId . '|' . json_encode($horseCacheKey) . '|' . $minRuns),
+            // 回収率ボーナス
+            $father ? 'rec:roi:' . md5($father . '|' . json_encode($cond) . '|' . $minRuns) : null,
+            // 枠
+            $frame ? 'rec:frame:v2:' . md5($frame . '|' . json_encode($frameCacheKey) . '|' . $minRuns) : null,
+            // コース
+            'rec:course:v2:' . md5($horseId . '|' . json_encode($courseCacheKey) . '|' . $minRuns),
+        ];
+        foreach (array_filter($keys) as $k) {
+            Cache::forget($k);
+        }
+    }
+
+    /**
      * 馬1頭の総合スコア
      *
      * @param array $horse  ['id', 'father', 'mother_father', 'frame_number'?, 'running_style'?]
      * @param int|null $jockeyId
      * @param array $cond   ['venue_id', 'track_type', 'distance', 'course_condition', 'direction'?, 'pace'?]
      * @param array $weights / int $minRuns  未指定なら設定から読む
+     * @param bool  $forceRefresh true なら各サブスコアの Cache::remember キャッシュも破棄してから再集計
      */
-    public function evaluateHorse(array $horse, ?int $jockeyId, array $cond, ?array $weights = null, ?int $minRuns = null): array
+    public function evaluateHorse(array $horse, ?int $jockeyId, array $cond, ?array $weights = null, ?int $minRuns = null, bool $forceRefresh = false): array
     {
         $settings = $this->getSettings();
         $weights  = $weights  ?? $settings['weights'];
         $minRuns  = $minRuns  ?? $settings['min_runs'];
+
+        // 強制再計算時: この馬・騎手に紐づくスコアキャッシュを破棄してから集計
+        // (Cache::remember は無条件にヒットしてしまうため、recompute=1 時は明示的にforgetする)
+        if ($forceRefresh) {
+            $this->forgetHorseCaches(
+                horseId: (int) $horse['id'],
+                jockeyId: $jockeyId,
+                father:   $horse['father'] ?? null,
+                mFather:  $horse['mother_father'] ?? null,
+                frame:    isset($horse['frame_number']) ? (int) $horse['frame_number'] : null,
+                cond:     $cond,
+                minRuns:  $minRuns,
+            );
+        }
 
         $ped = $this->pedigreeScore($horse['father'] ?? null, $horse['mother_father'] ?? null, $cond, $minRuns);
         $jky = $this->jockeyScore($jockeyId, $cond, $minRuns);
