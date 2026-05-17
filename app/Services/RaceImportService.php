@@ -491,31 +491,75 @@ class RaceImportService
     {
         if (empty($row['jockey_name'])) return null;
 
-        $name       = $row['jockey_name'];
+        $rawName    = $row['jockey_name'];
         $netkeibaId = $row['jockey_netkeiba_id'] ?? null;
+
+        // 入力名の正規化: 印マーク(▲☆△◇○◎)と空白類を取り除いた『マッチ用キー』
+        // (DB 保存名は元のまま rawName を使う — UI で見た目を壊さないため)
+        $cleanName = preg_replace('/^[▲☆△◇○◎\*]+/u', '', $rawName);
+        $cleanName = preg_replace('/[\s\x{3000}]+/u', '', $cleanName);
 
         // netkeiba_id があるケース:
         //   1) netkeiba_id で既存行を最優先で探す
-        //   2) 見つからなければ name で既存行を探し、その行に netkeiba_id を後付けする
-        //      (出馬表取込で name のみで作られた行を、過去レース取込時に同定するため)
-        //   3) どちらも無ければ新規作成
+        //   2) 見つからなければ正規化 name で既存行を探し、netkeiba_id を後付けする
+        //   3) 前方一致(出馬表側 cleanName が過去レース側 jockeys.name の prefix)で
+        //      過去走を持つ既存行を探し、netkeiba_id を後付けする
+        //      例: 出馬表 '丹内' nk=01091 → 既存 '丹内祐次' nk=null (runs=6065) を再利用
+        //   4) どこにも無ければ新規作成
         if ($netkeibaId) {
             $byNk = Jockey::where('netkeiba_id', $netkeibaId)->first();
             if ($byNk) return $byNk;
-            $byName = Jockey::whereNull('netkeiba_id')->where('name', $name)->first();
+
+            // 同名(正規化済み)で netkeiba_id 未設定の行
+            $byName = Jockey::whereNull('netkeiba_id')
+                ->where(function ($q) use ($rawName, $cleanName) {
+                    $q->where('name', $rawName);
+                    if ($cleanName !== '' && $cleanName !== $rawName) {
+                        $q->orWhereRaw("REPLACE(REPLACE(name,' ',''),'　','') = ?", [$cleanName]);
+                    }
+                })->first();
             if ($byName) {
                 $byName->netkeiba_id = $netkeibaId;
                 $byName->save();
                 return $byName;
             }
-            return Jockey::create(['netkeiba_id' => $netkeibaId, 'name' => $name]);
+
+            // 前方一致 (cleanName をプレフィックスに持つ既存行のうち過去走が最多のもの)
+            //   - 印マーク付きで cleanName が 2 文字以下のときはスキップ (誤マージ防止)
+            //   - 自分自身を含めて name LIKE 'cleanName%' で検索
+            $hasMark = (bool) preg_match('/^[▲☆△◇○◎\*]/u', $rawName);
+            $tooShortForMarked = $hasMark && mb_strlen($cleanName) <= 2;
+            if (!$tooShortForMarked && $cleanName !== '' && mb_strlen($cleanName) >= 2) {
+                $cand = \Illuminate\Support\Facades\DB::table('jockeys as j')
+                    ->leftJoin('race_results as r', 'r.jockey_id', '=', 'j.id')
+                    ->whereNull('j.netkeiba_id')
+                    ->where(function ($q) use ($cleanName) {
+                        $q->where('j.name', 'like', $cleanName . '%')
+                          ->orWhereRaw("REPLACE(REPLACE(j.name,' ',''),'　','') LIKE ?", [$cleanName . '%']);
+                    })
+                    ->groupBy('j.id')
+                    ->select('j.id', \Illuminate\Support\Facades\DB::raw('COUNT(r.id) as runs'))
+                    ->orderByDesc('runs')
+                    ->first();
+                if ($cand && (int) $cand->runs > 0) {
+                    $existing = Jockey::find($cand->id);
+                    if ($existing) {
+                        $existing->netkeiba_id = $netkeibaId;
+                        // name は変更しない(UI 表示のため過去レース由来のフルネームを尊重)
+                        $existing->save();
+                        return $existing;
+                    }
+                }
+            }
+
+            return Jockey::create(['netkeiba_id' => $netkeibaId, 'name' => $rawName]);
         }
 
-        // netkeiba_id が無いケース (出馬表など):
-        //   同名行が既にあればそれを使い、無ければ name だけで新規作成
-        $existing = Jockey::where('name', $name)->first();
+        // netkeiba_id が無いケース (まれ — 結果ページで href が拾えなかった等):
+        //   完全一致の既存行があればそれを使う。無ければ作る。
+        $existing = Jockey::where('name', $rawName)->first();
         if ($existing) return $existing;
-        return Jockey::create(['name' => $name]);
+        return Jockey::create(['name' => $rawName]);
     }
 
     protected function resolveTrainer(array $row): ?Trainer

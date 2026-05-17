@@ -210,9 +210,12 @@ class PedigreeRecommendService
             // 騎手 ID 解決:
             // 出馬表取込みと過去レース取込みで同じ騎手が異なる jockeys.id に
             // 紐付くことがあるため、可能なすべての経路で「同一人物」の全 ID を集める。
-            //   経路A) name 完全一致の jockeys.id
-            //   経路B) netkeiba_id 完全一致の jockeys.id
-            //   経路C) name の正規化マッチ(スペース・全角空白を除いて比較)
+            //   経路A) name 完全一致 (Round 9)
+            //   経路B) netkeiba_id 完全一致 (Round 11)
+            //   経路C) スペース類を除去した完全一致 (Round 11)
+            //   経路D) 出馬表の name が過去レースの name の前方一致 (Round 12, 実データ確認)
+            //          例: 出馬表='丹内' nk=01091 / 過去='丹内祐次' nk=null → 同一人物
+            //          名前先頭の見習印(▲☆△◇)も除去してから比較する
             $row0 = DB::table('jockeys')->where('id', $jockeyId)
                 ->select('name', 'netkeiba_id')->first();
             $name      = $row0->name        ?? null;
@@ -242,6 +245,57 @@ class PedigreeRecommendService
                     $jockeyIds = array_merge($jockeyIds, $ids);
                 }
             }
+
+            // 経路D: 前方一致(prefix match) — 出馬表は省略名、過去レースはフルネームになっている
+            //   netkeiba 出馬表は『丹内 / 大野 / 横山武 / 田辺 / 三浦 / 岩田望』のような
+            //   姓のみ or 姓+下名前1文字 で取り込まれる。過去レースは『丹内祐次 / 横山武史』
+            //   のようなフルネームで保存されている。両者を結びつけるため、
+            //     出馬表の name + 任意の続き  ⊆  jockeys.name
+            //   の前方一致でマージする。
+            //   過剰一致回避のためのガード:
+            //     - 印マーク(▲☆△◇○)を name 先頭から除去してから比較
+            //     - スペース類も除去 (経路C と統合)
+            //     - 前方一致の base 長さが 2 文字以上であること
+            //     - base がカナの場合は、過去走数の最大のものを 1 件だけ採用
+            //       (例: 'ゴンサルベ' が 'ゴンサル' に当たるなど、外国人騎手の表記揺れに限定)
+            if ($name !== null) {
+                // 印マーク(▲☆△◇○◎)が name 先頭に付いている場合、その騎手は
+                // 見習または評価マーク付き表示。後ろが「苗字のみ(姓だけ)」だと
+                // 別人と誤マージする恐れが高いので、印マーク付きはこの経路の対象外。
+                $hasMark = (bool) preg_match('/^[▲☆△◇○◎\*]/u', $name);
+                $cleanName = preg_replace('/^[▲☆△◇○◎\*]+/u', '', $name);
+                $cleanName = preg_replace('/[\s\x{3000}]+/u', '', $cleanName);
+                // 印付きで残り 2 文字以下(苗字相当)なら経路Dは行わない
+                $tooShortForMarked = $hasMark && mb_strlen($cleanName) <= 2;
+                if (!$tooShortForMarked && $cleanName !== '' && mb_strlen($cleanName) >= 2) {
+                    // base 名で前方一致する jockeys を取得 (自分自身を含めて OK)
+                    // ただし、その対象に過去走 (race_results) が紐付いている行のみを採用する
+                    // (空の重複行を拾わないため)
+                    $candidates = DB::table('jockeys as j')
+                        ->leftJoin('race_results as r', 'r.jockey_id', '=', 'j.id')
+                        ->where(function ($q) use ($cleanName) {
+                            $q->where('j.name', 'like', $cleanName . '%')
+                              ->orWhereRaw("REPLACE(REPLACE(j.name,' ',''),'　','') LIKE ?", [$cleanName . '%']);
+                        })
+                        ->whereNotNull('r.id')
+                        ->groupBy('j.id', 'j.name', 'j.netkeiba_id')
+                        ->select('j.id', 'j.name', 'j.netkeiba_id', DB::raw('COUNT(r.id) as runs'))
+                        ->get();
+
+                    if ($candidates->isNotEmpty()) {
+                        // カナ騎手 (外国人) かどうかで挙動を分岐:
+                        //   - 漢字を含む → 同字姓は基本的に同一人物の表記違いとみなして全部マージ
+                        //     ただし字面の似た別人混入を完全には排除できないので、
+                        //     『最も過去走数が多い 1 件』のみ採用する(=同一人物が一意)
+                        //   - カナのみ → カナ表記の揺れ。同じく最多 runs 1 件のみ採用
+                        $top = $candidates->sortByDesc('runs')->first();
+                        if ($top && (int)$top->runs > 0) {
+                            $jockeyIds[] = (int) $top->id;
+                        }
+                    }
+                }
+            }
+
             $jockeyIds = array_values(array_unique(array_map('intval', $jockeyIds)));
 
             // ステップフォールバック: 厳→緩 の順に試し、最初に minRuns を満たした集計を使う

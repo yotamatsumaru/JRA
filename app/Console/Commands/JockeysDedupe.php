@@ -27,13 +27,15 @@ use Illuminate\Support\Facades\DB;
 class JockeysDedupe extends Command
 {
     protected $signature = 'jockeys:dedupe
-                            {--dry-run : 実際の更新は行わず、対象件数のみ表示}';
+                            {--dry-run : 実際の更新は行わず、対象件数のみ表示}
+                            {--prefix-merge : 前方一致でも統合する(例: 丹内 ⇔ 丹内祐次)}';
 
-    protected $description = '同名で重複している jockeys 行を統合し、race_results.jockey_id を付け替える';
+    protected $description = '同名/前方一致で重複している jockeys 行を統合し、race_results.jockey_id を付け替える';
 
     public function handle(): int
     {
         $dry = (bool) $this->option('dry-run');
+        $prefixMerge = (bool) $this->option('prefix-merge');
 
         $this->info('=== jockeys 重複検出 ===');
         // name でグルーピングして、行数 > 1 の name を抽出
@@ -114,12 +116,93 @@ class JockeysDedupe extends Command
 
         $this->newLine();
         $this->info(sprintf(
-            '%s 統合: %d 行を統合, race_results.jockey_id を %d 行更新, jockeys から %d 行削除',
+            '%s [同名統合] %d 行を統合, race_results.jockey_id を %d 行更新, jockeys から %d 行削除',
             $dry ? '[DRY-RUN]' : '完了',
             $totalMerged,
             $totalUpdated,
             $totalDeleted
         ));
+
+        // ====================================================================
+        // 前方一致統合 (--prefix-merge オプション)
+        // 例: '丹内' (nk=01091, runs=0) ← '丹内祐次' (nk=null, runs=6065)
+        //   → '丹内' 側を残し、'丹内祐次' の過去走を '丹内' に付け替える
+        //   ※ name は『netkeiba_id を持つ方=出馬表側』を残す。これにより
+        //     今後の出馬表取込みで自然に同じ id が使われる。
+        // ====================================================================
+        if ($prefixMerge) {
+            $this->newLine();
+            $this->info('=== 前方一致による統合 (--prefix-merge) ===');
+            $pMerged   = 0;
+            $pUpdated  = 0;
+            $pDeleted  = 0;
+
+            // netkeiba_id 付きで name 末尾に空白を含まない短い名前 (=出馬表由来の省略名候補)
+            $shortNamed = DB::table('jockeys')
+                ->whereNotNull('netkeiba_id')
+                ->whereRaw('CHAR_LENGTH(name) <= 9')  // 漢字3文字以内程度を想定 (UTF-8 で 9bytes 以内)
+                ->select('id', 'name', 'netkeiba_id')
+                ->get();
+
+            foreach ($shortNamed as $keep) {
+                $cleanKeep = preg_replace('/^[▲☆△◇○◎\*]+/u', '', $keep->name);
+                $cleanKeep = preg_replace('/[\s\x{3000}]+/u', '', $cleanKeep);
+                $hasMark   = preg_match('/^[▲☆△◇○◎\*]/u', $keep->name);
+                if ($hasMark && mb_strlen($cleanKeep) <= 2) continue;  // 印付き苗字のみは危険
+                if (mb_strlen($cleanKeep) < 2) continue;
+
+                // 前方一致候補: netkeiba_id null、name LIKE 'cleanKeep%'、過去走を持つ
+                $cands = DB::table('jockeys as j')
+                    ->leftJoin('race_results as r', 'r.jockey_id', '=', 'j.id')
+                    ->whereNull('j.netkeiba_id')
+                    ->where('j.id', '!=', $keep->id)
+                    ->where(function ($q) use ($cleanKeep) {
+                        $q->where('j.name', 'like', $cleanKeep . '%')
+                          ->orWhereRaw("REPLACE(REPLACE(j.name,' ',''),'　','') LIKE ?", [$cleanKeep . '%']);
+                    })
+                    ->groupBy('j.id', 'j.name')
+                    ->select('j.id', 'j.name', DB::raw('COUNT(r.id) as runs'))
+                    ->havingRaw('COUNT(r.id) > 0')
+                    ->orderByDesc('runs')
+                    ->get();
+
+                if ($cands->isEmpty()) continue;
+
+                // 最も過去走の多い 1 件のみ統合 (同姓他人の誤マージ防止)
+                $loser = $cands->first();
+                $this->line(sprintf(
+                    '  - "%s" (id=%d, nk=%s) ← "%s" (id=%d, runs=%d)',
+                    $keep->name, $keep->id, $keep->netkeiba_id,
+                    $loser->name, $loser->id, $loser->runs
+                ));
+                if ($dry) { $pMerged++; $pUpdated += (int)$loser->runs; $pDeleted++; continue; }
+
+                DB::transaction(function () use ($keep, $loser, &$pMerged, &$pUpdated, &$pDeleted) {
+                    $u = DB::table('race_results')->where('jockey_id', $loser->id)
+                        ->update(['jockey_id' => $keep->id]);
+                    $pUpdated += (int) $u;
+                    foreach (['shutuba_entries', 'shutuba_horses'] as $tbl) {
+                        if (!\Illuminate\Support\Facades\Schema::hasTable($tbl)) continue;
+                        if (!\Illuminate\Support\Facades\Schema::hasColumn($tbl, 'jockey_id')) continue;
+                        DB::table($tbl)->where('jockey_id', $loser->id)->update(['jockey_id' => $keep->id]);
+                    }
+                    DB::table('jockeys')->where('id', $loser->id)->delete();
+                    $pDeleted++;
+                    $pMerged++;
+                });
+            }
+
+            $this->newLine();
+            $this->info(sprintf(
+                '%s [前方一致統合] %d 件統合, race_results を %d 行更新, jockeys から %d 行削除',
+                $dry ? '[DRY-RUN]' : '完了',
+                $pMerged, $pUpdated, $pDeleted
+            ));
+        } else {
+            $this->newLine();
+            $this->line('ヒント: 略称↔フルネームの統合は --prefix-merge を付けて再実行してください');
+            $this->line('       例: php artisan jockeys:dedupe --prefix-merge --dry-run');
+        }
 
         if (!$dry) {
             $this->info('※ キャッシュをクリアしてください: php artisan cache:clear');
