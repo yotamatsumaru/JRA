@@ -491,14 +491,31 @@ class RaceImportService
     {
         if (empty($row['jockey_name'])) return null;
 
+        $name       = $row['jockey_name'];
         $netkeibaId = $row['jockey_netkeiba_id'] ?? null;
+
+        // netkeiba_id があるケース:
+        //   1) netkeiba_id で既存行を最優先で探す
+        //   2) 見つからなければ name で既存行を探し、その行に netkeiba_id を後付けする
+        //      (出馬表取込で name のみで作られた行を、過去レース取込時に同定するため)
+        //   3) どちらも無ければ新規作成
         if ($netkeibaId) {
-            return Jockey::firstOrCreate(
-                ['netkeiba_id' => $netkeibaId],
-                ['name' => $row['jockey_name']]
-            );
+            $byNk = Jockey::where('netkeiba_id', $netkeibaId)->first();
+            if ($byNk) return $byNk;
+            $byName = Jockey::whereNull('netkeiba_id')->where('name', $name)->first();
+            if ($byName) {
+                $byName->netkeiba_id = $netkeibaId;
+                $byName->save();
+                return $byName;
+            }
+            return Jockey::create(['netkeiba_id' => $netkeibaId, 'name' => $name]);
         }
-        return Jockey::firstOrCreate(['name' => $row['jockey_name']]);
+
+        // netkeiba_id が無いケース (出馬表など):
+        //   同名行が既にあればそれを使い、無ければ name だけで新規作成
+        $existing = Jockey::where('name', $name)->first();
+        if ($existing) return $existing;
+        return Jockey::create(['name' => $name]);
     }
 
     protected function resolveTrainer(array $row): ?Trainer
