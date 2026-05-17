@@ -22,6 +22,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property float|null  $score_jockey
  * @property float|null  $score_horse
  * @property float|null  $score_roi
+ * @property float|null  $score_frame
+ * @property float|null  $score_course
+ * @property float|null  $score_style
  * @property \Illuminate\Support\Carbon|null $scored_at
  */
 class RaceMark extends Model
@@ -52,6 +55,9 @@ class RaceMark extends Model
         'score_jockey',
         'score_horse',
         'score_roi',
+        'score_frame',
+        'score_course',
+        'score_style',
         'scored_at',
     ];
 
@@ -63,6 +69,9 @@ class RaceMark extends Model
             'score_jockey'   => 'decimal:2',
             'score_horse'    => 'decimal:2',
             'score_roi'      => 'decimal:2',
+            'score_frame'    => 'decimal:2',
+            'score_course'   => 'decimal:2',
+            'score_style'    => 'decimal:2',
             'scored_at'      => 'datetime',
         ];
     }

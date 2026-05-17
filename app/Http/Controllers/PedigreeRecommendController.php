@@ -53,6 +53,10 @@ class PedigreeRecommendController extends Controller
             'weights.jockey'   => 'required|integer|min:0|max:100',
             'weights.horse'    => 'required|integer|min:0|max:100',
             'weights.roi'      => 'required|integer|min:0|max:100',
+            // 新規3軸: 旧フォーム互換のため nullable
+            'weights.frame'    => 'nullable|integer|min:0|max:100',
+            'weights.course'   => 'nullable|integer|min:0|max:100',
+            'weights.style'    => 'nullable|integer|min:0|max:100',
             'min_runs'         => 'required|integer|min:1|max:500',
         ]);
         $this->svc->saveSettings($validated['weights'], (int) $validated['min_runs']);

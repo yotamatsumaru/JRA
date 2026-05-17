@@ -101,6 +101,7 @@ class ShutubaController extends Controller
             'track_type'       => $race->track_type,
             'distance'         => $race->distance,
             'course_condition' => $race->course_condition,
+            'direction'        => $race->direction,    // 右/左/直線 — courseScore で使う
         ];
 
         $settings = $this->svc->getSettings();
@@ -115,17 +116,53 @@ class ShutubaController extends Controller
 
         $recompute = $request->boolean('recompute');
 
-        // 各馬の評価行を組み立て
+        // -- 1パス目: 各馬の過去走/脚質を先に集計してペースを推定 --
+        //    (脚質スコアは pace に依存するため evaluateHorse の前に決定する必要がある)
+        $precalc = [];
+        foreach ($race->results as $result) {
+            $recent = [];
+            if ($result->horse_id) {
+                $recent = RaceResult::with(['race.venue'])
+                    ->where('horse_id', $result->horse_id)
+                    ->where('race_id', '!=', $race->id)
+                    ->whereNotNull('finish_position_int')
+                    ->whereHas('race', fn($qq) => $qq->where('race_date', '<=', $race->race_date))
+                    ->join('races', 'races.id', '=', 'race_results.race_id')
+                    ->orderByDesc('races.race_date')
+                    ->select('race_results.*')
+                    ->limit(5)
+                    ->get();
+            }
+            $runningStyle = $this->estimateRunningStyle($recent);
+            $precalc[$result->id] = [
+                'recent'        => $recent,
+                'running_style' => $runningStyle,
+            ];
+        }
+
+        // ペース判定: 逃げ宣言馬2頭以上で fast(ハイ)、それ以外 slow
+        $stylesList = array_map(fn($p) => $p['running_style'], $precalc);
+        $pace = $this->svc->estimatePace($stylesList);
+        $cond['pace'] = $pace;
+
+        // -- 2パス目: 各馬の評価行を組み立て --
         $rows = [];
         foreach ($race->results as $result) {
             $mark = $marks->get($result->id);
+            $pre  = $precalc[$result->id] ?? ['recent' => [], 'running_style' => '不'];
+            $runningStyle = $pre['running_style'];
+            $recent       = $pre['recent'];
 
             // スコアキャッシュが無い or recompute なら再計算
+            //   旧キャッシュ(枠/コース/脚質カラム未保存)も再計算対象にする
             $needRecalc = $recompute
                 || !$mark
                 || $mark->score_total === null
                 || $mark->scored_at === null
-                || $mark->scored_at->lt(now()->subDays(7));
+                || $mark->scored_at->lt(now()->subDays(7))
+                || $mark->score_frame === null
+                || $mark->score_course === null
+                || $mark->score_style === null;
 
             $eval = null;
             if ($needRecalc && $result->horse) {
@@ -135,6 +172,8 @@ class ShutubaController extends Controller
                         'id'            => $horse->id,
                         'father'        => $horse->father,
                         'mother_father' => $horse->mother_father,
+                        'frame_number'  => $result->frame_number,
+                        'running_style' => $runningStyle,
                     ],
                     jockeyId: $result->jockey_id ? (int) $result->jockey_id : null,
                     cond:     $cond,
@@ -154,24 +193,12 @@ class ShutubaController extends Controller
                         'score_jockey'    => round((float) $eval['sub']['jockey'], 2),
                         'score_horse'     => round((float) $eval['sub']['horse'], 2),
                         'score_roi'       => round((float) $eval['sub']['roi'], 2),
+                        'score_frame'     => round((float) $eval['sub']['frame'], 2),
+                        'score_course'    => round((float) $eval['sub']['course'], 2),
+                        'score_style'     => round((float) $eval['sub']['style'], 2),
                         'scored_at'       => now(),
                     ]
                 );
-            }
-
-            // 直近5走(過去成績)を取得
-            $recent = [];
-            if ($result->horse_id) {
-                $recent = RaceResult::with(['race.venue'])
-                    ->where('horse_id', $result->horse_id)
-                    ->where('race_id', '!=', $race->id)
-                    ->whereNotNull('finish_position_int')
-                    ->whereHas('race', fn($qq) => $qq->where('race_date', '<=', $race->race_date))
-                    ->join('races', 'races.id', '=', 'race_results.race_id')
-                    ->orderByDesc('races.race_date')
-                    ->select('race_results.*')
-                    ->limit(5)
-                    ->get();
             }
 
             // 種牡馬コース傾向ヒント (Phase C-1)
@@ -179,9 +206,6 @@ class ShutubaController extends Controller
             if ($result->horse?->father) {
                 $sireHint = $this->buildSireCourseHint($result->horse->father, $cond);
             }
-
-            // 脚質推定 (Phase 1-A) — 過去走から
-            $runningStyle = $this->estimateRunningStyle($recent);
 
             // 期待値計算 (Phase 1-B)
             $ev = null;
@@ -357,6 +381,7 @@ class ShutubaController extends Controller
             'track_type'       => $race->track_type,
             'distance'         => $race->distance,
             'course_condition' => $race->course_condition,
+            'direction'        => $race->direction,
         ];
 
         $settings = $this->svc->getSettings();
@@ -368,6 +393,28 @@ class ShutubaController extends Controller
             ->get()
             ->keyBy('race_result_id');
 
+        // 各馬の過去走→脚質→ペース判定(脚質スコアに必要)
+        $styles = [];
+        $recentMap = [];
+        foreach ($race->results as $rr) {
+            $recent = [];
+            if ($rr->horse_id) {
+                $recent = RaceResult::with(['race'])
+                    ->where('horse_id', $rr->horse_id)
+                    ->where('race_id', '!=', $race->id)
+                    ->whereNotNull('finish_position_int')
+                    ->whereHas('race', fn($qq) => $qq->where('race_date', '<=', $race->race_date))
+                    ->join('races', 'races.id', '=', 'race_results.race_id')
+                    ->orderByDesc('races.race_date')
+                    ->select('race_results.*')
+                    ->limit(5)
+                    ->get();
+            }
+            $styles[$rr->id]    = $this->estimateRunningStyle($recent);
+            $recentMap[$rr->id] = $recent;
+        }
+        $cond['pace'] = $this->svc->estimatePace(array_values($styles));
+
         $scored = [];
         foreach ($race->results as $rr) {
             if (!$rr->horse) continue;
@@ -376,6 +423,8 @@ class ShutubaController extends Controller
                     'id'            => $rr->horse->id,
                     'father'        => $rr->horse->father,
                     'mother_father' => $rr->horse->mother_father,
+                    'frame_number'  => $rr->frame_number,
+                    'running_style' => $styles[$rr->id] ?? '不',
                 ],
                 jockeyId: $rr->jockey_id ? (int) $rr->jockey_id : null,
                 cond:     $cond,
@@ -418,6 +467,9 @@ class ShutubaController extends Controller
                         'score_jockey'   => round((float) $s->eval['sub']['jockey'], 2),
                         'score_horse'    => round((float) $s->eval['sub']['horse'], 2),
                         'score_roi'      => round((float) $s->eval['sub']['roi'], 2),
+                        'score_frame'    => round((float) $s->eval['sub']['frame'], 2),
+                        'score_course'   => round((float) $s->eval['sub']['course'], 2),
+                        'score_style'    => round((float) $s->eval['sub']['style'], 2),
                         'scored_at'      => now(),
                     ]
                 );

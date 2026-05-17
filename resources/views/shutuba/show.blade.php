@@ -288,11 +288,14 @@
                     <th class="text-right px-2 py-2 w-[60px]">人気</th>
                     <th class="text-right px-2 py-2 w-[70px]">単オッズ</th>
                     <th class="text-right px-2 py-2 w-[70px]">EV</th>
-                    <th class="text-right px-2 py-2 w-[60px]">血統</th>
-                    <th class="text-right px-2 py-2 w-[60px]">騎手</th>
-                    <th class="text-right px-2 py-2 w-[60px]">馬</th>
-                    <th class="text-right px-2 py-2 w-[60px]">回収</th>
-                    <th class="text-right px-2 py-2 w-[70px]">合計</th>
+                    <th class="text-right px-2 py-2 w-[54px]" title="血統(父60%/母父40%)">血統</th>
+                    <th class="text-right px-2 py-2 w-[54px]" title="騎手×条件 複勝率">騎手</th>
+                    <th class="text-right px-2 py-2 w-[54px]" title="馬の過去走 複勝率(直近5走補正)">馬</th>
+                    <th class="text-right px-2 py-2 w-[54px]" title="父複勝回収率の妙味">回収</th>
+                    <th class="text-right px-2 py-2 w-[54px]" title="枠順 × 同コース">枠</th>
+                    <th class="text-right px-2 py-2 w-[54px]" title="同馬の同方向(右/左) 複勝率">ｺｰｽ</th>
+                    <th class="text-right px-2 py-2 w-[54px]" title="脚質 × 想定ペース">脚質</th>
+                    <th class="text-right px-2 py-2 w-[80px]">合計</th>
                     <th class="text-left px-2 py-2 w-[200px]">メモ</th>
                 </tr>
             </thead>
@@ -307,6 +310,21 @@
                         $sJ        = $r->mark_obj?->score_jockey;
                         $sH        = $r->mark_obj?->score_horse;
                         $sR        = $r->mark_obj?->score_roi;
+                        $sFr       = $r->mark_obj?->score_frame;
+                        $sCo       = $r->mark_obj?->score_course;
+                        $sSt       = $r->mark_obj?->score_style;
+                        // 設定の重み(タイトル用)
+                        $W         = $settings['weights'];
+                        $subTip = sprintf(
+                            "血統 %s × %d%%\n騎手 %s × %d%%\n馬   %s × %d%%\n回収 %s × %d%%\n枠   %s × %d%%\nコース %s × %d%%\n脚質 %s × %d%%",
+                            $sP !== null ? number_format((float)$sP, 1) : '-', (int)($W['pedigree'] ?? 0),
+                            $sJ !== null ? number_format((float)$sJ, 1) : '-', (int)($W['jockey']   ?? 0),
+                            $sH !== null ? number_format((float)$sH, 1) : '-', (int)($W['horse']    ?? 0),
+                            $sR !== null ? number_format((float)$sR, 1) : '-', (int)($W['roi']      ?? 0),
+                            $sFr !== null ? number_format((float)$sFr, 1) : '-', (int)($W['frame']  ?? 0),
+                            $sCo !== null ? number_format((float)$sCo, 1) : '-', (int)($W['course'] ?? 0),
+                            $sSt !== null ? number_format((float)$sSt, 1) : '-', (int)($W['style']  ?? 0),
+                        );
                         $styleColors = [
                             '逃' => 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
                             '先' => 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
@@ -509,10 +527,33 @@
                             </span>
                         </td>
 
-                        {{-- 合計 --}}
+                        {{-- 枠スコア --}}
+                        <td class="px-2 py-2 text-right">
+                            <span class="text-xs {{ $sFr !== null && $sFr >= 60 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-gray-600 dark:text-gray-300' }}"
+                                  title="枠{{ $rr->frame_number ?? '?' }} × このコース類似条件 の過去複勝率">
+                                {{ $sFr !== null ? number_format((float)$sFr, 1) : '-' }}
+                            </span>
+                        </td>
+                        {{-- コーススコア --}}
+                        <td class="px-2 py-2 text-right">
+                            <span class="text-xs {{ $sCo !== null && $sCo >= 60 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-gray-600 dark:text-gray-300' }}"
+                                  title="この馬の同方向({{ $race->direction ?? '?' }}回り) 過去複勝率">
+                                {{ $sCo !== null ? number_format((float)$sCo, 1) : '-' }}
+                            </span>
+                        </td>
+                        {{-- 脚質スコア --}}
+                        <td class="px-2 py-2 text-right">
+                            <span class="text-xs {{ $sSt !== null && $sSt >= 60 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-gray-600 dark:text-gray-300' }}"
+                                  title="脚質「{{ $r->running_style }}」× 想定{{ $pace_forecast['label'] ?? '' }}">
+                                {{ $sSt !== null ? number_format((float)$sSt, 1) : '-' }}
+                            </span>
+                        </td>
+
+                        {{-- 合計(ツールチップで内訳表示) --}}
                         <td class="px-2 py-2 text-right">
                             @if ($score !== null)
-                                <span class="text-sm font-bold {{ $score >= 70 ? 'text-red-600 dark:text-red-400' : ($score >= 55 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300') }}">
+                                <span class="text-sm font-bold cursor-help {{ $score >= 70 ? 'text-red-600 dark:text-red-400' : ($score >= 55 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300') }}"
+                                      title="{{ $subTip }}">
                                     {{ number_format((float)$score, 1) }}
                                 </span>
                             @else
@@ -530,7 +571,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="15" class="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                    <tr><td colspan="18" class="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                         該当する出走馬がありません
                     </td></tr>
                 @endforelse
