@@ -205,8 +205,22 @@ class PedigreeRecommendService
             'track_type' => $cond['track_type'] ?? null,
             'distance'   => $cond['distance']   ?? null,
         ];
-        $key = 'rec:jockey:v2:' . md5($jockeyId . '|' . json_encode($cacheKey) . '|' . $minRuns);
+        $key = 'rec:jockey:v3:' . md5($jockeyId . '|' . json_encode($cacheKey) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($jockeyId, $cond, $minRuns) {
+            // 騎手 ID 解決:
+            // 出馬表取込みは `Jockey::firstOrCreate(['name'=>...])`(netkeiba_id なし)、
+            // 過去レース取込みは netkeiba_id 優先で別行を作るため、
+            // 「同じ騎手」が複数の jockeys.id を持っている可能性がある。
+            // → 名前で名寄せして全 ID 分の過去成績を合算する。
+            $name = DB::table('jockeys')->where('id', $jockeyId)->value('name');
+            $jockeyIds = [$jockeyId];
+            if ($name !== null && $name !== '') {
+                $idsByName = DB::table('jockeys')->where('name', $name)->pluck('id')->all();
+                if (!empty($idsByName)) {
+                    $jockeyIds = array_values(array_unique(array_map('intval', $idsByName)));
+                }
+            }
+
             // ステップフォールバック: 厳→緩 の順に試し、最初に minRuns を満たした集計を使う
             //   1) venue + track_type + distance±200m (距離得意)
             //   2) venue + track_type           (コース得意)
@@ -226,13 +240,21 @@ class PedigreeRecommendService
             // (中央デビュー直後の若手騎手でも 3 走以上はある)
             $hardMin = max(3, min($minRuns, 10));
 
+            // 名寄せした jockey_ids のいずれかに合致する race_results を対象にする
+            // → 1 件しかなければ自動的に等価なので速度劣化はない
+            $isMulti = count($jockeyIds) > 1;
+
             $lastRow = null;
             $lastLabel = 'insufficient';
             foreach ($scopes as $sc) {
                 $q = DB::table('race_results')
                     ->join('races', 'races.id', '=', 'race_results.race_id')
-                    ->where('race_results.jockey_id', $jockeyId)
                     ->whereNotNull('race_results.finish_position_int');
+                if ($isMulti) {
+                    $q->whereIn('race_results.jockey_id', $jockeyIds);
+                } else {
+                    $q->where('race_results.jockey_id', $jockeyIds[0]);
+                }
                 if (!empty($sc['venue_id']))    $q->where('races.venue_id', $sc['venue_id']);
                 if (!empty($sc['track_type']))  $q->where('races.track_type', $sc['track_type']);
                 if (!empty($sc['dist_range'])) $q->whereBetween('races.distance', $sc['dist_range']);
@@ -246,13 +268,13 @@ class PedigreeRecommendService
                 // minRuns 以上のサンプルが得られたらここで採用
                 if ($runs >= $minRuns) {
                     $res = $this->packShowSubscore($row, $minRuns);
-                    $res['scope'] = $sc['label'];
+                    $res['scope'] = $sc['label'] . ($isMulti ? '+merged' : '');
                     return $res;
                 }
                 // 最低 hardMin 以上で「all」スコープなら、緩い基準で確定採用
                 if ($sc['label'] === 'all' && $runs >= $hardMin) {
                     $res = $this->packShowSubscore($row, $hardMin);
-                    $res['scope'] = 'all_relaxed';
+                    $res['scope'] = 'all_relaxed' . ($isMulti ? '+merged' : '');
                     return $res;
                 }
                 $lastRow = $row;
@@ -263,7 +285,7 @@ class PedigreeRecommendService
             $runs = (int) ($lastRow->runs ?? 0);
             if ($runs > 0) {
                 $res = $this->packShowSubscore($lastRow, 1);  // 1 走でも評価
-                $res['scope'] = 'minimal';
+                $res['scope'] = 'minimal' . ($isMulti ? '+merged' : '');
                 return $res;
             }
             return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'no_history'];
