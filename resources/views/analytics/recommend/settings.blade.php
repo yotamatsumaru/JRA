@@ -7,13 +7,16 @@
     jockey:   {{ (int) $settings['weights']['jockey'] }},
     horse:    {{ (int) $settings['weights']['horse'] }},
     roi:      {{ (int) $settings['weights']['roi'] }},
+    frame:    {{ (int) ($settings['weights']['frame']  ?? 10) }},
+    course:   {{ (int) ($settings['weights']['course'] ?? 10) }},
+    style:    {{ (int) ($settings['weights']['style']  ?? 5) }},
 })">
     <h1 class="inline-flex items-center gap-2 text-xl sm:text-2xl font-bold text-gray-800">
         <x-icon name="cog" class="w-6 h-6 text-amber-500" />
         <span>推奨スコアリング 重み設定</span>
     </h1>
     <p class="text-xs sm:text-sm text-gray-600">
-        4つのサブスコアの重みと最低出走数を調整します。設定はあなたのセッションに保存され、推奨機能(A/B/C)全てに反映されます。
+        7つのサブスコア(血統/騎手/馬/回収/枠/コース/脚質)の重みと最低出走数を調整します。設定はあなたのセッションに保存され、推奨機能(A/B/C)全てに反映されます。
     </p>
 
     @include('analytics.recommend._nav', ['active' => 'settings'])
@@ -31,30 +34,40 @@
         <div class="border-b pb-4">
             <div class="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-gray-700 mb-2"><x-icon name="list" class="w-4 h-4" /><span>プリセット</span></div>
             <div class="flex flex-wrap gap-2">
-                <button type="button" @click="applyPreset({pedigree:30,jockey:25,horse:35,roi:10})"
+                <button type="button" @click="applyPreset({pedigree:20,jockey:20,horse:25,roi:10,frame:10,course:10,style:5})"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-100 hover:bg-amber-100 text-gray-700 hover:text-amber-700">
                     <x-icon name="target" class="w-3.5 h-3.5" />
-                    <span>標準(血統30/騎手25/馬35/ROI10)</span>
+                    <span>標準(7軸バランス)</span>
                 </button>
-                <button type="button" @click="applyPreset({pedigree:50,jockey:15,horse:25,roi:10})"
+                <button type="button" @click="applyPreset({pedigree:30,jockey:25,horse:35,roi:10,frame:0,course:0,style:0})"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-100 hover:bg-gray-200 text-gray-700">
+                    <x-icon name="list" class="w-3.5 h-3.5" />
+                    <span>従来(血統30/騎手25/馬35/ROI10)</span>
+                </button>
+                <button type="button" @click="applyPreset({pedigree:45,jockey:10,horse:20,roi:10,frame:5,course:5,style:5})"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-100 hover:bg-purple-100 text-gray-700 hover:text-purple-700">
                     <x-icon name="beaker" class="w-3.5 h-3.5" />
-                    <span>血統重視(父系50)</span>
+                    <span>血統重視(父系45)</span>
                 </button>
-                <button type="button" @click="applyPreset({pedigree:15,jockey:15,horse:60,roi:10})"
+                <button type="button" @click="applyPreset({pedigree:10,jockey:10,horse:50,roi:5,frame:10,course:10,style:5})"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-100 hover:bg-rose-100 text-gray-700 hover:text-rose-700">
                     <x-icon name="horse" class="w-3.5 h-3.5" />
-                    <span>個体重視(馬60)</span>
+                    <span>個体重視(馬50)</span>
                 </button>
-                <button type="button" @click="applyPreset({pedigree:25,jockey:25,horse:25,roi:25})"
+                <button type="button" @click="applyPreset({pedigree:15,jockey:15,horse:15,roi:15,frame:15,course:15,style:10})"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-100 hover:bg-sky-100 text-gray-700 hover:text-sky-700">
                     <x-icon name="scale" class="w-3.5 h-3.5" />
-                    <span>均等(各25)</span>
+                    <span>均等(7軸)</span>
                 </button>
-                <button type="button" @click="applyPreset({pedigree:20,jockey:15,horse:25,roi:40})"
+                <button type="button" @click="applyPreset({pedigree:15,jockey:10,horse:15,roi:35,frame:10,course:10,style:5})"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-100 hover:bg-emerald-100 text-gray-700 hover:text-emerald-700">
                     <x-icon name="cash" class="w-3.5 h-3.5" />
-                    <span>穴狙い(ROI40)</span>
+                    <span>穴狙い(ROI35)</span>
+                </button>
+                <button type="button" @click="applyPreset({pedigree:10,jockey:15,horse:15,roi:5,frame:20,course:20,style:15})"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-100 hover:bg-teal-100 text-gray-700 hover:text-teal-700">
+                    <x-icon name="map" class="w-3.5 h-3.5" />
+                    <span>展開重視(枠/コース/脚質55)</span>
                 </button>
             </div>
         </div>
@@ -91,6 +104,27 @@
                         'desc' => '父系の複勝回収率が100%を超えた分を加点。妙味血統馬を後押し。',
                         'color' => 'amber',
                     ],
+                    [
+                        'key' => 'frame',
+                        'icon' => 'grid',
+                        'label' => '枠順 × 同コース',
+                        'desc' => '同枠×同コース類似条件(距離±200m)の過去複勝率。サンプル不足時は段階的に条件を緩和して評価。',
+                        'color' => 'teal',
+                    ],
+                    [
+                        'key' => 'course',
+                        'icon' => 'map',
+                        'label' => 'コース(右/左) × 同馬',
+                        'desc' => 'この馬の同方向(右回り/左回り) での過去複勝率。最低3走で評価(若駒救済)。',
+                        'color' => 'indigo',
+                    ],
+                    [
+                        'key' => 'style',
+                        'icon' => 'bolt',
+                        'label' => '脚質 × 想定ペース',
+                        'desc' => '想定ペースに脚質が合うかをマッピング。スロー×逃/先=高、ハイ×差/追=高。',
+                        'color' => 'pink',
+                    ],
                 ];
             @endphp
 
@@ -101,6 +135,9 @@
                         'sky'    => ['accent-sky-500',   'text-sky-700',   'bg-sky-500'],
                         'rose'   => ['accent-rose-500',  'text-rose-700',  'bg-rose-500'],
                         'amber'  => ['accent-amber-500', 'text-amber-700', 'bg-amber-500'],
+                        'teal'   => ['accent-teal-500',  'text-teal-700',  'bg-teal-500'],
+                        'indigo' => ['accent-indigo-500','text-indigo-700','bg-indigo-500'],
+                        'pink'   => ['accent-pink-500',  'text-pink-700',  'bg-pink-500'],
                     ][$s['color']];
                 @endphp
                 <div>
@@ -168,7 +205,7 @@
 
     {{-- リセット --}}
     <form method="POST" action="{{ route('analytics.recommend.settings.reset') }}"
-          onsubmit="return confirm('デフォルト値(血統30/騎手25/馬35/ROI10、最低出走数10)に戻しますか?')">
+          onsubmit="return confirm('デフォルト値(血統20/騎手20/馬25/ROI10/枠10/コース10/脚質5、最低出走数10)に戻しますか?')">
         @csrf
         <button type="submit" class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 underline">
             <x-icon name="arrow-left" class="w-3.5 h-3.5" /><span>デフォルトに戻す</span>
@@ -178,10 +215,13 @@
 
 <script>
 function weightForm(initial) {
+    const KEYS = ['pedigree','jockey','horse','roi','frame','course','style'];
     return {
         weights: { ...initial },
         sum() {
-            return (this.weights.pedigree | 0) + (this.weights.jockey | 0) + (this.weights.horse | 0) + (this.weights.roi | 0);
+            let s = 0;
+            for (const k of KEYS) s += (this.weights[k] | 0);
+            return s;
         },
         pct(key) {
             const s = this.sum();
@@ -189,7 +229,10 @@ function weightForm(initial) {
             return Math.round((this.weights[key] | 0) / s * 1000) / 10;
         },
         applyPreset(p) {
-            this.weights = { ...p };
+            // 既存値を残しつつ、未指定キーは 0 で埋める(従来プリセット対策)
+            const next = { ...this.weights };
+            for (const k of KEYS) next[k] = (p[k] ?? 0) | 0;
+            this.weights = next;
         },
     };
 }

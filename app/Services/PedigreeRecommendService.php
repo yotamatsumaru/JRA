@@ -26,11 +26,17 @@ class PedigreeRecommendService
 {
     /** デフォルト重み(合計を100に揃える運用) */
     public const DEFAULT_WEIGHTS = [
-        'pedigree' => 30,   // 血統(父60%/母父40%合成)
-        'jockey'   => 25,   // 騎手×条件
-        'horse'    => 35,   // 馬の過去走
+        'pedigree' => 20,   // 血統(父60%/母父40%合成)
+        'jockey'   => 20,   // 騎手×条件
+        'horse'    => 25,   // 馬の過去走
         'roi'      => 10,   // 父複勝回収率の妙味ボーナス
+        'frame'    => 10,   // 枠順 × 同コースの複勝率
+        'course'   => 10,   // 同コース(track_type×direction)での馬の複勝率
+        'style'    => 5,    // 脚質 × 想定ペース
     ];
+
+    /** スコアキー一覧(combine/saveSettings 等で利用) */
+    public const SCORE_KEYS = ['pedigree','jockey','horse','roi','frame','course','style'];
 
     /** 推奨印の閾値(スコア) */
     public const MARK_THRESHOLDS = [
@@ -104,7 +110,7 @@ class PedigreeRecommendService
         $sum = $this->weightSum($weights);
         if ($sum <= 0) return 0.0;
         $acc = 0.0;
-        foreach (['pedigree','jockey','horse','roi'] as $k) {
+        foreach (self::SCORE_KEYS as $k) {
             $acc += ($weights[$k] ?? 0) * (float)($subScores[$k] ?? 0);
         }
         return round($acc / $sum, 2);
@@ -191,24 +197,47 @@ class PedigreeRecommendService
      */
     public function jockeyScore(?int $jockeyId, array $cond, int $minRuns): array
     {
-        if (!$jockeyId) return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0];
+        if (!$jockeyId) return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'none'];
 
         $key = 'rec:jockey:' . md5($jockeyId . '|' . json_encode($cond) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($jockeyId, $cond, $minRuns) {
-            $q = DB::table('race_results')
-                ->join('races', 'races.id', '=', 'race_results.race_id')
-                ->where('race_results.jockey_id', $jockeyId)
-                ->whereNotNull('race_results.finish_position_int');
+            // ステップフォールバック: 厳→緩 の順に試し、最初に minRuns を満たした集計を使う
+            //   1) venue + track_type
+            //   2) track_type のみ
+            //   3) 全条件
+            $scopes = [
+                ['venue_id' => $cond['venue_id'] ?? null, 'track_type' => $cond['track_type'] ?? null, 'label' => 'venue+track'],
+                ['venue_id' => null,                       'track_type' => $cond['track_type'] ?? null, 'label' => 'track'],
+                ['venue_id' => null,                       'track_type' => null,                        'label' => 'all'],
+            ];
 
-            if (!empty($cond['venue_id']))   $q->where('races.venue_id', $cond['venue_id']);
-            if (!empty($cond['track_type'])) $q->where('races.track_type', $cond['track_type']);
+            $best = null;
+            foreach ($scopes as $sc) {
+                $q = DB::table('race_results')
+                    ->join('races', 'races.id', '=', 'race_results.race_id')
+                    ->where('race_results.jockey_id', $jockeyId)
+                    ->whereNotNull('race_results.finish_position_int');
+                if (!empty($sc['venue_id']))   $q->where('races.venue_id', $sc['venue_id']);
+                if (!empty($sc['track_type'])) $q->where('races.track_type', $sc['track_type']);
 
-            $row = $q->selectRaw("count(*) as runs,
-                SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows
-            ")->first();
-
-            return $this->packShowSubscore($row, $minRuns);
+                $row = $q->selectRaw("count(*) as runs,
+                    SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows
+                ")->first();
+                $runs = (int) ($row->runs ?? 0);
+                if ($runs >= $minRuns) {
+                    $res = $this->packShowSubscore($row, $minRuns);
+                    $res['scope'] = $sc['label'];
+                    return $res;
+                }
+                // 最後に全条件の結果は退避(緩めても満たないとき表示用)
+                if ($sc['label'] === 'all') {
+                    $best = $this->packShowSubscore($row, max(1, min($minRuns, 3)));
+                    $best['scope'] = 'all_relaxed';
+                }
+            }
+            // すべて満たないが、最低3走以上あれば緩い基準で評価
+            return $best ?? ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'insufficient'];
         });
     }
 
@@ -225,25 +254,52 @@ class PedigreeRecommendService
     {
         $key = 'rec:horse:' . md5($horseId . '|' . json_encode($cond) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($horseId, $cond, $minRuns) {
-            // 全体集計(同距離±200 or 同track)
-            $q = DB::table('race_results')
-                ->join('races', 'races.id', '=', 'race_results.race_id')
-                ->where('race_results.horse_id', $horseId)
-                ->whereNotNull('race_results.finish_position_int');
+            // ステップフォールバック: 距離±200 → ±400 → track のみ → 全レース
+            $track = $cond['track_type'] ?? null;
+            $dist  = (int) ($cond['distance'] ?? 0);
+            $scopes = [
+                ['track' => $track, 'dist_range' => $dist > 0 ? [$dist - 200, $dist + 200] : null, 'label' => 'track+dist200'],
+                ['track' => $track, 'dist_range' => $dist > 0 ? [$dist - 400, $dist + 400] : null, 'label' => 'track+dist400'],
+                ['track' => $track, 'dist_range' => null,                                          'label' => 'track'],
+                ['track' => null,   'dist_range' => null,                                          'label' => 'all'],
+            ];
 
-            if (!empty($cond['track_type'])) {
-                $q->where('races.track_type', $cond['track_type']);
-            }
-            if (!empty($cond['distance'])) {
-                $d = (int) $cond['distance'];
-                $q->whereBetween('races.distance', [$d - 200, $d + 200]);
-            }
+            // 個体馬は最低3走で評価(若駒救済)
+            $individualMin = max(1, min($minRuns, 3));
+            $base = null;
+            $usedScope = 'insufficient';
+            foreach ($scopes as $sc) {
+                $q = DB::table('race_results')
+                    ->join('races', 'races.id', '=', 'race_results.race_id')
+                    ->where('race_results.horse_id', $horseId)
+                    ->whereNotNull('race_results.finish_position_int');
+                if (!empty($sc['track']))      $q->where('races.track_type', $sc['track']);
+                if (!empty($sc['dist_range'])) $q->whereBetween('races.distance', $sc['dist_range']);
 
-            $row = $q->selectRaw("count(*) as runs,
-                SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows
-            ")->first();
-            $base = $this->packShowSubscore($row, max(1, min($minRuns, 3)));  // 馬個体は最低3走でも評価
+                $row = $q->selectRaw("count(*) as runs,
+                    SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows
+                ")->first();
+                $runs = (int) ($row->runs ?? 0);
+                if ($runs >= $individualMin) {
+                    $base = $this->packShowSubscore($row, $individualMin);
+                    $usedScope = $sc['label'];
+                    break;
+                }
+            }
+            if (!$base) {
+                // 過去走0件(新馬等) → 0点
+                return [
+                    'score'        => 0,
+                    'base_score'   => 0,
+                    'runs'         => 0,
+                    'show_rate'    => 0,
+                    'win_rate'     => 0,
+                    'recent_shows' => 0,
+                    'recent_bonus' => 0,
+                    'scope'        => 'no_history',
+                ];
+            }
 
             // 直近5走の3着内ボーナス(0〜20点)
             $recentShows = DB::table('race_results')
@@ -266,6 +322,7 @@ class PedigreeRecommendService
                 'win_rate'     => $base['win_rate'],
                 'recent_shows' => $recentShows,
                 'recent_bonus' => $recentBonus,
+                'scope'        => $usedScope,
             ];
         });
     }
@@ -298,11 +355,174 @@ class PedigreeRecommendService
     }
 
     /**
+     * 枠順スコア(同枠 × 同 track_type × 同距離±200 の過去複勝率)
+     *
+     * 枠順統計は条件馬個体に依存しないので、サンプルは十分得やすい。
+     *
+     * @param int|null $frame   枠番(1-8)
+     * @param array    $cond    ['venue_id', 'track_type', 'distance']
+     * @param int      $minRuns 最小出走数(緩和あり)
+     */
+    public function frameScore(?int $frame, array $cond, int $minRuns): array
+    {
+        if (!$frame || $frame < 1 || $frame > 8) {
+            return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'none'];
+        }
+
+        $key = 'rec:frame:' . md5($frame . '|' . json_encode($cond) . '|' . $minRuns);
+        return Cache::remember($key, self::CACHE_TTL, function () use ($frame, $cond, $minRuns) {
+            $track = $cond['track_type'] ?? null;
+            $venue = $cond['venue_id']   ?? null;
+            $dist  = (int) ($cond['distance'] ?? 0);
+
+            // 厳→緩
+            $scopes = [
+                ['venue' => $venue, 'track' => $track, 'dist_range' => $dist > 0 ? [$dist-200, $dist+200] : null, 'label' => 'venue+track+dist'],
+                ['venue' => null,   'track' => $track, 'dist_range' => $dist > 0 ? [$dist-200, $dist+200] : null, 'label' => 'track+dist'],
+                ['venue' => null,   'track' => $track, 'dist_range' => null,                                      'label' => 'track'],
+                ['venue' => null,   'track' => null,   'dist_range' => null,                                      'label' => 'all'],
+            ];
+
+            $fallback = null;
+            foreach ($scopes as $sc) {
+                $q = DB::table('race_results')
+                    ->join('races', 'races.id', '=', 'race_results.race_id')
+                    ->where('race_results.frame_number', $frame)
+                    ->whereNotNull('race_results.finish_position_int');
+                if (!empty($sc['venue']))      $q->where('races.venue_id', $sc['venue']);
+                if (!empty($sc['track']))      $q->where('races.track_type', $sc['track']);
+                if (!empty($sc['dist_range'])) $q->whereBetween('races.distance', $sc['dist_range']);
+
+                $row = $q->selectRaw("count(*) as runs,
+                    SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows
+                ")->first();
+                $runs = (int) ($row->runs ?? 0);
+                if ($runs >= $minRuns) {
+                    $res = $this->packShowSubscore($row, $minRuns);
+                    $res['scope'] = $sc['label'];
+                    return $res;
+                }
+                if ($sc['label'] === 'all') {
+                    $fallback = $this->packShowSubscore($row, max(1, min($minRuns, 5)));
+                    $fallback['scope'] = 'all_relaxed';
+                }
+            }
+            return $fallback ?? ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'insufficient'];
+        });
+    }
+
+    /**
+     * コーススコア(同馬 × 同 track_type × 同 direction の過去複勝率)
+     *
+     * 「右回り/左回り」の得意不得意を捉える。距離は問わずサンプル確保を優先。
+     *
+     * @param int   $horseId
+     * @param array $cond     ['track_type', 'direction']
+     */
+    public function courseScore(int $horseId, array $cond, int $minRuns): array
+    {
+        $dir = $cond['direction'] ?? null;
+        $key = 'rec:course:' . md5($horseId . '|' . json_encode($cond) . '|' . $minRuns);
+        return Cache::remember($key, self::CACHE_TTL, function () use ($horseId, $cond, $minRuns, $dir) {
+            $track = $cond['track_type'] ?? null;
+
+            // 個体馬向け緩和: 最低3走でも評価
+            $indMin = max(1, min($minRuns, 3));
+
+            $scopes = [
+                ['track' => $track, 'direction' => $dir,  'label' => 'track+dir'],
+                ['track' => $track, 'direction' => null,  'label' => 'track'],
+                ['track' => null,   'direction' => null,  'label' => 'all'],
+            ];
+
+            foreach ($scopes as $sc) {
+                $q = DB::table('race_results')
+                    ->join('races', 'races.id', '=', 'race_results.race_id')
+                    ->where('race_results.horse_id', $horseId)
+                    ->whereNotNull('race_results.finish_position_int');
+                if (!empty($sc['track']))     $q->where('races.track_type', $sc['track']);
+                if (!empty($sc['direction'])) $q->where('races.direction', $sc['direction']);
+
+                $row = $q->selectRaw("count(*) as runs,
+                    SUM(CASE WHEN finish_position_int=1 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN finish_position_int<=3 THEN 1 ELSE 0 END) as shows
+                ")->first();
+                $runs = (int) ($row->runs ?? 0);
+                if ($runs >= $indMin) {
+                    $res = $this->packShowSubscore($row, $indMin);
+                    $res['scope'] = $sc['label'];
+                    return $res;
+                }
+            }
+            return ['score' => 0, 'runs' => 0, 'show_rate' => 0, 'win_rate' => 0, 'scope' => 'no_history'];
+        });
+    }
+
+    /**
+     * 脚質スコア(脚質 × 想定ペース のマッチング)
+     *
+     * 想定ペースは「逃げ宣言頭数」で推定:
+     *   - 逃げ馬2頭以上 → ハイペース (差し/追い込み有利)
+     *   - 逃げ馬1頭以下 → スローペース (逃げ/先行有利)
+     *
+     * マッピング(想定ペース × 脚質):
+     *   slow(スロー)   × 逃     = 85
+     *   slow           × 先     = 75
+     *   slow           × 差     = 35
+     *   slow           × 追/マ  = 25
+     *   fast(ハイ)     × 逃     = 25
+     *   fast           × 先     = 40
+     *   fast           × 差     = 80
+     *   fast           × 追/マ  = 75
+     *
+     * @param string|null $style   '逃'|'先'|'差'|'追'|'マ' (race_results.running_style)
+     * @param string      $pace    'slow'|'fast'
+     */
+    public function styleScore(?string $style, string $pace): array
+    {
+        if (!$style) {
+            return ['score' => 0, 'style' => null, 'pace' => $pace, 'scope' => 'unknown'];
+        }
+        // 先頭1文字で判定(running_style は「逃」「先」「差」「追込」「マクリ」等のため)
+        $head = mb_substr($style, 0, 1);
+        $matrix = [
+            'slow' => ['逃' => 85, '先' => 75, '差' => 35, '追' => 25, 'マ' => 25],
+            'fast' => ['逃' => 25, '先' => 40, '差' => 80, '追' => 75, 'マ' => 75],
+        ];
+        $score = $matrix[$pace][$head] ?? 50;  // 未知の脚質は中立
+        return [
+            'score' => (float) $score,
+            'style' => $style,
+            'head'  => $head,
+            'pace'  => $pace,
+            'scope' => 'mapped',
+        ];
+    }
+
+    /**
+     * 想定ペース推定(逃げ宣言頭数で簡易判定)
+     *
+     * @param array<int,string|null> $stylesInRace  同一レースの全頭の running_style
+     * @return 'slow'|'fast'
+     */
+    public function estimatePace(array $stylesInRace): string
+    {
+        $leaders = 0;
+        foreach ($stylesInRace as $s) {
+            if (!$s) continue;
+            $head = mb_substr($s, 0, 1);
+            if ($head === '逃') $leaders++;
+        }
+        return $leaders >= 2 ? 'fast' : 'slow';
+    }
+
+    /**
      * 馬1頭の総合スコア
      *
-     * @param array $horse  ['id', 'father', 'mother_father']
+     * @param array $horse  ['id', 'father', 'mother_father', 'frame_number'?, 'running_style'?]
      * @param int|null $jockeyId
-     * @param array $cond   ['venue_id', 'track_type', 'distance', 'course_condition']
+     * @param array $cond   ['venue_id', 'track_type', 'distance', 'course_condition', 'direction'?, 'pace'?]
      * @param array $weights / int $minRuns  未指定なら設定から読む
      */
     public function evaluateHorse(array $horse, ?int $jockeyId, array $cond, ?array $weights = null, ?int $minRuns = null): array
@@ -316,11 +536,21 @@ class PedigreeRecommendService
         $hrs = $this->horseScore((int) $horse['id'], $cond, $minRuns);
         $roi = $this->roiBonus($horse['father'] ?? null, $cond, $minRuns);
 
+        // 新規サブスコア
+        $frame  = isset($horse['frame_number']) ? (int) $horse['frame_number'] : null;
+        $frm    = $this->frameScore($frame, $cond, $minRuns);
+        $crs    = $this->courseScore((int) $horse['id'], $cond, $minRuns);
+        $pace   = $cond['pace'] ?? 'slow';
+        $stl    = $this->styleScore($horse['running_style'] ?? null, $pace);
+
         $sub = [
             'pedigree' => $ped['score'],
             'jockey'   => $jky['score'],
             'horse'    => $hrs['score'],
             'roi'      => $roi['score'],
+            'frame'    => $frm['score'],
+            'course'   => $crs['score'],
+            'style'    => $stl['score'],
         ];
         $total = $this->combine($sub, $weights);
 
@@ -331,6 +561,9 @@ class PedigreeRecommendService
             'jockey'   => $jky,
             'horse'    => $hrs,
             'roi'      => $roi,
+            'frame'    => $frm,
+            'course'   => $crs,
+            'style'    => $stl,
             'weights'  => $weights,
             'min_runs' => $minRuns,
         ];
