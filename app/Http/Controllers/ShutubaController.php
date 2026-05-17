@@ -164,6 +164,21 @@ class ShutubaController extends Controller
                 && $mark
                 && $mark->score_course !== null
                 && (float) $mark->score_course === 0.0;
+            // 「血統・騎手・馬・回収・コース」の5つの『過去走由来』スコアのうち、
+            //  3つ以上が 0.0 のままで かつ scored_at が今日より前なら、
+            //  キャッシュ汚染や jockey_id 不整合の可能性が高いので 1 回だけ自動再計算する。
+            //  (新馬戦などで本当に過去走が無いケースでは、再計算しても 0 のまま scored_at が今日になり、
+            //   翌日以降の表示では再走しない)
+            $zeroCount = 0;
+            if ($mark) {
+                foreach (['score_pedigree','score_jockey','score_horse','score_roi','score_course'] as $col) {
+                    if ($mark->{$col} !== null && (float) $mark->{$col} === 0.0) $zeroCount++;
+                }
+            }
+            $tooManyZeros = $mark
+                && $zeroCount >= 3
+                && (!$mark->scored_at || $mark->scored_at->lt(now()->startOfDay()));
+
             $needRecalc = $recompute
                 || !$mark
                 || $mark->score_total === null
@@ -173,7 +188,8 @@ class ShutubaController extends Controller
                 || $mark->score_course === null
                 || $mark->score_style === null
                 || $hasJockeyButZeroScore   // 旧バグで騎手スコアが0のまま保存されたケース
-                || $hasHorseButZeroCourse;  // 同上、コーススコアが0のまま
+                || $hasHorseButZeroCourse   // 同上、コーススコアが0のまま
+                || $tooManyZeros;           // 過去走由来スコアの大半が0(キャッシュ汚染の可能性)
 
             $eval = null;
             if ($needRecalc && $result->horse) {
@@ -190,6 +206,8 @@ class ShutubaController extends Controller
                     cond:     $cond,
                     weights:  $weights,
                     minRuns:  $minRuns,
+                    // ?recompute=1 か「ゼロ多すぎ」検出時は内部の Cache::remember も無視して完全再集計する
+                    forceRefresh: $recompute || $tooManyZeros,
                 );
 
                 // upsert
