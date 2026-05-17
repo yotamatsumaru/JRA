@@ -155,6 +155,15 @@ class ShutubaController extends Controller
 
             // スコアキャッシュが無い or recompute なら再計算
             //   旧キャッシュ(枠/コース/脚質カラム未保存)も再計算対象にする
+            //   さらに「騎手 ID があるのに score_jockey=0 のもの」も古いバグの被害者なので再計算
+            $hasJockeyButZeroScore = $result->jockey_id
+                && $mark
+                && $mark->score_jockey !== null
+                && (float) $mark->score_jockey === 0.0;
+            $hasHorseButZeroCourse = $result->horse_id
+                && $mark
+                && $mark->score_course !== null
+                && (float) $mark->score_course === 0.0;
             $needRecalc = $recompute
                 || !$mark
                 || $mark->score_total === null
@@ -162,7 +171,9 @@ class ShutubaController extends Controller
                 || $mark->scored_at->lt(now()->subDays(7))
                 || $mark->score_frame === null
                 || $mark->score_course === null
-                || $mark->score_style === null;
+                || $mark->score_style === null
+                || $hasJockeyButZeroScore   // 旧バグで騎手スコアが0のまま保存されたケース
+                || $hasHorseButZeroCourse;  // 同上、コーススコアが0のまま
 
             $eval = null;
             if ($needRecalc && $result->horse) {
