@@ -368,7 +368,7 @@ class NetkeibaScraper
                 $contentType = $response->getHeaderLine('Content-Type');
                 $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
 
-                if (env('NETKEIBA_DEBUG_SAVE')) {
+                if (config('services.netkeiba.debug_save')) {
                     $path = storage_path("logs/netkeiba_{$raceId}_db.html");
                     @file_put_contents($path, $html);
                 }
@@ -403,7 +403,7 @@ class NetkeibaScraper
         $contentType = $response->getHeaderLine('Content-Type');
         $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
 
-        if (env('NETKEIBA_DEBUG_SAVE')) {
+        if (config('services.netkeiba.debug_save')) {
             $path = storage_path("logs/netkeiba_{$raceId}_race.html");
             @file_put_contents($path, $html);
         }
@@ -442,7 +442,7 @@ class NetkeibaScraper
         $contentType = $response->getHeaderLine('Content-Type');
         $html = $this->decodeHtml($response->getBody()->getContents(), $contentType);
 
-        if (env('NETKEIBA_DEBUG_SAVE')) {
+        if (config('services.netkeiba.debug_save')) {
             $path = storage_path("logs/netkeiba_{$raceId}_shutuba.html");
             @file_put_contents($path, $html);
         }
