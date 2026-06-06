@@ -67,6 +67,10 @@ return [
         // 任意の Cookie (netkeiba 会員ログイン後の Cookie をそのまま貼る用)
         // 例: NETKEIBA_COOKIE="nkauth=xxxxx; nkuser=yyyyy"
         'cookie' => env('NETKEIBA_COOKIE'),
+
+        // デバッグ: 取得した HTML を storage/logs/ に保存する
+        // 注: env() 直接呼び出しは config:cache 後に動作しないため必ず config 経由で読む
+        'debug_save' => filter_var(env('NETKEIBA_DEBUG_SAVE', false), FILTER_VALIDATE_BOOLEAN),
     ],
 
 ];
