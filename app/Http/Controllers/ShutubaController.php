@@ -5,15 +5,19 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\Bet;
 use App\Models\BetLeg;
+use App\Models\OddsSnapshot;
 use App\Models\Race;
 use App\Models\RaceMark;
 use App\Models\RaceResult;
 use App\Models\Venue;
+use App\Services\NetkeibaScraper;
+use App\Services\OddsSnapshotService;
 use App\Services\PedigreeRecommendService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 /**
@@ -115,6 +119,27 @@ class ShutubaController extends Controller
             ->keyBy('race_result_id');
 
         $recompute = $request->boolean('recompute');
+
+        // -- 最新オッズスナップショット読込 (Phase EV-2)
+        //    odds_snapshots テーブルの最新行を読み、horse_number=>['win_odds'=>..,'popularity'=>..] の形に整形。
+        //    出馬表時点の race_results.win_odds より優先して EV 計算に使う。
+        //    スナップショットが無い場合は null のまま (フォールバックで race_results.win_odds を使う)
+        $latestSnapshot = OddsSnapshot::where('race_id', $race->id)
+            ->orderByDesc('captured_at')
+            ->first();
+        $liveOddsMap = [];   // horse_number => ['win_odds' => float|null, 'popularity' => int|null]
+        $liveOddsAt  = null; // 取得時刻 (画面表示用)
+        if ($latestSnapshot && is_array($latestSnapshot->payload)) {
+            $liveOddsAt = $latestSnapshot->captured_at;
+            foreach ($latestSnapshot->payload as $hno => $row) {
+                $hno = (int) $hno;
+                if ($hno < 1) continue;
+                $liveOddsMap[$hno] = [
+                    'win_odds'   => isset($row['win_odds']) ? (float) $row['win_odds'] : null,
+                    'popularity' => isset($row['popularity']) ? (int) $row['popularity'] : null,
+                ];
+            }
+        }
 
         // -- 1パス目: 各馬の過去走/脚質を先に集計してペースを推定 --
         //    (脚質スコアは pace に依存するため evaluateHorse の前に決定する必要がある)
@@ -236,10 +261,27 @@ class ShutubaController extends Controller
                 $sireHint = $this->buildSireCourseHint($result->horse->father, $cond);
             }
 
-            // 期待値計算 (Phase 1-B)
+            // 期待値計算 (Phase 1-B → EV-2: ライブオッズ優先)
+            //   優先順:
+            //     1) odds_snapshots の最新 win_odds (10分毎の自動取得 or 手動取得)
+            //     2) race_results.win_odds (出馬表/結果インポート時)
+            //   どちらの出典かを ev[source] に記録してテンプレートでバッジ表示する
             $ev = null;
-            if ($result->win_odds && $mark?->score_total !== null) {
-                $ev = $this->calcExpectedValue((float) $mark->score_total, (float) $result->win_odds);
+            $oddsSource = null;
+            $usedWinOdds = null;
+            $live = $liveOddsMap[$result->horse_number] ?? null;
+            if ($live && $live['win_odds']) {
+                $usedWinOdds = (float) $live['win_odds'];
+                $oddsSource  = 'live';
+            } elseif ($result->win_odds) {
+                $usedWinOdds = (float) $result->win_odds;
+                $oddsSource  = 'static';
+            }
+            if ($usedWinOdds && $mark?->score_total !== null) {
+                $ev = $this->calcExpectedValue((float) $mark->score_total, $usedWinOdds);
+                $ev['source']      = $oddsSource;
+                $ev['win_odds']    = $usedWinOdds;
+                $ev['captured_at'] = $oddsSource === 'live' ? $liveOddsAt : null;
             }
 
             $rows[] = (object) [
@@ -333,6 +375,68 @@ class ShutubaController extends Controller
             'mark_summary'     => $markSummary,
             'pace_forecast'    => $paceForecast,
             'race_note'        => $raceNote,
+            // ライブオッズ表示用 (Phase EV-2)
+            'live_odds_at'     => $liveOddsAt,
+            'has_live_odds'    => !empty($liveOddsMap),
+        ]);
+    }
+
+    /**
+     * 最新オッズを netkeiba から手動取得 (Phase EV-2)
+     *
+     * POST /shutuba/{race}/capture-odds (Ajax)
+     *
+     * 出馬表ページから「📊 最新オッズ取得」ボタンで呼び出される。
+     * 取得結果は odds_snapshots テーブルに保存され、次回ページ表示時に
+     * EV 計算に最新値として反映される。
+     *
+     * Response: { ok: bool, captured_at?: iso8601, message?: string, count?: int }
+     */
+    public function captureOdds(Race $race, Request $request): JsonResponse
+    {
+        if (empty($race->netkeiba_id)) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'netkeiba_id が登録されていないレースです (出馬表をインポートして下さい)',
+            ], 422);
+        }
+
+        // 発走後 30 分以上経過していたら取得しない (オッズ無効化されているため)
+        if ($race->race_date && $race->race_date->lt(now()->subMinutes(30))) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'レース発走後のためオッズは取得できません',
+            ], 422);
+        }
+
+        try {
+            $service = new OddsSnapshotService(app(NetkeibaScraper::class));
+            $snap = $service->captureForRace($race);
+        } catch (\Throwable $e) {
+            Log::warning("ShutubaController::captureOdds failed race#{$race->id}: " . $e->getMessage());
+            return response()->json([
+                'ok'      => false,
+                'message' => 'オッズ取得エラー: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        if (!$snap) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'スナップショット作成不可 (発走後 / オッズが取得できない)',
+            ], 422);
+        }
+
+        try {
+            AuditLog::record('odds.capture', $race, ['source' => 'shutuba_manual', 'horses' => count($snap->payload ?? [])]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'ok'          => true,
+            'captured_at' => $snap->captured_at->toIso8601String(),
+            'captured_at_human' => $snap->captured_at->format('H:i:s'),
+            'count'       => count($snap->payload ?? []),
+            'message'     => sprintf('オッズを取得しました (%d頭, %s)', count($snap->payload ?? []), $snap->captured_at->format('H:i:s')),
         ]);
     }
 
@@ -826,34 +930,70 @@ class ShutubaController extends Controller
     }
 
     /**
-     * 期待値(EV)を計算 (Phase 1-B)
+     * 期待値(EV)を計算 (Phase 1-B → EV-2 拡張)
      *
-     * total スコアを推定勝率に変換し、オッズと掛けて EV を出す。
-     *   推定勝率 = total / 100 * (基準勝率係数)
-     *   EV       = 推定勝率 * オッズ - 1
+     * total スコアを推定勝率に変換し、単勝オッズで EV を出す。
+     * さらに「単勝オッズから複勝オッズを推定」して複勝EVも計算する。
+     *
+     *   推定単勝勝率 = clamp( total / 100 * 0.42, 0.01, 0.5 )
+     *   推定複勝率   = clamp( 単勝勝率 * 2.6,    0.05, 0.90 )  ※経験則(JRA 全体平均で複勝/単勝 ≒ 2.5-2.8)
+     *   推定複勝オッズ = max( 1.1, 1 + (単勝オッズ - 1) * 0.30 )  ※経験則(複勝/単勝 ≒ 0.25-0.35)
+     *
+     *   単勝EV = 単勝勝率 * 単勝オッズ - 1
+     *   複勝EV = 複勝率   * 推定複勝オッズ - 1
+     *
      * EV>0 が「お得」、EV<0 が「過大評価」。
      *
-     * @return array{prob:float, ev:float, label:string}
+     * @return array{
+     *   prob:float, ev:float, label:string,
+     *   place_prob:float, place_odds:float, place_ev:float, place_label:string
+     * }
      */
     private function calcExpectedValue(float $total, float $winOdds): array
     {
+        // ===== 単勝 =====
         // total を 0〜100 → 0.02〜0.5 程度の勝率に圧縮
         // total=70 で 21%、total=85 で 33% 程度
         $prob = max(0.01, min(0.5, ($total / 100) * 0.42));
         $ev   = $prob * $winOdds - 1.0;
+        $label = $this->labelForEv($ev);
 
-        $label = '中';
-        if ($ev >= 0.30) $label = '◎お得';
-        elseif ($ev >= 0.10) $label = '○妙味';
-        elseif ($ev >= -0.10) $label = '中';
-        elseif ($ev >= -0.30) $label = '△やや過大';
-        else $label = '✕過大評価';
+        // ===== 複勝 (オッズ推定) =====
+        // 経験則: 複勝率 ≒ 単勝率 × 2.6 (3着以内に入る確率は単勝の約2.6倍)
+        // 上限90%, 下限5%
+        $placeProb = max(0.05, min(0.90, $prob * 2.6));
+
+        // 複勝オッズ推定: 概ね 複勝オッズ ≒ 1 + (単勝オッズ - 1) * 0.30
+        //   単勝1.5倍 → 複勝1.15倍
+        //   単勝3倍   → 複勝1.60倍
+        //   単勝10倍  → 複勝3.70倍
+        //   単勝50倍  → 複勝15.7倍
+        // 下限 1.1 倍 (元返しガード)
+        $placeOdds = max(1.1, 1.0 + ($winOdds - 1.0) * 0.30);
+        $placeEv   = $placeProb * $placeOdds - 1.0;
+        $placeLabel = $this->labelForEv($placeEv);
 
         return [
-            'prob'  => round($prob * 100, 1),     // %
-            'ev'    => round($ev, 3),
-            'label' => $label,
+            // 単勝
+            'prob'        => round($prob * 100, 1),    // %
+            'ev'          => round($ev, 3),
+            'label'       => $label,
+            // 複勝 (Phase EV-2)
+            'place_prob'  => round($placeProb * 100, 1),
+            'place_odds'  => round($placeOdds, 1),
+            'place_ev'    => round($placeEv, 3),
+            'place_label' => $placeLabel,
         ];
+    }
+
+    /** EV値から「お得/中/過大」のラベルを返す */
+    private function labelForEv(float $ev): string
+    {
+        if ($ev >= 0.30) return '◎お得';
+        if ($ev >= 0.10) return '○妙味';
+        if ($ev >= -0.10) return '中';
+        if ($ev >= -0.30) return '△やや過大';
+        return '✕過大評価';
     }
 
     /**

@@ -75,6 +75,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/{race}/memo',          [ShutubaController::class, 'memo'])->name('memo');
         Route::post('/{race}/race-note',     [ShutubaController::class, 'raceNote'])->name('race-note');
         Route::post('/{race}/generate-bets', [ShutubaController::class, 'generateBets'])->name('generate-bets');
+        // 最新オッズ手動取得 (Phase EV-2)
+        Route::post('/{race}/capture-odds',  [ShutubaController::class, 'captureOdds'])->name('capture-odds');
     });
 
     // 馬
