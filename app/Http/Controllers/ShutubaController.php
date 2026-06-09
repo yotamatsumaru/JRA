@@ -73,16 +73,33 @@ class ShutubaController extends Controller
 
         // 印を付けた馬がいるレースを把握(バッジ表示用)
         $userId = $request->user()->id;
+        $raceIds = collect($races->items())->pluck('id');
         $myMarkedRaceIds = RaceMark::where('user_id', $userId)
-            ->whereIn('race_id', collect($races->items())->pluck('id'))
+            ->whereIn('race_id', $raceIds)
             ->pluck('race_id')
             ->unique()
             ->all();
 
+        // ライブオッズの最新取得時刻を一覧バッジ用に取得 (Phase EV-2)
+        //   race_id => 最新 captured_at の Carbon
+        $liveOddsLatestAt = [];
+        if ($raceIds->isNotEmpty()) {
+            OddsSnapshot::selectRaw('race_id, MAX(captured_at) as latest_at')
+                ->whereIn('race_id', $raceIds)
+                ->groupBy('race_id')
+                ->get()
+                ->each(function ($row) use (&$liveOddsLatestAt) {
+                    $liveOddsLatestAt[(int) $row->race_id] = $row->latest_at
+                        ? \Carbon\Carbon::parse($row->latest_at)
+                        : null;
+                });
+        }
+
         return view('shutuba.index', [
-            'races'             => $races,
-            'venues'            => Venue::orderBy('code')->get(),
-            'my_marked_race_ids'=> array_flip($myMarkedRaceIds),
+            'races'              => $races,
+            'venues'             => Venue::orderBy('code')->get(),
+            'my_marked_race_ids' => array_flip($myMarkedRaceIds),
+            'live_odds_latest_at'=> $liveOddsLatestAt, // race_id => Carbon|null
         ]);
     }
 
@@ -401,11 +418,12 @@ class ShutubaController extends Controller
             ], 422);
         }
 
-        // 発走後 30 分以上経過していたら取得しない (オッズ無効化されているため)
-        if ($race->race_date && $race->race_date->lt(now()->subMinutes(30))) {
+        // 発走後 N 分以上経過していたら取得しない (オッズ無効化されているため)
+        $minutesAfterPost = (int) config('jra.odds_capture.minutes_after_post', 30);
+        if ($race->race_date && $race->race_date->lt(now()->subMinutes($minutesAfterPost))) {
             return response()->json([
                 'ok'      => false,
-                'message' => 'レース発走後のためオッズは取得できません',
+                'message' => "レース発走後{$minutesAfterPost}分超過のためオッズは取得できません",
             ], 422);
         }
 
@@ -951,25 +969,35 @@ class ShutubaController extends Controller
      */
     private function calcExpectedValue(float $total, float $winOdds): array
     {
+        // 設定値を読込 (config/jra.php で env からチューニング可能)
+        $cfg = config('jra.ev', []);
+        $probCoef       = (float) ($cfg['prob_coef']        ?? 0.42);
+        $probMin        = (float) ($cfg['prob_min']         ?? 0.01);
+        $probMax        = (float) ($cfg['prob_max']         ?? 0.50);
+        $placeProbRatio = (float) ($cfg['place_prob_ratio'] ?? 2.6);
+        $placeProbMin   = (float) ($cfg['place_prob_min']   ?? 0.05);
+        $placeProbMax   = (float) ($cfg['place_prob_max']   ?? 0.90);
+        $placeOddsCoef  = (float) ($cfg['place_odds_coef']  ?? 0.30);
+        $placeOddsFloor = (float) ($cfg['place_odds_floor'] ?? 1.1);
+
         // ===== 単勝 =====
         // total を 0〜100 → 0.02〜0.5 程度の勝率に圧縮
-        // total=70 で 21%、total=85 で 33% 程度
-        $prob = max(0.01, min(0.5, ($total / 100) * 0.42));
+        // total=70 で 21%、total=85 で 33% 程度 (デフォルト係数の場合)
+        $prob = max($probMin, min($probMax, ($total / 100) * $probCoef));
         $ev   = $prob * $winOdds - 1.0;
         $label = $this->labelForEv($ev);
 
         // ===== 複勝 (オッズ推定) =====
-        // 経験則: 複勝率 ≒ 単勝率 × 2.6 (3着以内に入る確率は単勝の約2.6倍)
-        // 上限90%, 下限5%
-        $placeProb = max(0.05, min(0.90, $prob * 2.6));
+        // 経験則: 複勝率 ≒ 単勝率 × place_prob_ratio (デフォルト 2.6)
+        // 3着以内に入る確率は単勝の約2.5-2.8倍 (JRA全体平均)
+        $placeProb = max($placeProbMin, min($placeProbMax, $prob * $placeProbRatio));
 
-        // 複勝オッズ推定: 概ね 複勝オッズ ≒ 1 + (単勝オッズ - 1) * 0.30
+        // 複勝オッズ推定: 1 + (単勝オッズ - 1) * place_odds_coef (デフォルト 0.30)
         //   単勝1.5倍 → 複勝1.15倍
         //   単勝3倍   → 複勝1.60倍
         //   単勝10倍  → 複勝3.70倍
         //   単勝50倍  → 複勝15.7倍
-        // 下限 1.1 倍 (元返しガード)
-        $placeOdds = max(1.1, 1.0 + ($winOdds - 1.0) * 0.30);
+        $placeOdds = max($placeOddsFloor, 1.0 + ($winOdds - 1.0) * $placeOddsCoef);
         $placeEv   = $placeProb * $placeOdds - 1.0;
         $placeLabel = $this->labelForEv($placeEv);
 
@@ -986,13 +1014,14 @@ class ShutubaController extends Controller
         ];
     }
 
-    /** EV値から「お得/中/過大」のラベルを返す */
+    /** EV値から「お得/中/過大」のラベルを返す (閾値は config 化) */
     private function labelForEv(float $ev): string
     {
-        if ($ev >= 0.30) return '◎お得';
-        if ($ev >= 0.10) return '○妙味';
-        if ($ev >= -0.10) return '中';
-        if ($ev >= -0.30) return '△やや過大';
+        $thr = config('jra.ev.label_thresholds', []);
+        if ($ev >= (float) ($thr['great']       ??  0.30)) return '◎お得';
+        if ($ev >= (float) ($thr['good']        ??  0.10)) return '○妙味';
+        if ($ev >= (float) ($thr['neutral_low'] ?? -0.10)) return '中';
+        if ($ev >= (float) ($thr['overrated']   ?? -0.30)) return '△やや過大';
         return '✕過大評価';
     }
 

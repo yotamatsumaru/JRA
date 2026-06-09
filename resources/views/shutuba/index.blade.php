@@ -130,6 +130,14 @@
                         @if (isset($my_marked_race_ids[$r->id]))
                             <span class="text-[10px] bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-2 py-0.5 rounded ml-1">印あり</span>
                         @endif
+                        {{-- ライブオッズあり (Phase EV-2): captured_at を一覧バッジで確認できる --}}
+                        @if (!empty($live_odds_latest_at[$r->id]))
+                            @php $oddsAt = $live_odds_latest_at[$r->id]; @endphp
+                            <span class="text-[10px] bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 px-2 py-0.5 rounded ml-1"
+                                title="最終オッズ取得: {{ $oddsAt->format('Y/m/d H:i') }}">
+                                📊 {{ $oddsAt->format('H:i') }}
+                            </span>
+                        @endif
                     </td>
                     <td class="px-3 py-2 text-right">
                         <a href="{{ route('shutuba.show', $r) }}" class="inline-flex items-center space-x-1 text-xs text-turf-700 hover:text-turf-900 dark:text-turf-400">
