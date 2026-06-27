@@ -478,6 +478,13 @@
                             </form>
                         </div>
                     </div>
+                    @else
+                    {{-- ゲスト: ログインボタン --}}
+                    <a href="{{ route('login') }}"
+                       class="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm bg-gold-500 hover:bg-gold-400 text-turf-900 font-bold transition-colors"
+                       title="ログイン">
+                        <x-icon name="user" class="w-4 h-4" /><span>ログイン</span>
+                    </a>
                     @endauth
 
                     {{-- モバイルメニュー --}}
@@ -540,7 +547,8 @@
                     </div>
                 </div>
 
-                {{-- 取込(折り畳み) --}}
+                @auth
+                {{-- 取込(折り畳み) — 要ログイン --}}
                 <div x-data="{ o: {{ request()->routeIs('import.*') ? 'true' : 'false' }} }" class="rounded">
                     <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
                         <span>取込</span>
@@ -567,7 +575,7 @@
                     </div>
                 </div>
 
-                {{-- 馬券(折り畳み) --}}
+                {{-- 馬券(折り畳み) — 要ログイン (上の @auth に含まれる) --}}
                 <div x-data="{ o: {{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? 'true' : 'false' }} }" class="rounded">
                     <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
                         <span>馬券</span>
@@ -588,6 +596,7 @@
                 <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $mActive : $mLink }}" @click="menuOpen=false">ウォッチリスト</a>
                 <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $mActive : $mLink }}" @click="menuOpen=false">予想共有</a>
                 <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $mActive : $mLink }}" @click="menuOpen=false">メモ</a>
+                @endauth
 
                 <div class="border-t border-turf-700 dark:border-gray-700 my-2"></div>
 
@@ -613,6 +622,11 @@
                         <x-icon name="logout" class="w-4 h-4" /> ログアウト
                     </button>
                 </form>
+                @else
+                {{-- ゲスト: ログインリンク (モバイル) --}}
+                <a href="{{ route('login') }}" class="flex items-center gap-2 px-3 py-2.5 rounded bg-gold-500 hover:bg-gold-400 text-turf-900 font-bold" @click="menuOpen=false">
+                    <x-icon name="user" class="w-4 h-4" /> ログイン
+                </a>
                 @endauth
             </div>
         </div>

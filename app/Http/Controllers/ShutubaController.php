@@ -72,13 +72,17 @@ class ShutubaController extends Controller
             ->withQueryString();
 
         // 印を付けた馬がいるレースを把握(バッジ表示用)
-        $userId = $request->user()->id;
+        // ゲスト閲覧時 ($request->user() === null) はマーク無しとして扱う
+        $userId  = optional($request->user())->id;
         $raceIds = collect($races->items())->pluck('id');
-        $myMarkedRaceIds = RaceMark::where('user_id', $userId)
-            ->whereIn('race_id', $raceIds)
-            ->pluck('race_id')
-            ->unique()
-            ->all();
+        $myMarkedRaceIds = [];
+        if ($userId) {
+            $myMarkedRaceIds = RaceMark::where('user_id', $userId)
+                ->whereIn('race_id', $raceIds)
+                ->pluck('race_id')
+                ->unique()
+                ->all();
+        }
 
         // ライブオッズの最新取得時刻を一覧バッジ用に取得 (Phase EV-2)
         //   race_id => 最新 captured_at の Carbon
@@ -113,7 +117,8 @@ class ShutubaController extends Controller
      */
     public function show(Race $race, Request $request): View
     {
-        $userId = $request->user()->id;
+        // ゲスト閲覧時はマーク・メモが見えないだけで、出馬表本体は表示される
+        $userId = optional($request->user())->id;
 
         $race->load(['venue', 'results.horse', 'results.jockey', 'results.trainer']);
 
@@ -129,11 +134,13 @@ class ShutubaController extends Controller
         $weights  = $settings['weights'];
         $minRuns  = $settings['min_runs'];
 
-        // 既存の印・スコアキャッシュを取得
-        $marks = RaceMark::where('user_id', $userId)
-            ->where('race_id', $race->id)
-            ->get()
-            ->keyBy('race_result_id');
+        // 既存の印・スコアキャッシュを取得 (ゲスト閲覧時は空コレクション)
+        $marks = $userId
+            ? RaceMark::where('user_id', $userId)
+                ->where('race_id', $race->id)
+                ->get()
+                ->keyBy('race_result_id')
+            : collect();
 
         $recompute = $request->boolean('recompute');
 
@@ -252,24 +259,34 @@ class ShutubaController extends Controller
                     forceRefresh: $recompute || $tooManyZeros,
                 );
 
-                // upsert
-                $mark = RaceMark::updateOrCreate(
-                    ['user_id' => $userId, 'race_result_id' => $result->id],
-                    [
-                        'race_id'         => $race->id,
-                        'mark'            => $mark?->mark,
-                        'memo'            => $mark?->memo,
-                        'score_total'     => round((float) $eval['total'], 2),
-                        'score_pedigree'  => round((float) $eval['sub']['pedigree'], 2),
-                        'score_jockey'    => round((float) $eval['sub']['jockey'], 2),
-                        'score_horse'     => round((float) $eval['sub']['horse'], 2),
-                        'score_roi'       => round((float) $eval['sub']['roi'], 2),
-                        'score_frame'     => round((float) $eval['sub']['frame'], 2),
-                        'score_course'    => round((float) $eval['sub']['course'], 2),
-                        'score_style'     => round((float) $eval['sub']['style'], 2),
-                        'scored_at'       => now(),
-                    ]
-                );
+                // upsert: ログインユーザーのみ DB にスコアを保存。
+                // ゲスト閲覧時はオンメモリの RaceMark インスタンスを作って画面表示にだけ使う。
+                $scoreAttrs = [
+                    'race_id'         => $race->id,
+                    'mark'            => $mark?->mark,
+                    'memo'            => $mark?->memo,
+                    'score_total'     => round((float) $eval['total'], 2),
+                    'score_pedigree'  => round((float) $eval['sub']['pedigree'], 2),
+                    'score_jockey'    => round((float) $eval['sub']['jockey'], 2),
+                    'score_horse'     => round((float) $eval['sub']['horse'], 2),
+                    'score_roi'       => round((float) $eval['sub']['roi'], 2),
+                    'score_frame'     => round((float) $eval['sub']['frame'], 2),
+                    'score_course'    => round((float) $eval['sub']['course'], 2),
+                    'score_style'     => round((float) $eval['sub']['style'], 2),
+                    'scored_at'       => now(),
+                ];
+                if ($userId) {
+                    $mark = RaceMark::updateOrCreate(
+                        ['user_id' => $userId, 'race_result_id' => $result->id],
+                        $scoreAttrs
+                    );
+                } else {
+                    // ゲスト: DB 書き込みせず、画面表示用の一時インスタンスだけ作る
+                    $mark = new RaceMark(array_merge($scoreAttrs, [
+                        'user_id'        => null,
+                        'race_result_id' => $result->id,
+                    ]));
+                }
             }
 
             // 種牡馬コース傾向ヒント (Phase C-1)
@@ -348,11 +365,13 @@ class ShutubaController extends Controller
                 $markSummary[$r->mark][] = $r->result->horse_number;
             }
         }
-        // フィルタの影響を受けないよう、サマリは全馬から再計算
-        $allMarks = RaceMark::where('user_id', $userId)
-            ->where('race_id', $race->id)
-            ->whereNotNull('mark')
-            ->get();
+        // フィルタの影響を受けないよう、サマリは全馬から再計算 (ゲスト時は空)
+        $allMarks = $userId
+            ? RaceMark::where('user_id', $userId)
+                ->where('race_id', $race->id)
+                ->whereNotNull('mark')
+                ->get()
+            : collect();
         foreach (RaceMark::MARKS as $m) {
             $markSummary[$m] = [];
         }
@@ -366,20 +385,22 @@ class ShutubaController extends Controller
             sort($markSummary[$k]);
         }
 
-        // お気に入り判定 (Phase 1-M)
-        $favHorseIds   = \App\Models\Favorite::userKey($userId, 'horse');
-        $favJockeyIds  = \App\Models\Favorite::userKey($userId, 'jockey');
-        $favTrainerIds = \App\Models\Favorite::userKey($userId, 'trainer');
+        // お気に入り判定 (Phase 1-M) — ゲスト時は空配列
+        $favHorseIds   = $userId ? \App\Models\Favorite::userKey($userId, 'horse')   : [];
+        $favJockeyIds  = $userId ? \App\Models\Favorite::userKey($userId, 'jockey')  : [];
+        $favTrainerIds = $userId ? \App\Models\Favorite::userKey($userId, 'trainer') : [];
         foreach ($rows as $r) {
             $r->is_favorite = ($r->horse && in_array($r->horse->id, $favHorseIds, true))
                 || ($r->jockey && in_array($r->jockey->id, $favJockeyIds, true))
                 || ($r->trainer && in_array($r->trainer->id, $favTrainerIds, true));
         }
 
-        // レース全体メモ (Phase 1-T)
-        $raceNote = \App\Models\RaceUserNote::where('user_id', $userId)
-            ->where('race_id', $race->id)
-            ->first();
+        // レース全体メモ (Phase 1-T) — ゲスト時は無し
+        $raceNote = $userId
+            ? \App\Models\RaceUserNote::where('user_id', $userId)
+                ->where('race_id', $race->id)
+                ->first()
+            : null;
 
         return view('shutuba.show', [
             'race'             => $race,
@@ -1092,7 +1113,9 @@ class ShutubaController extends Controller
      */
     private function buildRecommendedBets(Race $race): array
     {
+        // ゲスト閲覧時は推奨買い目セクションを空にする
         $userId = auth()->id();
+        if (!$userId) return [];
         $marks = RaceMark::where('user_id', $userId)
             ->where('race_id', $race->id)
             ->whereNotNull('mark')

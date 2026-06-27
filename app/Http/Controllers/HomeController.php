@@ -8,9 +8,8 @@ class HomeController extends Controller
 {
     public function index(Request $request)
     {
-        if ($request->user()) {
-            return redirect()->route('dashboard');
-        }
-        return view('home');
+        // ログイン/ゲスト問わずダッシュボードを表示
+        // (ダッシュボードはゲスト閲覧可能)
+        return redirect()->route('dashboard');
     }
 }
