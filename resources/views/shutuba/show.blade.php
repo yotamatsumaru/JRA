@@ -64,6 +64,11 @@
         </x-slot>
     </x-page-header>
 
+    {{-- JRA 公式風レースナビゲーター (Phase NAV-1) --}}
+    @isset($navigator)
+        <x-race-navigator :navigator="$navigator" />
+    @endisset
+
     {{-- Phase 4-S: 共有ダイアログ --}}
     <div x-show="shareDialog.open" x-cloak
          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"

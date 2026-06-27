@@ -402,6 +402,10 @@ class ShutubaController extends Controller
                 ->first()
             : null;
 
+        // レースナビゲーター用データ (JRA 公式風: 開催日 × 競馬場 × R番号)
+        // 同じ開催週末 (=直近の土日) の全レースを取得し、Blade で日付・会場別にグルーピング
+        $navigator = $this->buildRaceNavigator($race);
+
         return view('shutuba.show', [
             'race'             => $race,
             'rows'             => $rows,
@@ -416,6 +420,8 @@ class ShutubaController extends Controller
             // ライブオッズ表示用 (Phase EV-2)
             'live_odds_at'     => $liveOddsAt,
             'has_live_odds'    => !empty($liveOddsMap),
+            // レースナビゲーター (JRA 公式風)
+            'navigator'        => $navigator,
         ]);
     }
 
@@ -1103,6 +1109,136 @@ class ShutubaController extends Controller
             'shows'     => $shows,
             'win_rate'  => $runs > 0 ? round($wins / $runs * 100, 1)  : 0,
             'show_rate' => $runs > 0 ? round($shows / $runs * 100, 1) : 0,
+        ];
+    }
+
+    /**
+     * JRA 公式風レースナビゲーター用データを構築
+     *
+     * 同じ開催週末 (=直近の土+日) の全レースを取得し、
+     * 日付 → 競馬場 → R番号 の階層構造で返す。
+     *
+     * @return array{
+     *   dates: array<string, array{
+     *     date:string,
+     *     label:string,
+     *     weekday:string,
+     *     is_current:bool,
+     *     venues: array<int, array{
+     *       venue_id:int,
+     *       venue_name:string,
+     *       kaisai_label:string,
+     *       is_current:bool,
+     *       first_race_id:int,
+     *       races: array<int, array{id:int, race_number:int, name:string, is_current:bool}>,
+     *     }>,
+     *   }>,
+     *   current_race_id:int,
+     *   current_date:string,
+     *   current_venue_id:int,
+     * }
+     */
+    private function buildRaceNavigator(Race $race): array
+    {
+        $raceDate = $race->race_date instanceof \Carbon\CarbonInterface
+            ? $race->race_date->copy()
+            : \Carbon\Carbon::parse($race->race_date);
+
+        // 当該レースの日付を含む土〜日の2日間を求める
+        // (例: 火曜なら直前の土・日, 木曜なら次の土・日 ではなく、
+        //  競馬は基本土日開催なので "近い方の土曜を起点に土+日" にする)
+        $dow = $raceDate->dayOfWeek; // 0=Sun, 6=Sat
+        if ($dow === \Carbon\Carbon::SATURDAY) {
+            $sat = $raceDate->copy();
+        } elseif ($dow === \Carbon\Carbon::SUNDAY) {
+            $sat = $raceDate->copy()->subDay();
+        } else {
+            // 平日 (祝日開催など) → 直近の土曜を基点に
+            $sat = $raceDate->copy()->previous(\Carbon\Carbon::SATURDAY);
+            // ただし当該日が土より前なら次の土曜
+            if ($sat->lt($raceDate->copy()->startOfDay()->subDays(6))) {
+                $sat = $raceDate->copy()->next(\Carbon\Carbon::SATURDAY);
+            }
+        }
+        $sun = $sat->copy()->addDay();
+
+        // 該当2日間 + 当該レース日 をカバーする日付一覧
+        $targetDates = collect([$sat, $sun])
+            ->push($raceDate)
+            ->map(fn ($d) => $d->toDateString())
+            ->unique()
+            ->sort()
+            ->values();
+
+        $races = Race::with('venue')
+            ->whereIn('race_date', $targetDates->all())
+            ->orderBy('race_date')
+            ->orderBy('venue_id')
+            ->orderBy('race_number')
+            ->get();
+
+        $weekdayJp = ['日曜', '月曜', '火曜', '水曜', '木曜', '金曜', '土曜'];
+        $currentDateStr = $raceDate->toDateString();
+        $currentVenueId = (int) $race->venue_id;
+        $currentRaceId  = (int) $race->id;
+
+        $byDate = [];
+        foreach ($races as $r) {
+            $dateStr = $r->race_date instanceof \Carbon\CarbonInterface
+                ? $r->race_date->toDateString()
+                : (string) $r->race_date;
+            $dateCarbon = \Carbon\Carbon::parse($dateStr);
+
+            if (!isset($byDate[$dateStr])) {
+                $byDate[$dateStr] = [
+                    'date'       => $dateStr,
+                    'label'      => $dateCarbon->format('n月j日'),
+                    'weekday'    => $weekdayJp[$dateCarbon->dayOfWeek] ?? '',
+                    'is_current' => $dateStr === $currentDateStr,
+                    'venues'     => [],
+                ];
+            }
+
+            $vid = (int) $r->venue_id;
+            if (!isset($byDate[$dateStr]['venues'][$vid])) {
+                // 開催ラベル: "2回福島1日" 形式 (kaisai_kai と kaisai_day がある場合)
+                $venueName = $r->venue?->name ?? '?';
+                $kai  = $r->kaisai_kai ?? null;
+                $day  = $r->kaisai_day ?? null;
+                if ($kai && $day) {
+                    $kaisaiLabel = "{$kai}回{$venueName}{$day}日";
+                } else {
+                    $kaisaiLabel = $venueName;
+                }
+
+                $byDate[$dateStr]['venues'][$vid] = [
+                    'venue_id'      => $vid,
+                    'venue_name'    => $venueName,
+                    'kaisai_label'  => $kaisaiLabel,
+                    'is_current'    => ($dateStr === $currentDateStr && $vid === $currentVenueId),
+                    'first_race_id' => (int) $r->id,
+                    'races'         => [],
+                ];
+            }
+
+            $byDate[$dateStr]['venues'][$vid]['races'][] = [
+                'id'          => (int) $r->id,
+                'race_number' => (int) $r->race_number,
+                'name'        => (string) $r->name,
+                'is_current'  => ((int) $r->id === $currentRaceId),
+            ];
+        }
+
+        // venues の連想配列を数値添字配列に戻す (Blade での @foreach 安定化)
+        foreach ($byDate as $dkey => $block) {
+            $byDate[$dkey]['venues'] = array_values($block['venues']);
+        }
+
+        return [
+            'dates'            => $byDate,
+            'current_race_id'  => $currentRaceId,
+            'current_date'     => $currentDateStr,
+            'current_venue_id' => $currentVenueId,
         ];
     }
 
