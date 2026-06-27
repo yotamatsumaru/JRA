@@ -5,15 +5,19 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\Bet;
 use App\Models\BetLeg;
+use App\Models\OddsSnapshot;
 use App\Models\Race;
 use App\Models\RaceMark;
 use App\Models\RaceResult;
 use App\Models\Venue;
+use App\Services\NetkeibaScraper;
+use App\Services\OddsSnapshotService;
 use App\Services\PedigreeRecommendService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 /**
@@ -68,17 +72,38 @@ class ShutubaController extends Controller
             ->withQueryString();
 
         // 印を付けた馬がいるレースを把握(バッジ表示用)
-        $userId = $request->user()->id;
-        $myMarkedRaceIds = RaceMark::where('user_id', $userId)
-            ->whereIn('race_id', collect($races->items())->pluck('id'))
-            ->pluck('race_id')
-            ->unique()
-            ->all();
+        // ゲスト閲覧時 ($request->user() === null) はマーク無しとして扱う
+        $userId  = optional($request->user())->id;
+        $raceIds = collect($races->items())->pluck('id');
+        $myMarkedRaceIds = [];
+        if ($userId) {
+            $myMarkedRaceIds = RaceMark::where('user_id', $userId)
+                ->whereIn('race_id', $raceIds)
+                ->pluck('race_id')
+                ->unique()
+                ->all();
+        }
+
+        // ライブオッズの最新取得時刻を一覧バッジ用に取得 (Phase EV-2)
+        //   race_id => 最新 captured_at の Carbon
+        $liveOddsLatestAt = [];
+        if ($raceIds->isNotEmpty()) {
+            OddsSnapshot::selectRaw('race_id, MAX(captured_at) as latest_at')
+                ->whereIn('race_id', $raceIds)
+                ->groupBy('race_id')
+                ->get()
+                ->each(function ($row) use (&$liveOddsLatestAt) {
+                    $liveOddsLatestAt[(int) $row->race_id] = $row->latest_at
+                        ? \Carbon\Carbon::parse($row->latest_at)
+                        : null;
+                });
+        }
 
         return view('shutuba.index', [
-            'races'             => $races,
-            'venues'            => Venue::orderBy('code')->get(),
-            'my_marked_race_ids'=> array_flip($myMarkedRaceIds),
+            'races'              => $races,
+            'venues'             => Venue::orderBy('code')->get(),
+            'my_marked_race_ids' => array_flip($myMarkedRaceIds),
+            'live_odds_latest_at'=> $liveOddsLatestAt, // race_id => Carbon|null
         ]);
     }
 
@@ -92,7 +117,8 @@ class ShutubaController extends Controller
      */
     public function show(Race $race, Request $request): View
     {
-        $userId = $request->user()->id;
+        // ゲスト閲覧時はマーク・メモが見えないだけで、出馬表本体は表示される
+        $userId = optional($request->user())->id;
 
         $race->load(['venue', 'results.horse', 'results.jockey', 'results.trainer']);
 
@@ -108,13 +134,36 @@ class ShutubaController extends Controller
         $weights  = $settings['weights'];
         $minRuns  = $settings['min_runs'];
 
-        // 既存の印・スコアキャッシュを取得
-        $marks = RaceMark::where('user_id', $userId)
-            ->where('race_id', $race->id)
-            ->get()
-            ->keyBy('race_result_id');
+        // 既存の印・スコアキャッシュを取得 (ゲスト閲覧時は空コレクション)
+        $marks = $userId
+            ? RaceMark::where('user_id', $userId)
+                ->where('race_id', $race->id)
+                ->get()
+                ->keyBy('race_result_id')
+            : collect();
 
         $recompute = $request->boolean('recompute');
+
+        // -- 最新オッズスナップショット読込 (Phase EV-2)
+        //    odds_snapshots テーブルの最新行を読み、horse_number=>['win_odds'=>..,'popularity'=>..] の形に整形。
+        //    出馬表時点の race_results.win_odds より優先して EV 計算に使う。
+        //    スナップショットが無い場合は null のまま (フォールバックで race_results.win_odds を使う)
+        $latestSnapshot = OddsSnapshot::where('race_id', $race->id)
+            ->orderByDesc('captured_at')
+            ->first();
+        $liveOddsMap = [];   // horse_number => ['win_odds' => float|null, 'popularity' => int|null]
+        $liveOddsAt  = null; // 取得時刻 (画面表示用)
+        if ($latestSnapshot && is_array($latestSnapshot->payload)) {
+            $liveOddsAt = $latestSnapshot->captured_at;
+            foreach ($latestSnapshot->payload as $hno => $row) {
+                $hno = (int) $hno;
+                if ($hno < 1) continue;
+                $liveOddsMap[$hno] = [
+                    'win_odds'   => isset($row['win_odds']) ? (float) $row['win_odds'] : null,
+                    'popularity' => isset($row['popularity']) ? (int) $row['popularity'] : null,
+                ];
+            }
+        }
 
         // -- 1パス目: 各馬の過去走/脚質を先に集計してペースを推定 --
         //    (脚質スコアは pace に依存するため evaluateHorse の前に決定する必要がある)
@@ -210,24 +259,34 @@ class ShutubaController extends Controller
                     forceRefresh: $recompute || $tooManyZeros,
                 );
 
-                // upsert
-                $mark = RaceMark::updateOrCreate(
-                    ['user_id' => $userId, 'race_result_id' => $result->id],
-                    [
-                        'race_id'         => $race->id,
-                        'mark'            => $mark?->mark,
-                        'memo'            => $mark?->memo,
-                        'score_total'     => round((float) $eval['total'], 2),
-                        'score_pedigree'  => round((float) $eval['sub']['pedigree'], 2),
-                        'score_jockey'    => round((float) $eval['sub']['jockey'], 2),
-                        'score_horse'     => round((float) $eval['sub']['horse'], 2),
-                        'score_roi'       => round((float) $eval['sub']['roi'], 2),
-                        'score_frame'     => round((float) $eval['sub']['frame'], 2),
-                        'score_course'    => round((float) $eval['sub']['course'], 2),
-                        'score_style'     => round((float) $eval['sub']['style'], 2),
-                        'scored_at'       => now(),
-                    ]
-                );
+                // upsert: ログインユーザーのみ DB にスコアを保存。
+                // ゲスト閲覧時はオンメモリの RaceMark インスタンスを作って画面表示にだけ使う。
+                $scoreAttrs = [
+                    'race_id'         => $race->id,
+                    'mark'            => $mark?->mark,
+                    'memo'            => $mark?->memo,
+                    'score_total'     => round((float) $eval['total'], 2),
+                    'score_pedigree'  => round((float) $eval['sub']['pedigree'], 2),
+                    'score_jockey'    => round((float) $eval['sub']['jockey'], 2),
+                    'score_horse'     => round((float) $eval['sub']['horse'], 2),
+                    'score_roi'       => round((float) $eval['sub']['roi'], 2),
+                    'score_frame'     => round((float) $eval['sub']['frame'], 2),
+                    'score_course'    => round((float) $eval['sub']['course'], 2),
+                    'score_style'     => round((float) $eval['sub']['style'], 2),
+                    'scored_at'       => now(),
+                ];
+                if ($userId) {
+                    $mark = RaceMark::updateOrCreate(
+                        ['user_id' => $userId, 'race_result_id' => $result->id],
+                        $scoreAttrs
+                    );
+                } else {
+                    // ゲスト: DB 書き込みせず、画面表示用の一時インスタンスだけ作る
+                    $mark = new RaceMark(array_merge($scoreAttrs, [
+                        'user_id'        => null,
+                        'race_result_id' => $result->id,
+                    ]));
+                }
             }
 
             // 種牡馬コース傾向ヒント (Phase C-1)
@@ -236,10 +295,27 @@ class ShutubaController extends Controller
                 $sireHint = $this->buildSireCourseHint($result->horse->father, $cond);
             }
 
-            // 期待値計算 (Phase 1-B)
+            // 期待値計算 (Phase 1-B → EV-2: ライブオッズ優先)
+            //   優先順:
+            //     1) odds_snapshots の最新 win_odds (10分毎の自動取得 or 手動取得)
+            //     2) race_results.win_odds (出馬表/結果インポート時)
+            //   どちらの出典かを ev[source] に記録してテンプレートでバッジ表示する
             $ev = null;
-            if ($result->win_odds && $mark?->score_total !== null) {
-                $ev = $this->calcExpectedValue((float) $mark->score_total, (float) $result->win_odds);
+            $oddsSource = null;
+            $usedWinOdds = null;
+            $live = $liveOddsMap[$result->horse_number] ?? null;
+            if ($live && $live['win_odds']) {
+                $usedWinOdds = (float) $live['win_odds'];
+                $oddsSource  = 'live';
+            } elseif ($result->win_odds) {
+                $usedWinOdds = (float) $result->win_odds;
+                $oddsSource  = 'static';
+            }
+            if ($usedWinOdds && $mark?->score_total !== null) {
+                $ev = $this->calcExpectedValue((float) $mark->score_total, $usedWinOdds);
+                $ev['source']      = $oddsSource;
+                $ev['win_odds']    = $usedWinOdds;
+                $ev['captured_at'] = $oddsSource === 'live' ? $liveOddsAt : null;
             }
 
             $rows[] = (object) [
@@ -289,11 +365,13 @@ class ShutubaController extends Controller
                 $markSummary[$r->mark][] = $r->result->horse_number;
             }
         }
-        // フィルタの影響を受けないよう、サマリは全馬から再計算
-        $allMarks = RaceMark::where('user_id', $userId)
-            ->where('race_id', $race->id)
-            ->whereNotNull('mark')
-            ->get();
+        // フィルタの影響を受けないよう、サマリは全馬から再計算 (ゲスト時は空)
+        $allMarks = $userId
+            ? RaceMark::where('user_id', $userId)
+                ->where('race_id', $race->id)
+                ->whereNotNull('mark')
+                ->get()
+            : collect();
         foreach (RaceMark::MARKS as $m) {
             $markSummary[$m] = [];
         }
@@ -307,20 +385,22 @@ class ShutubaController extends Controller
             sort($markSummary[$k]);
         }
 
-        // お気に入り判定 (Phase 1-M)
-        $favHorseIds   = \App\Models\Favorite::userKey($userId, 'horse');
-        $favJockeyIds  = \App\Models\Favorite::userKey($userId, 'jockey');
-        $favTrainerIds = \App\Models\Favorite::userKey($userId, 'trainer');
+        // お気に入り判定 (Phase 1-M) — ゲスト時は空配列
+        $favHorseIds   = $userId ? \App\Models\Favorite::userKey($userId, 'horse')   : [];
+        $favJockeyIds  = $userId ? \App\Models\Favorite::userKey($userId, 'jockey')  : [];
+        $favTrainerIds = $userId ? \App\Models\Favorite::userKey($userId, 'trainer') : [];
         foreach ($rows as $r) {
             $r->is_favorite = ($r->horse && in_array($r->horse->id, $favHorseIds, true))
                 || ($r->jockey && in_array($r->jockey->id, $favJockeyIds, true))
                 || ($r->trainer && in_array($r->trainer->id, $favTrainerIds, true));
         }
 
-        // レース全体メモ (Phase 1-T)
-        $raceNote = \App\Models\RaceUserNote::where('user_id', $userId)
-            ->where('race_id', $race->id)
-            ->first();
+        // レース全体メモ (Phase 1-T) — ゲスト時は無し
+        $raceNote = $userId
+            ? \App\Models\RaceUserNote::where('user_id', $userId)
+                ->where('race_id', $race->id)
+                ->first()
+            : null;
 
         return view('shutuba.show', [
             'race'             => $race,
@@ -333,6 +413,69 @@ class ShutubaController extends Controller
             'mark_summary'     => $markSummary,
             'pace_forecast'    => $paceForecast,
             'race_note'        => $raceNote,
+            // ライブオッズ表示用 (Phase EV-2)
+            'live_odds_at'     => $liveOddsAt,
+            'has_live_odds'    => !empty($liveOddsMap),
+        ]);
+    }
+
+    /**
+     * 最新オッズを netkeiba から手動取得 (Phase EV-2)
+     *
+     * POST /shutuba/{race}/capture-odds (Ajax)
+     *
+     * 出馬表ページから「📊 最新オッズ取得」ボタンで呼び出される。
+     * 取得結果は odds_snapshots テーブルに保存され、次回ページ表示時に
+     * EV 計算に最新値として反映される。
+     *
+     * Response: { ok: bool, captured_at?: iso8601, message?: string, count?: int }
+     */
+    public function captureOdds(Race $race, Request $request): JsonResponse
+    {
+        if (empty($race->netkeiba_id)) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'netkeiba_id が登録されていないレースです (出馬表をインポートして下さい)',
+            ], 422);
+        }
+
+        // 発走後 N 分以上経過していたら取得しない (オッズ無効化されているため)
+        $minutesAfterPost = (int) config('jra.odds_capture.minutes_after_post', 30);
+        if ($race->race_date && $race->race_date->lt(now()->subMinutes($minutesAfterPost))) {
+            return response()->json([
+                'ok'      => false,
+                'message' => "レース発走後{$minutesAfterPost}分超過のためオッズは取得できません",
+            ], 422);
+        }
+
+        try {
+            $service = new OddsSnapshotService(app(NetkeibaScraper::class));
+            $snap = $service->captureForRace($race);
+        } catch (\Throwable $e) {
+            Log::warning("ShutubaController::captureOdds failed race#{$race->id}: " . $e->getMessage());
+            return response()->json([
+                'ok'      => false,
+                'message' => 'オッズ取得エラー: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        if (!$snap) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'スナップショット作成不可 (発走後 / オッズが取得できない)',
+            ], 422);
+        }
+
+        try {
+            AuditLog::record('odds.capture', $race, ['source' => 'shutuba_manual', 'horses' => count($snap->payload ?? [])]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'ok'          => true,
+            'captured_at' => $snap->captured_at->toIso8601String(),
+            'captured_at_human' => $snap->captured_at->format('H:i:s'),
+            'count'       => count($snap->payload ?? []),
+            'message'     => sprintf('オッズを取得しました (%d頭, %s)', count($snap->payload ?? []), $snap->captured_at->format('H:i:s')),
         ]);
     }
 
@@ -826,34 +969,81 @@ class ShutubaController extends Controller
     }
 
     /**
-     * 期待値(EV)を計算 (Phase 1-B)
+     * 期待値(EV)を計算 (Phase 1-B → EV-2 拡張)
      *
-     * total スコアを推定勝率に変換し、オッズと掛けて EV を出す。
-     *   推定勝率 = total / 100 * (基準勝率係数)
-     *   EV       = 推定勝率 * オッズ - 1
+     * total スコアを推定勝率に変換し、単勝オッズで EV を出す。
+     * さらに「単勝オッズから複勝オッズを推定」して複勝EVも計算する。
+     *
+     *   推定単勝勝率 = clamp( total / 100 * 0.42, 0.01, 0.5 )
+     *   推定複勝率   = clamp( 単勝勝率 * 2.6,    0.05, 0.90 )  ※経験則(JRA 全体平均で複勝/単勝 ≒ 2.5-2.8)
+     *   推定複勝オッズ = max( 1.1, 1 + (単勝オッズ - 1) * 0.30 )  ※経験則(複勝/単勝 ≒ 0.25-0.35)
+     *
+     *   単勝EV = 単勝勝率 * 単勝オッズ - 1
+     *   複勝EV = 複勝率   * 推定複勝オッズ - 1
+     *
      * EV>0 が「お得」、EV<0 が「過大評価」。
      *
-     * @return array{prob:float, ev:float, label:string}
+     * @return array{
+     *   prob:float, ev:float, label:string,
+     *   place_prob:float, place_odds:float, place_ev:float, place_label:string
+     * }
      */
     private function calcExpectedValue(float $total, float $winOdds): array
     {
-        // total を 0〜100 → 0.02〜0.5 程度の勝率に圧縮
-        // total=70 で 21%、total=85 で 33% 程度
-        $prob = max(0.01, min(0.5, ($total / 100) * 0.42));
-        $ev   = $prob * $winOdds - 1.0;
+        // 設定値を読込 (config/jra.php で env からチューニング可能)
+        $cfg = config('jra.ev', []);
+        $probCoef       = (float) ($cfg['prob_coef']        ?? 0.42);
+        $probMin        = (float) ($cfg['prob_min']         ?? 0.01);
+        $probMax        = (float) ($cfg['prob_max']         ?? 0.50);
+        $placeProbRatio = (float) ($cfg['place_prob_ratio'] ?? 2.6);
+        $placeProbMin   = (float) ($cfg['place_prob_min']   ?? 0.05);
+        $placeProbMax   = (float) ($cfg['place_prob_max']   ?? 0.90);
+        $placeOddsCoef  = (float) ($cfg['place_odds_coef']  ?? 0.30);
+        $placeOddsFloor = (float) ($cfg['place_odds_floor'] ?? 1.1);
 
-        $label = '中';
-        if ($ev >= 0.30) $label = '◎お得';
-        elseif ($ev >= 0.10) $label = '○妙味';
-        elseif ($ev >= -0.10) $label = '中';
-        elseif ($ev >= -0.30) $label = '△やや過大';
-        else $label = '✕過大評価';
+        // ===== 単勝 =====
+        // total を 0〜100 → 0.02〜0.5 程度の勝率に圧縮
+        // total=70 で 21%、total=85 で 33% 程度 (デフォルト係数の場合)
+        $prob = max($probMin, min($probMax, ($total / 100) * $probCoef));
+        $ev   = $prob * $winOdds - 1.0;
+        $label = $this->labelForEv($ev);
+
+        // ===== 複勝 (オッズ推定) =====
+        // 経験則: 複勝率 ≒ 単勝率 × place_prob_ratio (デフォルト 2.6)
+        // 3着以内に入る確率は単勝の約2.5-2.8倍 (JRA全体平均)
+        $placeProb = max($placeProbMin, min($placeProbMax, $prob * $placeProbRatio));
+
+        // 複勝オッズ推定: 1 + (単勝オッズ - 1) * place_odds_coef (デフォルト 0.30)
+        //   単勝1.5倍 → 複勝1.15倍
+        //   単勝3倍   → 複勝1.60倍
+        //   単勝10倍  → 複勝3.70倍
+        //   単勝50倍  → 複勝15.7倍
+        $placeOdds = max($placeOddsFloor, 1.0 + ($winOdds - 1.0) * $placeOddsCoef);
+        $placeEv   = $placeProb * $placeOdds - 1.0;
+        $placeLabel = $this->labelForEv($placeEv);
 
         return [
-            'prob'  => round($prob * 100, 1),     // %
-            'ev'    => round($ev, 3),
-            'label' => $label,
+            // 単勝
+            'prob'        => round($prob * 100, 1),    // %
+            'ev'          => round($ev, 3),
+            'label'       => $label,
+            // 複勝 (Phase EV-2)
+            'place_prob'  => round($placeProb * 100, 1),
+            'place_odds'  => round($placeOdds, 1),
+            'place_ev'    => round($placeEv, 3),
+            'place_label' => $placeLabel,
         ];
+    }
+
+    /** EV値から「お得/中/過大」のラベルを返す (閾値は config 化) */
+    private function labelForEv(float $ev): string
+    {
+        $thr = config('jra.ev.label_thresholds', []);
+        if ($ev >= (float) ($thr['great']       ??  0.30)) return '◎お得';
+        if ($ev >= (float) ($thr['good']        ??  0.10)) return '○妙味';
+        if ($ev >= (float) ($thr['neutral_low'] ?? -0.10)) return '中';
+        if ($ev >= (float) ($thr['overrated']   ?? -0.30)) return '△やや過大';
+        return '✕過大評価';
     }
 
     /**
@@ -923,7 +1113,9 @@ class ShutubaController extends Controller
      */
     private function buildRecommendedBets(Race $race): array
     {
+        // ゲスト閲覧時は推奨買い目セクションを空にする
         $userId = auth()->id();
+        if (!$userId) return [];
         $marks = RaceMark::where('user_id', $userId)
             ->where('race_id', $race->id)
             ->whereNotNull('mark')

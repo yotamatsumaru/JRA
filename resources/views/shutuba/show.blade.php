@@ -282,6 +282,29 @@
                 title="全頭のスコアキャッシュを破棄して再計算(0 が直らないときに使う)">
                 ↻ 再計算
             </a>
+
+            {{-- 最新オッズ取得 (Phase EV-2) --}}
+            @if ($race->netkeiba_id)
+                <button type="button" id="btn-capture-odds"
+                    data-url="{{ route('shutuba.capture-odds', $race) }}"
+                    class="ml-2 px-2 py-1 rounded border bg-sky-600 text-white border-sky-600 hover:bg-sky-700 inline-flex items-center gap-1"
+                    title="netkeiba から最新オッズを取得し、期待値(EV)を再計算します">
+                    <span>📊 最新オッズ取得</span>
+                </button>
+                <span id="capture-odds-status" class="ml-1 text-[11px] text-gray-500"></span>
+
+                @if ($has_live_odds && $live_odds_at)
+                    <span class="ml-2 inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded"
+                        title="現在表示中の EV は {{ $live_odds_at->format('Y/m/d H:i') }} 時点のライブオッズで計算されています">
+                        ● ライブEV ({{ $live_odds_at->format('H:i') }})
+                    </span>
+                @elseif (!$has_live_odds)
+                    <span class="ml-2 inline-flex items-center gap-1 text-[11px] text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
+                        title="現在の EV は出馬表時点の単勝オッズで計算されています。最新オッズ取得を押すとライブオッズに更新されます">
+                        ○ 出馬表時EV
+                    </span>
+                @endif
+            @endif
         </div>
     </div>
 
@@ -297,8 +320,9 @@
                     <th class="text-left px-2 py-2">騎手 / 厩舎</th>
                     <th class="text-left px-2 py-2">血統 / コース傾向</th>
                     <th class="text-right px-2 py-2 w-[60px]">人気</th>
-                    <th class="text-right px-2 py-2 w-[70px]">単オッズ</th>
-                    <th class="text-right px-2 py-2 w-[70px]">EV</th>
+                    <th class="text-right px-2 py-2 w-[80px]" title="単勝オッズ (ライブ取得時はその値を表示)">単オッズ</th>
+                    <th class="text-right px-2 py-2 w-[80px]" title="単勝期待値 = 推定勝率 × 単勝オッズ - 1">単EV</th>
+                    <th class="text-right px-2 py-2 w-[80px]" title="複勝期待値 (オッズ推定値ベース)">複EV</th>
                     <th class="text-right px-2 py-2 w-[54px]" title="血統(父60%/母父40%)">血統</th>
                     <th class="text-right px-2 py-2 w-[54px]" title="騎手×条件 複勝率">騎手</th>
                     <th class="text-right px-2 py-2 w-[54px]" title="馬の過去走 複勝率(直近5走補正)">馬</th>
@@ -488,15 +512,27 @@
                                 <span class="text-gray-400">-</span>
                             @endif
                         </td>
+                        {{-- 単勝オッズ (ライブ優先) (Phase EV-2) --}}
                         <td class="px-2 py-2 text-right">
-                            @if ($rr->win_odds)
-                                <span class="text-xs text-gray-700 dark:text-gray-300">{{ number_format((float)$rr->win_odds, 1) }}</span>
+                            @php
+                                $displayOdds = $r->ev['win_odds'] ?? $rr->win_odds ?? null;
+                                $oddsSrc     = $r->ev['source'] ?? null;
+                            @endphp
+                            @if ($displayOdds)
+                                <div class="flex flex-col items-end leading-tight">
+                                    <span class="text-xs font-medium text-gray-800 dark:text-gray-100">{{ number_format((float)$displayOdds, 1) }}</span>
+                                    @if ($oddsSrc === 'live')
+                                        <span class="text-[9px] text-emerald-600 dark:text-emerald-400" title="ライブオッズ (取得: {{ optional($r->ev['captured_at'] ?? null)->format('H:i') }})">📊 ライブ</span>
+                                    @elseif ($oddsSrc === 'static')
+                                        <span class="text-[9px] text-gray-400" title="出馬表時点のオッズ">📋 出馬表</span>
+                                    @endif
+                                </div>
                             @else
                                 <span class="text-gray-400">-</span>
                             @endif
                         </td>
 
-                        {{-- 期待値(EV) (Phase 1-B) --}}
+                        {{-- 単勝期待値(EV) (Phase 1-B) --}}
                         <td class="px-2 py-2 text-right">
                             @if ($r->ev)
                                 @php
@@ -507,9 +543,29 @@
                                         : 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'));
                                 @endphp
                                 <div class="inline-flex flex-col items-end px-1.5 py-0.5 rounded {{ $evColor }}"
-                                    title="推定勝率 {{ $ev['prob'] }}% × オッズ - 1 = {{ number_format($ev['ev'], 2) }}">
+                                    title="推定単勝勝率 {{ $ev['prob'] }}% × 単勝オッズ {{ number_format((float)$ev['win_odds'], 1) }} - 1 = {{ number_format($ev['ev'], 2) }}">
                                     <span class="font-bold text-[11px]">{{ $ev['label'] }}</span>
                                     <span class="text-[10px] opacity-80">{{ number_format($ev['ev'], 2) }}</span>
+                                </div>
+                            @else
+                                <span class="text-gray-400 text-xs">-</span>
+                            @endif
+                        </td>
+
+                        {{-- 複勝期待値 (Phase EV-2) --}}
+                        <td class="px-2 py-2 text-right">
+                            @if ($r->ev && isset($r->ev['place_ev']))
+                                @php
+                                    $pev = (float) $r->ev['place_ev'];
+                                    $pevColor = $pev >= 0.30 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                        : ($pev >= 0.10 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                                        : ($pev >= -0.10 ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                                        : 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'));
+                                @endphp
+                                <div class="inline-flex flex-col items-end px-1.5 py-0.5 rounded {{ $pevColor }}"
+                                    title="推定複勝率 {{ $r->ev['place_prob'] }}% × 推定複勝オッズ {{ number_format((float)$r->ev['place_odds'], 1) }} - 1 = {{ number_format($pev, 2) }} (※複勝オッズは単勝オッズから推定)">
+                                    <span class="font-bold text-[11px]">{{ $r->ev['place_label'] }}</span>
+                                    <span class="text-[10px] opacity-80">{{ number_format($pev, 2) }}</span>
                                 </div>
                             @else
                                 <span class="text-gray-400 text-xs">-</span>
@@ -1010,5 +1066,68 @@
             },
         };
     }
+
+    // ========================================================
+    // 最新オッズ取得ボタン (Phase EV-2)
+    //   出馬表上部の「📊 最新オッズ取得」ボタンの handler。
+    //   POST shutuba.capture-odds → 成功したら ?recompute=1 を付けず単にリロードして
+    //   サーバ側で最新スナップショットを EV 計算に反映させる。
+    // ========================================================
+    (function () {
+        const btn = document.getElementById('btn-capture-odds');
+        if (!btn) return;
+        const statusEl = document.getElementById('capture-odds-status');
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+        btn.addEventListener('click', async () => {
+            const url = btn.dataset.url;
+            if (!url) return;
+
+            // 連打防止 + UI フィードバック
+            btn.disabled = true;
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<span class="animate-pulse">📡 取得中...</span>';
+            if (statusEl) statusEl.textContent = '';
+
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                });
+                const data = await res.json().catch(() => ({}));
+
+                if (res.ok && data.ok) {
+                    if (statusEl) {
+                        statusEl.textContent = data.message || `取得完了 (${data.count}頭)`;
+                        statusEl.className = 'ml-1 text-[11px] text-emerald-600';
+                    }
+                    // 1秒後にリロード(EV を最新オッズで再計算した状態で表示)
+                    setTimeout(() => {
+                        // sort や filter_mark などのクエリは保持
+                        window.location.reload();
+                    }, 800);
+                } else {
+                    const msg = (data && data.message) ? data.message : `HTTP ${res.status}`;
+                    if (statusEl) {
+                        statusEl.textContent = '❌ ' + msg;
+                        statusEl.className = 'ml-1 text-[11px] text-rose-600';
+                    }
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+                }
+            } catch (e) {
+                if (statusEl) {
+                    statusEl.textContent = '❌ ' + e.message;
+                    statusEl.className = 'ml-1 text-[11px] text-rose-600';
+                }
+                btn.disabled = false;
+                btn.innerHTML = orig;
+            }
+        });
+    })();
 </script>
 @endsection
