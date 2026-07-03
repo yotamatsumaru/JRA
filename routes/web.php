@@ -59,6 +59,13 @@ Route::get('/races/{race}',    [RaceController::class, 'show'])->name('races.sho
 Route::prefix('shutuba')->name('shutuba.')->group(function () {
     Route::get('/',        [ShutubaController::class, 'index'])->name('index');
     Route::get('/{race}',  [ShutubaController::class, 'show'])->name('show');
+
+    // 最新オッズ取得 (Phase EV-2, ゲスト解放)
+    //   公共オッズを netkeiba から取得するだけの操作なので誰でも実行可能。
+    //   ただし netkeiba への負荷を抑えるため IP 単位で 1 分に 6 回まで。
+    Route::post('/{race}/capture-odds', [ShutubaController::class, 'captureOdds'])
+        ->middleware('throttle:6,1')
+        ->name('capture-odds');
 });
 
 // 馬・騎手・調教師・競馬場 (閲覧のみ)
@@ -129,7 +136,9 @@ Route::middleware('auth')->group(function () {
     Route::put('races/{race}/results/{result}',          [RaceResultController::class, 'update'])->name('races.results.update');
     Route::delete('races/{race}/results/{result}',       [RaceResultController::class, 'destroy'])->name('races.results.destroy');
 
-    // 出馬表 書き込み系
+    // 出馬表 書き込み系 (印・メモ・馬券生成など個人データ)
+    //   注: capture-odds はゲスト解放されているため、ここには含まれない
+    //       (公共オッズ取得は誰でも可能, throttle:6,1 で保護)
     Route::prefix('shutuba')->name('shutuba.')->group(function () {
         Route::post('/favorite',             [ShutubaController::class, 'toggleFavorite'])->name('favorite');
         Route::post('/{race}/mark',          [ShutubaController::class, 'mark'])->name('mark');
@@ -137,8 +146,6 @@ Route::middleware('auth')->group(function () {
         Route::post('/{race}/memo',          [ShutubaController::class, 'memo'])->name('memo');
         Route::post('/{race}/race-note',     [ShutubaController::class, 'raceNote'])->name('race-note');
         Route::post('/{race}/generate-bets', [ShutubaController::class, 'generateBets'])->name('generate-bets');
-        // 最新オッズ手動取得 (Phase EV-2)
-        Route::post('/{race}/capture-odds',  [ShutubaController::class, 'captureOdds'])->name('capture-odds');
     });
 
     // 馬・騎手・調教師・競馬場 書き込み (resource の create/store/edit/update/destroy)

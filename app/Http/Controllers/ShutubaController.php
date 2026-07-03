@@ -473,7 +473,14 @@ class ShutubaController extends Controller
         }
 
         try {
-            AuditLog::record('odds.capture', $race, ['source' => 'shutuba_manual', 'horses' => count($snap->payload ?? [])]);
+            // ゲスト実行時は IP を残して監査を容易にする (ユーザー名は AuditLog.user_id が null になる)
+            $isGuest = !$request->user();
+            AuditLog::record('odds.capture', $race, [
+                'source'    => 'shutuba_manual',
+                'horses'    => count($snap->payload ?? []),
+                'is_guest'  => $isGuest,
+                'client_ip' => $isGuest ? $request->ip() : null,
+            ]);
         } catch (\Throwable $e) {}
 
         return response()->json([
