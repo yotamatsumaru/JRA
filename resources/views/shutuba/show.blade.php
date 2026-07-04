@@ -223,6 +223,177 @@
         </div>
     </div>
 
+    {{-- ============================================================
+         コース傾向パネル (Phase EV-4)
+         同 (venue, track_type, distance) の直近36ヶ月の集計データを表示。
+         現在の馬場状態にマッチした「馬場別」の集計も並列表示する。
+         localStorage で開閉状態を永続化。
+    ============================================================ --}}
+    @php
+        $ct           = $course_trend ?? null;
+        $ctSample     = $ct['sample_size'] ?? 0;
+        $ctSummary    = $ct['summary'] ?? [];
+        $ctFrames     = $ct['frame_stats'] ?? [];
+        $ctStyles     = $ct['style_stats'] ?? [];
+        $ctCondStats  = $ct['condition_stats'] ?? [];
+        $ctPaceStats  = $ct['pace_stats'] ?? [];
+        $ctLapStats   = $ct['lap_stats'] ?? [];
+        $ctCurCond    = $ct['current_condition_summary'] ?? null;
+        $ctCurLabel   = $ct['current_condition_label'] ?? null;
+        $ctPeriodFrom = $ct['period']['from'] ?? null;
+        $ctPeriodTo   = $ct['period']['to'] ?? null;
+    @endphp
+    <details id="course-trend-details"
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700">
+        <summary class="cursor-pointer px-4 py-3 text-xs font-semibold text-gray-700 dark:text-gray-200 flex items-center justify-between select-none">
+            <span class="flex items-center space-x-2">
+                <x-icon name="chart-bar" class="w-4 h-4 text-emerald-500" />
+                <span>📊 コース傾向 ({{ $race->venue?->name ?? '' }} {{ $race->track_type }}{{ $race->distance }}m)</span>
+                @if ($ctSample > 0)
+                    <span class="text-[10px] text-gray-500 dark:text-gray-400 font-normal">
+                        直近36ヶ月 / {{ $ctSample }} レース
+                    </span>
+                @else
+                    <span class="text-[10px] text-gray-400 font-normal">サンプルなし</span>
+                @endif
+            </span>
+            <span class="text-[10px] text-gray-400">クリックで開閉</span>
+        </summary>
+        <div class="px-4 pb-4 pt-1 space-y-4 border-t border-gray-100 dark:border-gray-700">
+            @if ($ctSample === 0)
+                <p class="text-xs text-gray-500 dark:text-gray-400 py-4 text-center">
+                    このコースの過去レースデータがまだ十分に集まっていません。
+                </p>
+            @else
+                {{-- ─────────── ① サマリー行 ─────────── --}}
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-center pt-3">
+                    <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
+                        <div class="text-[10px] text-gray-500 dark:text-gray-400">平均勝ちタイム</div>
+                        <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
+                            {{ $ctSummary['avg_win_time_display'] ?? '-' }}
+                        </div>
+                    </div>
+                    <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
+                        <div class="text-[10px] text-gray-500 dark:text-gray-400">平均出走頭数</div>
+                        <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
+                            {{ $ctSummary['avg_horse_count'] ? number_format($ctSummary['avg_horse_count'], 1) . ' 頭' : '-' }}
+                        </div>
+                    </div>
+                    <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
+                        <div class="text-[10px] text-gray-500 dark:text-gray-400">勝ち馬 平均上がり</div>
+                        <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
+                            {{ $ctSummary['avg_win_last_3f'] ? number_format($ctSummary['avg_win_last_3f'], 1) . ' s' : '-' }}
+                        </div>
+                    </div>
+                    <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
+                        <div class="text-[10px] text-gray-500 dark:text-gray-400">前3F 平均</div>
+                        <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
+                            {{ $ctLapStats['avg_first_3f'] ? number_format($ctLapStats['avg_first_3f'], 1) . ' s' : '-' }}
+                        </div>
+                    </div>
+                    <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
+                        <div class="text-[10px] text-gray-500 dark:text-gray-400">勝ち馬 平均単勝</div>
+                        <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
+                            {{ $ctSummary['avg_win_odds'] ? number_format($ctSummary['avg_win_odds'], 1) : '-' }}
+                        </div>
+                    </div>
+                </div>
+
+                {{-- ─────────── ② 枠順傾向 (バーチャート) ─────────── --}}
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div>
+                        <div class="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                            🎫 枠順別 複勝率 (全馬場)
+                        </div>
+                        <div id="course-trend-frame-chart" class="w-full" style="min-height: 200px;"></div>
+                    </div>
+                    <div>
+                        <div class="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                            🏇 脚質別 複勝率 (全馬場)
+                        </div>
+                        <div id="course-trend-style-chart" class="w-full" style="min-height: 200px;"></div>
+                    </div>
+                </div>
+
+                {{-- ─────────── ③ 現在の馬場状態にマッチした集計 ─────────── --}}
+                @if ($ctCurCond && ($ctCurCond['sample_size'] ?? 0) > 0)
+                    <div class="mt-2 pt-3 border-t border-dashed border-gray-200 dark:border-gray-600">
+                        <div class="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-2 flex items-center space-x-2">
+                            <span>🌦️ 現在の馬場状態 =「{{ $ctCurLabel }}」限定の傾向</span>
+                            <span class="text-[10px] text-gray-500 dark:text-gray-400 font-normal">
+                                サンプル: {{ $ctCurCond['sample_size'] }} レース
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                                    枠順別 複勝率 ({{ $ctCurLabel }})
+                                </div>
+                                <div id="course-trend-frame-cond-chart" class="w-full" style="min-height: 180px;"></div>
+                            </div>
+                            <div>
+                                <div class="text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                                    脚質別 複勝率 ({{ $ctCurLabel }})
+                                </div>
+                                <div id="course-trend-style-cond-chart" class="w-full" style="min-height: 180px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
+                {{-- ─────────── ④ 馬場状態内訳 / ペース内訳 ─────────── --}}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 pt-3 border-t border-dashed border-gray-200 dark:border-gray-600">
+                    {{-- 馬場状態分布 --}}
+                    <div>
+                        <div class="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">🌧️ 馬場状態内訳</div>
+                        <div class="space-y-1">
+                            @foreach ($ctCondStats as $c)
+                                <div class="flex items-center text-[11px]">
+                                    <div class="w-10 text-gray-600 dark:text-gray-300">{{ $c['condition'] }}</div>
+                                    <div class="flex-1 mx-2 bg-gray-100 dark:bg-gray-700 rounded h-3 overflow-hidden">
+                                        <div class="h-full bg-emerald-400 dark:bg-emerald-500" style="width: {{ $c['pct'] }}%"></div>
+                                    </div>
+                                    <div class="w-24 text-right text-gray-700 dark:text-gray-300">
+                                        {{ $c['races'] }} R ({{ $c['pct'] }}%)
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+
+                    {{-- ペース分布 --}}
+                    <div>
+                        <div class="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">🏁 ペース内訳</div>
+                        <div class="space-y-1">
+                            @foreach ($ctPaceStats as $p)
+                                @php
+                                    $barColor = match($p['pace']) {
+                                        'H' => 'bg-red-400 dark:bg-red-500',
+                                        'S' => 'bg-blue-400 dark:bg-blue-500',
+                                        default => 'bg-amber-400 dark:bg-amber-500',
+                                    };
+                                @endphp
+                                <div class="flex items-center text-[11px]">
+                                    <div class="w-16 text-gray-600 dark:text-gray-300">{{ $p['label'] }} ({{ $p['pace'] }})</div>
+                                    <div class="flex-1 mx-2 bg-gray-100 dark:bg-gray-700 rounded h-3 overflow-hidden">
+                                        <div class="h-full {{ $barColor }}" style="width: {{ $p['pct'] }}%"></div>
+                                    </div>
+                                    <div class="w-24 text-right text-gray-700 dark:text-gray-300">
+                                        {{ $p['races'] }} R ({{ $p['pct'] }}%)
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-[10px] text-gray-400 mt-2 text-right">
+                    集計期間: {{ $ctPeriodFrom }} 〜 {{ $ctPeriodTo }} (24h キャッシュ)
+                </div>
+            @endif
+        </div>
+    </details>
+
     {{-- 印サマリ + コピー + フィルタ --}}
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4">
         <div class="flex flex-wrap items-center gap-3">
@@ -1319,6 +1490,149 @@
                 scheduleNext();
             }
         }
+    })();
+
+    // ========================================================
+    // コース傾向チャート (Phase EV-4)
+    //   - <details id="course-trend-details"> が open されたタイミングで初回描画
+    //   - localStorage で開閉状態を永続化 (shutuba.course_trend.open)
+    //   - ApexCharts で:
+    //       (1) 枠順別 複勝率  横バーチャート (全馬場)
+    //       (2) 脚質別 複勝率  横バーチャート (全馬場)
+    //       (3) 枠順別 複勝率  横バーチャート (現馬場限定, データがあれば)
+    //       (4) 脚質別 複勝率  横バーチャート (現馬場限定, データがあれば)
+    // ========================================================
+    (function () {
+        const details = document.getElementById('course-trend-details');
+        if (!details) return;
+
+        const OPEN_KEY = 'shutuba.course_trend.open';
+
+        // サーバから渡す傾向データ (blade @json)
+        const trend = @json($course_trend ?? null);
+        if (!trend || (trend.sample_size ?? 0) === 0) {
+            // データがないときは折りたたみ動作だけ有効
+            details.open = localStorage.getItem(OPEN_KEY) === '1';
+            details.addEventListener('toggle', () => {
+                localStorage.setItem(OPEN_KEY, details.open ? '1' : '0');
+            });
+            return;
+        }
+
+        let rendered = false;
+        const charts = {};
+
+        const commonBarOptions = (categories, seriesData, colors) => ({
+            chart: {
+                type: 'bar',
+                height: 200,
+                toolbar: { show: false },
+                animations: { enabled: false },
+                fontFamily: 'inherit',
+                foreColor: '#6B7280',
+            },
+            plotOptions: {
+                bar: {
+                    horizontal: true,
+                    borderRadius: 3,
+                    barHeight: '75%',
+                    distributed: true,
+                    dataLabels: { position: 'top' },
+                },
+            },
+            colors: colors,
+            dataLabels: {
+                enabled: true,
+                textAnchor: 'start',
+                offsetX: 8,
+                style: { colors: ['#374151'], fontSize: '10px', fontWeight: 500 },
+                formatter: v => v.toFixed(1) + '%',
+            },
+            series: [{ name: '複勝率', data: seriesData }],
+            xaxis: {
+                categories: categories,
+                labels: { style: { fontSize: '10px' }, formatter: v => v + '%' },
+                max: (() => {
+                    const m = Math.max(...seriesData);
+                    return Math.max(50, Math.ceil((m + 10) / 10) * 10);
+                })(),
+            },
+            yaxis: {
+                labels: { style: { fontSize: '11px' } },
+            },
+            grid: {
+                borderColor: '#E5E7EB',
+                strokeDashArray: 2,
+                xaxis: { lines: { show: true } },
+                yaxis: { lines: { show: false } },
+            },
+            tooltip: {
+                y: { formatter: v => v.toFixed(1) + '%' },
+            },
+            legend: { show: false },
+        });
+
+        function renderFrameChart(el, frameStats) {
+            if (!el || !frameStats || !frameStats.length) return;
+            const categories = frameStats.map(f => `${f.frame}枠`);
+            const data       = frameStats.map(f => f.show_rate);
+            // 枠色 (JRA枠色に近い配色)
+            const colors = ['#FFFFFF','#111827','#EF4444','#3B82F6','#FACC15','#22C55E','#F97316','#EC4899']
+                .slice(0, categories.length)
+                .map((c, i) => {
+                    // 白は視認性のためグレーに差し替え
+                    return i === 0 ? '#9CA3AF' : c;
+                });
+            const chart = new ApexCharts(el, commonBarOptions(categories, data, colors));
+            chart.render();
+            return chart;
+        }
+
+        function renderStyleChart(el, styleStats) {
+            if (!el || !styleStats || !styleStats.length) return;
+            // 出走 0 の脚質は除外 (見づらいので)
+            const filtered = styleStats.filter(s => (s.runs ?? 0) > 0);
+            if (!filtered.length) return;
+            const categories = filtered.map(s => s.style);
+            const data       = filtered.map(s => s.show_rate);
+            // 脚質色: 逃=赤 先=橙 差=緑 追=青 マ=灰
+            const styleColor = { '逃': '#EF4444', '先': '#F59E0B', '差': '#10B981', '追': '#3B82F6', 'マ': '#9CA3AF' };
+            const colors = filtered.map(s => styleColor[s.style] || '#9CA3AF');
+            const chart = new ApexCharts(el, commonBarOptions(categories, data, colors));
+            chart.render();
+            return chart;
+        }
+
+        function renderAll() {
+            if (rendered) return;
+            if (typeof ApexCharts === 'undefined') {
+                console.warn('ApexCharts not loaded, skipping course-trend charts.');
+                return;
+            }
+            charts.frame     = renderFrameChart(document.getElementById('course-trend-frame-chart'), trend.frame_stats);
+            charts.style     = renderStyleChart(document.getElementById('course-trend-style-chart'), trend.style_stats);
+            const cur = trend.current_condition_summary;
+            if (cur && (cur.sample_size ?? 0) > 0) {
+                charts.frameCond = renderFrameChart(document.getElementById('course-trend-frame-cond-chart'), cur.frame_stats);
+                charts.styleCond = renderStyleChart(document.getElementById('course-trend-style-cond-chart'), cur.style_stats);
+            }
+            rendered = true;
+        }
+
+        // 開閉状態の復元
+        if (localStorage.getItem(OPEN_KEY) === '1') {
+            details.open = true;
+            // <details> が既に open な状態でロードされる場合はイベントが発火しないので、
+            // requestAnimationFrame でレイアウト後に描画
+            requestAnimationFrame(renderAll);
+        }
+
+        details.addEventListener('toggle', () => {
+            localStorage.setItem(OPEN_KEY, details.open ? '1' : '0');
+            if (details.open) {
+                renderAll();
+            }
+        });
     })();
 
     // ========================================================
