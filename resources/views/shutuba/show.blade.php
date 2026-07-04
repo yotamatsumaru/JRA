@@ -1084,10 +1084,23 @@
                     const fresh = data.latest_at && (Date.now() - new Date(data.latest_at).getTime()) < 15 * 60 * 1000;
                     this.liveOdds.fresh = !!fresh;
 
-                    const payload = data.latest_payload || [];
+                    // Phase EV-3 修正:
+                    //   サーバは OddsSnapshot.payload を { horse_number: {...} } の
+                    //   連想配列で保存しているため、JSでは Object になる。
+                    //   従来 payload.map() で "payload.map is not a function" が発生していた。
+                    //   Array と Object の両方に対応する。
+                    const payloadRaw = data.latest_payload || {};
+                    const payloadArr = Array.isArray(payloadRaw)
+                        ? payloadRaw
+                        : Object.entries(payloadRaw).map(([hno, row]) => ({
+                            horse_number: Number(row.horse_number ?? hno),
+                            win_odds:     row.win_odds ?? null,
+                            popularity:   row.popularity ?? null,
+                            horse_name:   row.horse_name ?? null,
+                        }));
                     const prev = this.liveOdds._prev || {};
-                    const horses = payload.map(h => {
-                        const num = h.horse_number;
+                    const horses = payloadArr.map(h => {
+                        const num = Number(h.horse_number);
                         const odds = h.win_odds !== null && h.win_odds !== undefined ? Number(h.win_odds) : null;
                         let delta = null;
                         if (odds !== null && prev[num] !== undefined && prev[num] !== null) {
