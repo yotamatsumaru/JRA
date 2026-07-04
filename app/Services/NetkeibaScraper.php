@@ -524,6 +524,18 @@ class NetkeibaScraper
             $data['race_date'] = $rd;
         }
 
+        // ============ 発走時刻 (Phase EV-3) ============
+        // .RaceData01 に含まれる "12:10発走" パターンを抽出し、
+        // 開催日 + "HH:MM" を DATETIME (YYYY-MM-DD HH:MM:00) で保存。
+        // race_date が確定していない場合は post_time もスキップ (整合性優先)。
+        if (!empty($data['race_date']) && preg_match('/(\d{1,2})\s*[:：]\s*(\d{2})\s*発走/u', $data01, $mm)) {
+            $hh = (int) $mm[1];
+            $mi = (int) $mm[2];
+            if ($hh >= 0 && $hh <= 23 && $mi >= 0 && $mi <= 59) {
+                $data['post_time'] = sprintf('%s %02d:%02d:00', $data['race_date'], $hh, $mi);
+            }
+        }
+
         // ============ 出馬表テーブル ============
         $data['results']      = $this->parseShutubaTable($crawler);
         $data['horses_count'] = count($data['results']);
@@ -1167,6 +1179,17 @@ class NetkeibaScraper
         $rd = $this->extractRaceDateFromCrawler($crawler, $raceId, $expectedDate);
         if ($rd !== null) {
             $data['race_date'] = $rd;
+        }
+
+        // ============ 発走時刻 (Phase EV-3) ============
+        // .RaceData01 に含まれる "12:10発走" パターンを抽出し、
+        // 開催日 + "HH:MM" を DATETIME (YYYY-MM-DD HH:MM:00) で保存。
+        if (!empty($data['race_date']) && preg_match('/(\d{1,2})\s*[:：]\s*(\d{2})\s*発走/u', $data01, $mm)) {
+            $hh = (int) $mm[1];
+            $mi = (int) $mm[2];
+            if ($hh >= 0 && $hh <= 23 && $mi >= 0 && $mi <= 59) {
+                $data['post_time'] = sprintf('%s %02d:%02d:00', $data['race_date'], $hh, $mi);
+            }
         }
 
         // ============ 結果テーブル ============

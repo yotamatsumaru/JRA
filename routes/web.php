@@ -68,6 +68,12 @@ Route::prefix('shutuba')->name('shutuba.')->group(function () {
     Route::post('/{race}/capture-odds', [ShutubaController::class, 'captureOdds'])
         ->middleware('throttle:60,1')
         ->name('capture-odds');
+
+    // オッズ推移グラフ用時系列データ (Phase EV-3, ゲスト解放)
+    //   1レース分の odds_snapshots を JSON で返す。グラフ描画に使う。
+    Route::get('/{race}/odds-timeline', [ShutubaController::class, 'oddsTimeline'])
+        ->middleware('throttle:120,1')
+        ->name('odds-timeline');
 });
 
 // 馬・騎手・調教師・競馬場 (閲覧のみ)

@@ -61,18 +61,20 @@ return [
     |--------------------------------------------------------------------------
     |
     | 発走後 minutes_after_post 分以上経過したレースはオッズ取得不可とする。
-    | (netkeiba 側でオッズ表示が無効化されるため)
+    | (netkeiba 側で確定オッズに固定され、繰り返し叩いても値が変わらないため)
     |
-    | 値の解釈:
-    |   - null / 0 / 負値: ガード無効 (レース後もいつでも取得試行可能)
-    |   - 正の整数     : 開催日 00:00 + N分 を過ぎたら拒否
+    | Phase EV-3 精密化:
+    |   優先順位:
+    |     1) races.post_time (DATETIME) があれば "post_time + N分" で判定 (精密)
+    |     2) 無ければ "race_date 00:00 + N分" で判定 (粗い後方互換)
+    |     3) minutes_after_post が null/0/負値なら判定自体を無効化 (常時許可)
     |
-    | ※ race_date は日付型 (時刻無し) のため、"厳密な発走時刻ベースのガード"
-    |   ではなく "開催日ベースの粗いガード"。運用上は誤検知が多いので、
-    |   デフォルトで null (無効) にしている。
+    | デフォルト 90 分:
+    |   発走 → 数分でオッズ確定 → その後も 30 分程度は netkeiba 側で値取得可能。
+    |   保守的に 90 分置くと確定値の取込漏れが起きにくい。
     */
     'odds_capture' => [
-        'minutes_after_post' => env('JRA_ODDS_CAPTURE_MINUTES_AFTER_POST', null),
+        'minutes_after_post' => env('JRA_ODDS_CAPTURE_MINUTES_AFTER_POST', 90),
 
         // フロントの自動更新間隔 (秒)。ブラウザ側の setInterval 用。
         // 短くしすぎると netkeiba への負荷が増えるため 30-120 秒推奨。
