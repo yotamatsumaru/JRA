@@ -62,9 +62,11 @@ Route::prefix('shutuba')->name('shutuba.')->group(function () {
 
     // 最新オッズ取得 (Phase EV-2, ゲスト解放)
     //   公共オッズを netkeiba から取得するだけの操作なので誰でも実行可能。
-    //   ただし netkeiba への負荷を抑えるため IP 単位で 1 分に 6 回まで。
+    //   1分ごとの自動更新も許容できるよう IP 単位で 1 分に 60 回まで
+    //   (= 1秒に1回ペースまでを許容)。それを超えたら 429 で拒否される。
+    //   フロント側は 60秒間隔で発火するので通常運用では上限に触れない。
     Route::post('/{race}/capture-odds', [ShutubaController::class, 'captureOdds'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:60,1')
         ->name('capture-odds');
 });
 

@@ -446,12 +446,20 @@ class ShutubaController extends Controller
         }
 
         // 発走後 N 分以上経過していたら取得しない (オッズ無効化されているため)
-        $minutesAfterPost = (int) config('jra.odds_capture.minutes_after_post', 30);
-        if ($race->race_date && $race->race_date->lt(now()->subMinutes($minutesAfterPost))) {
-            return response()->json([
-                'ok'      => false,
-                'message' => "レース発走後{$minutesAfterPost}分超過のためオッズは取得できません",
-            ], 422);
+        //
+        // config('jra.odds_capture.minutes_after_post') が null/0/負値のときは
+        // ガード無効 (レース後もいつでも netkeiba を叩いてみる)。
+        // race_date は日付型で発走時刻情報が無いため、正の値を設定した場合は
+        // 開催日 00:00 + N分 を過ぎたら拒否する粗いガードになる点に注意。
+        $minutesAfterPost = config('jra.odds_capture.minutes_after_post');
+        if (is_numeric($minutesAfterPost) && (int) $minutesAfterPost > 0) {
+            $minutesAfterPost = (int) $minutesAfterPost;
+            if ($race->race_date && $race->race_date->lt(now()->subMinutes($minutesAfterPost))) {
+                return response()->json([
+                    'ok'      => false,
+                    'message' => "レース発走後{$minutesAfterPost}分超過のためオッズは取得できません",
+                ], 422);
+            }
         }
 
         try {
