@@ -1517,7 +1517,7 @@
 
         const OPEN_KEY = 'shutuba.course_trend.open';
 
-        // サーバから渡す傾向データ (blade @json)
+        // サーバから渡す傾向データ (Blade の json ディレクティブでシリアライズ)
         const trend = @json($course_trend ?? null);
         if (!trend || (trend.sample_size ?? 0) === 0) {
             // データがないときは折りたたみ動作だけ有効
