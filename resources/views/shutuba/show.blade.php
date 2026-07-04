@@ -25,10 +25,20 @@
         </div>
     @endif
 
-    {{-- ヘッダー --}}
+    {{-- ヘッダー (Phase EV-3: 発走時刻を subtitle に含める) --}}
+    @php
+        $subtitleParts = [];
+        $subtitleParts[] = $race->race_date?->format('Y/m/d');
+        if ($race->post_time) {
+            $subtitleParts[] = '🕒 ' . $race->post_time->format('H:i') . '発走';
+        }
+        $subtitleParts[] = $race->venue?->name . ' ' . $race->race_number . 'R';
+        $subtitleParts[] = $race->track_type . $race->distance . 'm' . ($race->course_condition ? ' ' . $race->course_condition : '');
+        $subtitle = implode(' ', array_filter($subtitleParts));
+    @endphp
     <x-page-header
         title="{{ $race->name }}"
-        subtitle="{{ $race->race_date?->format('Y/m/d') }} {{ $race->venue?->name }} {{ $race->race_number }}R / {{ $race->track_type }}{{ $race->distance }}m {{ $race->course_condition ?: '' }}"
+        subtitle="{{ $subtitle }}"
         icon="target">
         <x-slot name="actions">
             <a href="{{ route('shutuba.index') }}" class="inline-flex items-center space-x-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-2 rounded-md text-xs font-medium">
@@ -522,25 +532,46 @@
                             @endif
                         </td>
 
-                        {{-- 人気 --}}
+                        {{-- 人気 (ライブ最優先, なければ出馬表) --}}
                         <td class="px-2 py-2 text-right">
-                            @if ($rr->popularity)
-                                <span class="text-xs {{ $rr->popularity <= 3 ? 'font-semibold text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300' }}">{{ $rr->popularity }}</span>
+                            @php
+                                $displayPop    = $r->live_popularity ?? $rr->popularity ?? null;
+                                $popIsLive     = $r->live_popularity !== null;
+                            @endphp
+                            @if ($displayPop)
+                                <div class="flex flex-col items-end leading-tight">
+                                    <span class="text-xs {{ $displayPop <= 3 ? 'font-semibold text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300' }}">{{ $displayPop }}</span>
+                                    @if ($popIsLive)
+                                        <span class="text-[9px] text-emerald-600 dark:text-emerald-400" title="ライブ人気 (取得: {{ optional($r->live_captured_at)->format('H:i') }})">📊</span>
+                                    @endif
+                                </div>
                             @else
                                 <span class="text-gray-400">-</span>
                             @endif
                         </td>
-                        {{-- 単勝オッズ (ライブ優先) (Phase EV-2) --}}
+                        {{-- 単勝オッズ (ライブ最優先) (Phase EV-2) --}}
                         <td class="px-2 py-2 text-right">
                             @php
-                                $displayOdds = $r->ev['win_odds'] ?? $rr->win_odds ?? null;
-                                $oddsSrc     = $r->ev['source'] ?? null;
+                                // 表示優先: 1) ライブオッズ 2) EV配列内オッズ 3) 出馬表オッズ
+                                if ($r->live_win_odds !== null) {
+                                    $displayOdds = $r->live_win_odds;
+                                    $oddsSrc     = 'live';
+                                    $oddsCapAt   = $r->live_captured_at;
+                                } elseif (isset($r->ev['win_odds'])) {
+                                    $displayOdds = $r->ev['win_odds'];
+                                    $oddsSrc     = $r->ev['source'] ?? null;
+                                    $oddsCapAt   = $r->ev['captured_at'] ?? null;
+                                } else {
+                                    $displayOdds = $rr->win_odds ?? null;
+                                    $oddsSrc     = $displayOdds ? 'static' : null;
+                                    $oddsCapAt   = null;
+                                }
                             @endphp
                             @if ($displayOdds)
                                 <div class="flex flex-col items-end leading-tight">
-                                    <span class="text-xs font-medium text-gray-800 dark:text-gray-100">{{ number_format((float)$displayOdds, 1) }}</span>
+                                    <span class="text-xs font-medium {{ (float)$displayOdds < 5 ? 'text-red-600 dark:text-red-400' : 'text-gray-800 dark:text-gray-100' }}">{{ number_format((float)$displayOdds, 1) }}</span>
                                     @if ($oddsSrc === 'live')
-                                        <span class="text-[9px] text-emerald-600 dark:text-emerald-400" title="ライブオッズ (取得: {{ optional($r->ev['captured_at'] ?? null)->format('H:i') }})">📊 ライブ</span>
+                                        <span class="text-[9px] text-emerald-600 dark:text-emerald-400" title="ライブオッズ (取得: {{ optional($oddsCapAt)->format('H:i') }})">📊 ライブ</span>
                                     @elseif ($oddsSrc === 'static')
                                         <span class="text-[9px] text-gray-400" title="出馬表時点のオッズ">📋 出馬表</span>
                                     @endif
@@ -663,6 +694,46 @@
             </tbody>
         </table>
     </div>
+
+    {{-- オッズ推移グラフ (Phase EV-3) --}}
+    @if ($race->netkeiba_id)
+        <details id="odds-timeline-details" class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 mt-4"
+            data-timeline-url="{{ route('shutuba.odds-timeline', $race) }}">
+            <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2 select-none">
+                <x-icon name="chart-bar" class="w-4 h-4 text-sky-500" />
+                <span>📈 オッズ推移グラフ</span>
+                <span id="odds-timeline-count" class="text-[11px] text-gray-500 dark:text-gray-400 font-normal ml-2"></span>
+                <span class="ml-auto text-[11px] text-gray-400">(クリックで展開)</span>
+            </summary>
+            <div class="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
+                {{-- 馬選択 チェックボックス --}}
+                <div id="odds-timeline-picker" class="flex flex-wrap gap-1 mb-3 text-[11px]">
+                    <span class="text-gray-500 dark:text-gray-400 mr-1">馬選択:</span>
+                    <button type="button" id="odds-timeline-select-top8"
+                        class="px-1.5 py-0.5 rounded border border-sky-400 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 hover:bg-sky-100">
+                        上位8頭
+                    </button>
+                    <button type="button" id="odds-timeline-select-all"
+                        class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100">
+                        全頭
+                    </button>
+                    <button type="button" id="odds-timeline-select-none"
+                        class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100">
+                        クリア
+                    </button>
+                    <span class="mx-2 text-gray-300">|</span>
+                    <div id="odds-timeline-horses" class="flex flex-wrap gap-1"></div>
+                </div>
+                {{-- チャート本体 --}}
+                <div id="odds-timeline-chart" style="min-height: 340px;">
+                    <div class="text-center py-8 text-xs text-gray-400">
+                        読み込み中...
+                    </div>
+                </div>
+                <div id="odds-timeline-message" class="text-[11px] text-gray-500 mt-1 text-right"></div>
+            </div>
+        </details>
+    @endif
 
     {{-- 推奨買い目 + 印別馬券生成 --}}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1235,6 +1306,241 @@
                 scheduleNext();
             }
         }
+    })();
+
+    // ========================================================
+    // オッズ推移グラフ (Phase EV-3)
+    //   - <details id="odds-timeline-details"> が open されたタイミングで初回ロード
+    //   - "上位8頭" ボタンで人気上位8頭を選択 (デフォルト初回オープン時)
+    //   - チェックで任意の馬を追加/削除
+    //   - ApexCharts (既存プロジェクトで使用中) で描画
+    //   - 自動更新 (毎分キャプチャ) が ON のときはグラフも都度リロードされる (ページreload)
+    // ========================================================
+    (function () {
+        const details = document.getElementById('odds-timeline-details');
+        if (!details) return;
+
+        const url          = details.dataset.timelineUrl;
+        const chartEl      = document.getElementById('odds-timeline-chart');
+        const horseWrap    = document.getElementById('odds-timeline-horses');
+        const countEl      = document.getElementById('odds-timeline-count');
+        const messageEl    = document.getElementById('odds-timeline-message');
+        const btnTop8      = document.getElementById('odds-timeline-select-top8');
+        const btnAll       = document.getElementById('odds-timeline-select-all');
+        const btnNone      = document.getElementById('odds-timeline-select-none');
+        const OPEN_KEY     = 'shutuba.odds_timeline.open';
+        const SELECT_KEY   = 'shutuba.odds_timeline.selected.' + @json($race->id);
+        const AUTO_KEY     = 'shutuba.auto_capture_odds';
+
+        let chart = null;
+        let lastData = null; // { horses, series, snapshot_count, ... }
+        let loaded = false;
+
+        // 色パレット (馬番順)
+        const PALETTE = [
+            '#f87171', '#fb923c', '#fbbf24', '#a3e635', '#34d399', '#22d3ee',
+            '#60a5fa', '#a78bfa', '#f472b6', '#fb7185', '#facc15', '#4ade80',
+            '#38bdf8', '#818cf8', '#e879f9', '#fda4af', '#65a30d', '#0ea5e9',
+        ];
+
+        function getSelected() {
+            try {
+                const raw = localStorage.getItem(SELECT_KEY);
+                if (raw) {
+                    const arr = JSON.parse(raw);
+                    if (Array.isArray(arr)) return new Set(arr.map(Number));
+                }
+            } catch (e) {}
+            return null;
+        }
+        function setSelected(set) {
+            try {
+                localStorage.setItem(SELECT_KEY, JSON.stringify([...set]));
+            } catch (e) {}
+        }
+
+        function renderPicker(horses, selected) {
+            horseWrap.innerHTML = '';
+            horses.forEach(h => {
+                const label = document.createElement('label');
+                label.className = 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer select-none ' +
+                    (selected.has(h.horse_number)
+                        ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300'
+                        : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50');
+                const chk = document.createElement('input');
+                chk.type = 'checkbox';
+                chk.className = 'align-middle';
+                chk.checked = selected.has(h.horse_number);
+                chk.addEventListener('change', () => {
+                    if (chk.checked) selected.add(h.horse_number);
+                    else selected.delete(h.horse_number);
+                    setSelected(selected);
+                    renderPicker(horses, selected);
+                    renderChart(lastData, selected);
+                });
+                label.appendChild(chk);
+                const span = document.createElement('span');
+                const popStr = h.latest_popularity ? ` (${h.latest_popularity}人気)` : '';
+                span.textContent = `${h.horse_number}. ${h.horse_name}${popStr}`;
+                label.appendChild(span);
+                horseWrap.appendChild(label);
+            });
+        }
+
+        function pickDefaultSelection(horses) {
+            // 人気上位8頭 (人気が null の馬は末尾)
+            const withPop = horses.filter(h => h.latest_popularity !== null && h.latest_popularity !== undefined);
+            withPop.sort((a, b) => a.latest_popularity - b.latest_popularity);
+            const top8 = withPop.slice(0, 8).map(h => h.horse_number);
+            if (top8.length > 0) return new Set(top8);
+            // 人気情報が無ければ馬番先頭8頭
+            return new Set(horses.slice(0, 8).map(h => h.horse_number));
+        }
+
+        function renderChart(data, selected) {
+            if (!data) return;
+            const seriesArr = [];
+            (data.horses || []).forEach((h) => {
+                if (!selected.has(h.horse_number)) return;
+                const pts = (data.series && data.series[String(h.horse_number)]) || [];
+                seriesArr.push({
+                    name: `${h.horse_number}. ${h.horse_name}`,
+                    data: pts.map(p => ({
+                        x: new Date(p.t).getTime(),
+                        y: p.odds !== null && p.odds !== undefined ? Number(p.odds) : null,
+                    })),
+                    color: PALETTE[(h.horse_number - 1) % PALETTE.length],
+                });
+            });
+
+            if (seriesArr.length === 0) {
+                chartEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400">選択された馬がありません。上のチェックで馬を選んでください。</div>';
+                if (chart) { chart.destroy(); chart = null; }
+                return;
+            }
+
+            const options = {
+                chart: {
+                    type: 'line',
+                    height: 340,
+                    animations: { enabled: false },
+                    toolbar: { show: false },
+                    zoom: { enabled: true },
+                },
+                stroke: { curve: 'straight', width: 2 },
+                markers: { size: 3 },
+                series: seriesArr,
+                xaxis: {
+                    type: 'datetime',
+                    labels: {
+                        datetimeUTC: false,
+                        format: 'HH:mm',
+                    },
+                    title: { text: '取得時刻' },
+                },
+                yaxis: {
+                    title: { text: '単勝オッズ (倍)' },
+                    labels: {
+                        formatter: (v) => v === null ? '' : Number(v).toFixed(1),
+                    },
+                    // 上限を自動 (人気薄で1000超もありうるが Apex に任せる)
+                },
+                legend: {
+                    position: 'top',
+                    horizontalAlign: 'left',
+                },
+                tooltip: {
+                    shared: true,
+                    x: { format: 'HH:mm:ss' },
+                    y: { formatter: (v) => v === null ? '-' : Number(v).toFixed(1) + ' 倍' },
+                },
+                grid: { borderColor: 'rgba(156,163,175,0.2)' },
+                dataLabels: { enabled: false },
+            };
+
+            chartEl.innerHTML = '';
+            if (chart) { chart.destroy(); chart = null; }
+            chart = new ApexCharts(chartEl, options);
+            chart.render();
+        }
+
+        async function load() {
+            try {
+                messageEl.textContent = '読込中...';
+                const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                lastData = data;
+                const horses = data.horses || [];
+                if (countEl) {
+                    countEl.textContent = `スナップショット ${data.snapshot_count || 0}件`
+                        + (data.first_at ? ` (${new Date(data.first_at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} - ${new Date(data.last_at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})})` : '');
+                }
+                messageEl.textContent = '';
+                if (horses.length === 0 || (data.snapshot_count || 0) === 0) {
+                    horseWrap.innerHTML = '';
+                    chartEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400">まだオッズスナップショットがありません。「📊 最新オッズ取得」ボタンで取得してください。</div>';
+                    return;
+                }
+                let selected = getSelected();
+                if (!selected || selected.size === 0) {
+                    selected = pickDefaultSelection(horses);
+                    setSelected(selected);
+                }
+                // 現存しない馬番を除外
+                const validNumbers = new Set(horses.map(h => h.horse_number));
+                selected = new Set([...selected].filter(n => validNumbers.has(n)));
+                renderPicker(horses, selected);
+                renderChart(data, selected);
+            } catch (e) {
+                messageEl.textContent = '❌ 読込エラー: ' + e.message;
+                chartEl.innerHTML = '<div class="text-center py-8 text-xs text-rose-500">エラー: ' + e.message + '</div>';
+            }
+        }
+
+        // details の open/close で状態永続化 + 初回ロード
+        details.addEventListener('toggle', () => {
+            try {
+                localStorage.setItem(OPEN_KEY, details.open ? '1' : '0');
+            } catch (e) {}
+            if (details.open && !loaded) {
+                loaded = true;
+                load();
+            }
+        });
+
+        // 初期状態: localStorage に応じて開く
+        try {
+            if (localStorage.getItem(OPEN_KEY) === '1') {
+                details.open = true;
+                if (!loaded) { loaded = true; load(); }
+            }
+        } catch (e) {}
+
+        // 自動更新 ON の場合、details が open ならリロードのたびグラフも自動再取得される
+        // (auto-capture-odds が fetch → 成功 → window.location.reload() するため)
+
+        // 選択ボタン
+        btnTop8?.addEventListener('click', () => {
+            if (!lastData) return;
+            const sel = pickDefaultSelection(lastData.horses || []);
+            setSelected(sel);
+            renderPicker(lastData.horses || [], sel);
+            renderChart(lastData, sel);
+        });
+        btnAll?.addEventListener('click', () => {
+            if (!lastData) return;
+            const sel = new Set((lastData.horses || []).map(h => h.horse_number));
+            setSelected(sel);
+            renderPicker(lastData.horses || [], sel);
+            renderChart(lastData, sel);
+        });
+        btnNone?.addEventListener('click', () => {
+            const sel = new Set();
+            setSelected(sel);
+            renderPicker(lastData?.horses || [], sel);
+            renderChart(lastData, sel);
+        });
     })();
 </script>
 @endsection

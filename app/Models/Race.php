@@ -29,6 +29,7 @@ class Race extends Model
         'netkeiba_id',
         'venue_id',
         'race_date',
+        'post_time',
         'kaisai_kai',
         'kaisai_day',
         'race_number',
@@ -54,6 +55,7 @@ class Race extends Model
     {
         return [
             'race_date' => 'date',
+            'post_time' => 'datetime',
             'lap_times' => 'array',
         ];
     }

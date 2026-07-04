@@ -332,6 +332,13 @@ class ShutubaController extends Controller
                 'running_style' => $runningStyle,    // 脚質: 逃/先/差/追/不
                 'ev'            => $ev,              // 期待値 + 推定勝率
                 'is_favorite'   => false,            // M で更新
+                // ライブオッズ (Phase EV-2, ライブ)
+                //   テンプレの単オッズ列/人気列は EV 計算の有無に依存せず、
+                //   ここに入れた live_* を最優先で表示する。
+                //   スコア未算出の馬でも「最新オッズ取得」した瞬間から表に反映される。
+                'live_win_odds'    => $live['win_odds']    ?? null,
+                'live_popularity'  => $live['popularity']  ?? null,
+                'live_captured_at' => $live ? $liveOddsAt : null,
             ];
         }
 
@@ -445,19 +452,32 @@ class ShutubaController extends Controller
             ], 422);
         }
 
-        // 発走後 N 分以上経過していたら取得しない (オッズ無効化されているため)
+        // 発走後 N 分以上経過していたら取得しない (Phase EV-3, 精密ガード)
         //
-        // config('jra.odds_capture.minutes_after_post') が null/0/負値のときは
-        // ガード無効 (レース後もいつでも netkeiba を叩いてみる)。
-        // race_date は日付型で発走時刻情報が無いため、正の値を設定した場合は
-        // 開催日 00:00 + N分 を過ぎたら拒否する粗いガードになる点に注意。
+        // 優先順位:
+        //   1) race.post_time (DATETIME) があれば「post_time + N分」で判定 (精密)
+        //   2) 無ければ「race_date 00:00 + N分」で判定 (粗い, 後方互換)
+        //   3) config('jra.odds_capture.minutes_after_post') が null/0/負値なら無効
+        //
+        // 精密ガードなら「発走前」〜「発走後 N 分」の間は取得可能、
+        // それ以降は netkeiba 側でオッズが確定固定なので取得抑止。
         $minutesAfterPost = config('jra.odds_capture.minutes_after_post');
         if (is_numeric($minutesAfterPost) && (int) $minutesAfterPost > 0) {
             $minutesAfterPost = (int) $minutesAfterPost;
-            if ($race->race_date && $race->race_date->lt(now()->subMinutes($minutesAfterPost))) {
+            $threshold = null;
+            if ($race->post_time) {
+                // 精密ガード: 発走時刻 + N分
+                $threshold = $race->post_time->copy()->addMinutes($minutesAfterPost);
+            } elseif ($race->race_date) {
+                // 粗いフォールバック: 開催日 00:00 + N分
+                $threshold = $race->race_date->copy()->addMinutes($minutesAfterPost);
+            }
+            if ($threshold && now()->gt($threshold)) {
                 return response()->json([
                     'ok'      => false,
-                    'message' => "レース発走後{$minutesAfterPost}分超過のためオッズは取得できません",
+                    'message' => $race->post_time
+                        ? "発走時刻 ({$race->post_time->format('H:i')}) から{$minutesAfterPost}分超過のためオッズ取得を停止しました"
+                        : "レース開催日から{$minutesAfterPost}分超過のためオッズは取得できません",
                 ], 422);
             }
         }
@@ -497,6 +517,92 @@ class ShutubaController extends Controller
             'captured_at_human' => $snap->captured_at->format('H:i:s'),
             'count'       => count($snap->payload ?? []),
             'message'     => sprintf('オッズを取得しました (%d頭, %s)', count($snap->payload ?? []), $snap->captured_at->format('H:i:s')),
+        ]);
+    }
+
+    /**
+     * オッズ推移データ (Phase EV-3, グラフ用)
+     *
+     * GET /shutuba/{race}/odds-timeline
+     *
+     * Response:
+     *   {
+     *     ok: true,
+     *     race_id: 27779,
+     *     snapshot_count: 5,
+     *     horses: [
+     *       { horse_number: 1, horse_name: "コスモハナミズキ", latest_odds: 53.8, latest_popularity: 12 },
+     *       ...
+     *     ],
+     *     series: {
+     *       "1": [ { t: "2026-07-04T09:12:00+09:00", odds: 55.2, pop: 12 }, ... ],
+     *       "2": [ ... ],
+     *       ...
+     *     }
+     *   }
+     */
+    public function oddsTimeline(Race $race): JsonResponse
+    {
+        $snaps = OddsSnapshot::where('race_id', $race->id)
+            ->orderBy('captured_at')
+            ->get();
+
+        // 各馬の series
+        $series = [];      // horse_number(str) => [ {t, odds, pop}, ... ]
+        $horseName = [];   // horse_number => name
+        foreach ($snaps as $snap) {
+            $ts = $snap->captured_at->toIso8601String();
+            $payload = is_array($snap->payload) ? $snap->payload : [];
+            foreach ($payload as $hno => $row) {
+                $hno = (int) $hno;
+                if ($hno < 1) continue;
+                $odds = isset($row['win_odds']) ? (float) $row['win_odds'] : null;
+                $pop  = isset($row['popularity']) ? (int) $row['popularity'] : null;
+                $series[(string) $hno][] = [
+                    't'    => $ts,
+                    'odds' => $odds,
+                    'pop'  => $pop,
+                ];
+                if (!isset($horseName[$hno]) && !empty($row['horse_name'])) {
+                    $horseName[$hno] = $row['horse_name'];
+                }
+            }
+        }
+
+        // 馬名フォールバック: race_results から補完
+        if (!empty($series)) {
+            $rrs = $race->results()->with('horse')->get();
+            foreach ($rrs as $rr) {
+                $hno = (int) $rr->horse_number;
+                if ($hno > 0 && !isset($horseName[$hno])) {
+                    $horseName[$hno] = $rr->horse?->name ?? "馬{$hno}";
+                }
+            }
+        }
+
+        // horses サマリ: 最新オッズ・人気を添える (グラフ選択UI用)
+        $horses = [];
+        foreach ($series as $hnoStr => $arr) {
+            $hno = (int) $hnoStr;
+            $last = end($arr);
+            $horses[] = [
+                'horse_number'      => $hno,
+                'horse_name'        => $horseName[$hno] ?? "馬{$hno}",
+                'latest_odds'       => $last['odds'] ?? null,
+                'latest_popularity' => $last['pop']  ?? null,
+                'point_count'       => count($arr),
+            ];
+        }
+        usort($horses, fn($a, $b) => $a['horse_number'] <=> $b['horse_number']);
+
+        return response()->json([
+            'ok'             => true,
+            'race_id'        => $race->id,
+            'snapshot_count' => $snaps->count(),
+            'first_at'       => $snaps->first()?->captured_at?->toIso8601String(),
+            'last_at'        => $snaps->last()?->captured_at?->toIso8601String(),
+            'horses'         => $horses,
+            'series'         => $series,
         ]);
     }
 
