@@ -34,7 +34,7 @@
         <div class="border-b pb-4">
             <div class="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-gray-700 mb-2"><x-icon name="list" class="w-4 h-4" /><span>プリセット</span></div>
             <div class="flex flex-wrap gap-2">
-                <button type="button" @click="applyPreset({pedigree:20,jockey:20,horse:25,roi:10,frame:10,course:10,style:5})"
+                <button type="button" @click="applyPreset({pedigree:15,jockey:20,horse:30,roi:10,frame:10,course:10,style:5})"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-gray-100 hover:bg-amber-100 text-gray-700 hover:text-amber-700">
                     <x-icon name="target" class="w-3.5 h-3.5" />
                     <span>標準(7軸バランス)</span>
