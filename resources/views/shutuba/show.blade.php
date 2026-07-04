@@ -296,6 +296,19 @@
                     title="netkeiba から最新オッズを取得し、期待値(EV)を再計算します">
                     <span>📊 最新オッズ取得</span>
                 </button>
+
+                {{-- 自動更新トグル (Phase EV-3) --}}
+                @php $autoSec = (int) config('jra.odds_capture.auto_refresh_seconds', 60); @endphp
+                <label id="lbl-auto-capture-odds"
+                    class="ml-2 inline-flex items-center gap-1 text-[11px] text-gray-700 dark:text-gray-300 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 cursor-pointer select-none"
+                    title="ONの間、{{ $autoSec }}秒ごとに最新オッズを取得しページを更新します (タブがアクティブなときのみ)">
+                    <input type="checkbox" id="chk-auto-capture-odds"
+                        data-interval-seconds="{{ $autoSec }}"
+                        class="align-middle" />
+                    <span>🔄 自動更新 ({{ $autoSec }}秒)</span>
+                    <span id="auto-capture-countdown" class="text-gray-400 ml-1"></span>
+                </label>
+
                 <span id="capture-odds-status" class="ml-1 text-[11px] text-gray-500"></span>
 
                 @if ($has_live_odds && $live_odds_at)
@@ -1073,25 +1086,38 @@
     }
 
     // ========================================================
-    // 最新オッズ取得ボタン (Phase EV-2)
-    //   出馬表上部の「📊 最新オッズ取得」ボタンの handler。
-    //   POST shutuba.capture-odds → 成功したら ?recompute=1 を付けず単にリロードして
-    //   サーバ側で最新スナップショットを EV 計算に反映させる。
+    // 最新オッズ取得ボタン + 自動更新 (Phase EV-2 / EV-3)
+    //   - 手動: 「📊 最新オッズ取得」ボタン click で 1 回取得 → リロード
+    //   - 自動: 「🔄 自動更新 (Nsec)」ON の間、N秒ごとに取得 → リロード
+    //           * タブが非表示のときは停止 (netkeiba 負荷軽減)
+    //           * localStorage で ON/OFF を永続化 (ページ遷移しても継続)
+    //           * 直近取得時刻を基準に「あと N 秒」カウントダウン表示
     // ========================================================
     (function () {
-        const btn = document.getElementById('btn-capture-odds');
+        const btn        = document.getElementById('btn-capture-odds');
         if (!btn) return;
-        const statusEl = document.getElementById('capture-odds-status');
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
-        btn.addEventListener('click', async () => {
-            const url = btn.dataset.url;
-            if (!url) return;
+        const statusEl   = document.getElementById('capture-odds-status');
+        const chk        = document.getElementById('chk-auto-capture-odds');
+        const countdown  = document.getElementById('auto-capture-countdown');
+        const csrfToken  = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        const url        = btn.dataset.url;
+        const raceId     = @json($race->id);
+        const AUTO_KEY   = 'shutuba.auto_capture_odds';
+        const intervalMs = Math.max(15, Number(chk?.dataset.intervalSeconds || 60)) * 1000;
 
-            // 連打防止 + UI フィードバック
-            btn.disabled = true;
-            const orig = btn.innerHTML;
-            btn.innerHTML = '<span class="animate-pulse">📡 取得中...</span>';
+        let timer     = null;   // メイン発火タイマー
+        let tickTimer = null;   // カウントダウン表示更新タイマー
+        let nextAt    = 0;      // 次回発火予定 (epoch ms)
+
+        // ---- 実 fetch (手動/自動 共通) ----
+        async function doCapture({ reloadOnSuccess = true, silent = false } = {}) {
+            if (!url) return false;
+            if (!silent) {
+                btn.disabled = true;
+                btn.dataset._orig = btn.dataset._orig || btn.innerHTML;
+                btn.innerHTML = '<span class="animate-pulse">📡 取得中...</span>';
+            }
             if (statusEl) statusEl.textContent = '';
 
             try {
@@ -1107,14 +1133,20 @@
 
                 if (res.ok && data.ok) {
                     if (statusEl) {
-                        statusEl.textContent = data.message || `取得完了 (${data.count}頭)`;
+                        const t = new Date().toLocaleTimeString('ja-JP', { hour12: false });
+                        statusEl.textContent = (data.message || `取得完了 (${data.count}頭)`) + ` [${t}]`;
                         statusEl.className = 'ml-1 text-[11px] text-emerald-600';
                     }
-                    // 1秒後にリロード(EV を最新オッズで再計算した状態で表示)
-                    setTimeout(() => {
-                        // sort や filter_mark などのクエリは保持
-                        window.location.reload();
-                    }, 800);
+                    if (reloadOnSuccess) {
+                        // 少し遅延してリロード (ユーザーがトーストを目視できるように)
+                        setTimeout(() => window.location.reload(), 600);
+                    } else {
+                        if (!silent) {
+                            btn.disabled = false;
+                            btn.innerHTML = btn.dataset._orig;
+                        }
+                    }
+                    return true;
                 } else {
                     const msg = (data && data.message) ? data.message : `HTTP ${res.status}`;
                     if (statusEl) {
@@ -1122,7 +1154,8 @@
                         statusEl.className = 'ml-1 text-[11px] text-rose-600';
                     }
                     btn.disabled = false;
-                    btn.innerHTML = orig;
+                    btn.innerHTML = btn.dataset._orig || btn.innerHTML;
+                    return false;
                 }
             } catch (e) {
                 if (statusEl) {
@@ -1130,9 +1163,78 @@
                     statusEl.className = 'ml-1 text-[11px] text-rose-600';
                 }
                 btn.disabled = false;
-                btn.innerHTML = orig;
+                btn.innerHTML = btn.dataset._orig || btn.innerHTML;
+                return false;
             }
-        });
+        }
+
+        // ---- 手動 click ----
+        btn.addEventListener('click', () => doCapture({ reloadOnSuccess: true }));
+
+        // ---- 自動更新の start/stop ----
+        function stopAuto() {
+            if (timer)     { clearTimeout(timer); timer = null; }
+            if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+            if (countdown) countdown.textContent = '';
+        }
+
+        function scheduleNext() {
+            stopAuto();
+            nextAt = Date.now() + intervalMs;
+            timer = setTimeout(runOnce, intervalMs);
+            tickTimer = setInterval(updateCountdown, 1000);
+            updateCountdown();
+        }
+
+        function updateCountdown() {
+            if (!countdown) return;
+            const remain = Math.max(0, Math.ceil((nextAt - Date.now()) / 1000));
+            countdown.textContent = document.hidden ? '(タブ非表示中)' : `次: ${remain}s`;
+        }
+
+        async function runOnce() {
+            // タブが非表示なら発火せずに次のスロットへ (netkeiba 負荷軽減)
+            if (document.hidden) {
+                scheduleNext();
+                return;
+            }
+            // silent モードで捕捉 → 成功したらリロード (Alpine を含む全表示を最新化)
+            const ok = await doCapture({ reloadOnSuccess: true, silent: true });
+            if (!ok) {
+                // 失敗時も次回試行はスケジュール (ネットワーク瞬断等を吸収)
+                scheduleNext();
+            }
+            // 成功時はリロードするので何もしない (次のページで再度 auto=on を読む)
+        }
+
+        // ---- チェックボックス handler ----
+        if (chk) {
+            // 初期状態: localStorage から復元
+            try {
+                if (localStorage.getItem(AUTO_KEY) === '1') {
+                    chk.checked = true;
+                }
+            } catch (e) {}
+
+            chk.addEventListener('change', () => {
+                try {
+                    localStorage.setItem(AUTO_KEY, chk.checked ? '1' : '0');
+                } catch (e) {}
+                if (chk.checked) {
+                    scheduleNext();
+                } else {
+                    stopAuto();
+                }
+            });
+
+            // タブ可視性変化 → カウントダウン表示を即更新
+            document.addEventListener('visibilitychange', updateCountdown);
+
+            // ページ表示時に auto=on ならタイマー開始
+            if (chk.checked) {
+                scheduleNext();
+            }
+        }
     })();
 </script>
 @endsection
