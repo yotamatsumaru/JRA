@@ -242,6 +242,15 @@
         $ctCurLabel   = $ct['current_condition_label'] ?? null;
         $ctPeriodFrom = $ct['period']['from'] ?? null;
         $ctPeriodTo   = $ct['period']['to'] ?? null;
+
+        // Blade の {{ ... }} 内で number_format(...,1) の "," が三項演算子と組み合わさって
+        // Blade コンパイラの構文エラーを引き起こす既知の問題があるため、
+        // 表示用の文字列は先に PHP 側で組み立てておく。
+        $fmtWinTime      = $ctSummary['avg_win_time_display'] ?? '-';
+        $fmtHorseCount   = !empty($ctSummary['avg_horse_count']) ? number_format((float) $ctSummary['avg_horse_count'], 1) . ' 頭' : '-';
+        $fmtWinLast3f    = !empty($ctSummary['avg_win_last_3f']) ? number_format((float) $ctSummary['avg_win_last_3f'], 1) . ' s' : '-';
+        $fmtFirst3f      = !empty($ctLapStats['avg_first_3f']) ? number_format((float) $ctLapStats['avg_first_3f'], 1) . ' s' : '-';
+        $fmtWinOdds      = !empty($ctSummary['avg_win_odds']) ? number_format((float) $ctSummary['avg_win_odds'], 1) : '-';
     @endphp
     <details id="course-trend-details"
         class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700">
@@ -270,31 +279,31 @@
                     <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
                         <div class="text-[10px] text-gray-500 dark:text-gray-400">平均勝ちタイム</div>
                         <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
-                            {{ $ctSummary['avg_win_time_display'] ?? '-' }}
+                            {{ $fmtWinTime }}
                         </div>
                     </div>
                     <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
                         <div class="text-[10px] text-gray-500 dark:text-gray-400">平均出走頭数</div>
                         <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
-                            {{ $ctSummary['avg_horse_count'] ? number_format($ctSummary['avg_horse_count'], 1) . ' 頭' : '-' }}
+                            {{ $fmtHorseCount }}
                         </div>
                     </div>
                     <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
                         <div class="text-[10px] text-gray-500 dark:text-gray-400">勝ち馬 平均上がり</div>
                         <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
-                            {{ $ctSummary['avg_win_last_3f'] ? number_format($ctSummary['avg_win_last_3f'], 1) . ' s' : '-' }}
+                            {{ $fmtWinLast3f }}
                         </div>
                     </div>
                     <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
                         <div class="text-[10px] text-gray-500 dark:text-gray-400">前3F 平均</div>
                         <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
-                            {{ $ctLapStats['avg_first_3f'] ? number_format($ctLapStats['avg_first_3f'], 1) . ' s' : '-' }}
+                            {{ $fmtFirst3f }}
                         </div>
                     </div>
                     <div class="rounded bg-gray-50 dark:bg-gray-700/50 py-2">
                         <div class="text-[10px] text-gray-500 dark:text-gray-400">勝ち馬 平均単勝</div>
                         <div class="text-sm font-bold text-gray-800 dark:text-gray-100">
-                            {{ $ctSummary['avg_win_odds'] ? number_format($ctSummary['avg_win_odds'], 1) : '-' }}
+                            {{ $fmtWinOdds }}
                         </div>
                     </div>
                 </div>
