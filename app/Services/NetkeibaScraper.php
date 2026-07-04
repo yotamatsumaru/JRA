@@ -447,7 +447,124 @@ class NetkeibaScraper
             @file_put_contents($path, $html);
         }
 
-        return $this->parseShutubaHtml($raceId, $html, $expectedDate);
+        $data = $this->parseShutubaHtml($raceId, $html, $expectedDate);
+
+        // ============ 単勝オッズ・人気を補完 ============
+        // 2019年以降、race.netkeiba.com の出馬表 HTML には単勝オッズが直接
+        // 埋め込まれておらず、"---.-" のプレースホルダーのみが出力される。
+        // 実際の値は jquery.odds_update.js が非同期に叩く
+        // /api/api_get_jra_odds.html (JRA単複オッズAPI) から取得して
+        // JavaScript で描画される仕様のため、静的HTML解析だけでは
+        // win_odds / popularity が常に null になってしまう。
+        // ここで同じAPIを直接叩き、馬番をキーに出馬表データへマージする。
+        try {
+            $oddsMap = $this->fetchWinOdds($raceId);
+            if (!empty($oddsMap) && !empty($data['results'])) {
+                foreach ($data['results'] as &$row) {
+                    $hno = (int) ($row['horse_number'] ?? 0);
+                    if ($hno < 1 || !isset($oddsMap[$hno])) continue;
+                    if (isset($oddsMap[$hno]['win_odds'])) {
+                        $row['win_odds'] = $oddsMap[$hno]['win_odds'];
+                    }
+                    if (isset($oddsMap[$hno]['popularity'])) {
+                        $row['popularity'] = $oddsMap[$hno]['popularity'];
+                    }
+                }
+                unset($row);
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Netkeiba: fetchWinOdds failed for race_id={$raceId}: " . $e->getMessage());
+        }
+
+        return $data;
+    }
+
+    /**
+     * 単勝オッズ・人気を JRA公式オッズAPI から取得
+     *
+     * URL: https://race.netkeiba.com/api/api_get_jra_odds.html
+     *   ?pid=api_get_jra_odds&race_id={id}&type=1&action=init&sort=odds&compress=0
+     *
+     * type=1 は単勝・複勝セット。レスポンスの odds.1 が単勝、odds.2 が複勝。
+     * 各エントリは [オッズ, (複勝の場合は上限オッズ), 人気順] の配列。
+     * 馬番はゼロ埋め2桁文字列 ("01", "02", ...) がキーになる。
+     *
+     * status:
+     *   - "result" : 確定オッズ (レース発走後など)
+     *   - "middle" : 発売中の中間オッズ
+     *   - "yoso"   : 予想オッズ(オッズ非公開時間帯)。数値はダミーなので使わない
+     *   - "NG"     : 取得失敗
+     *
+     * @param string $raceId
+     * @return array<int, array{win_odds?: float, popularity?: int}>  horse_number => [...]
+     */
+    public function fetchWinOdds(string $raceId): array
+    {
+        $this->respectInterval();
+
+        Log::info("Netkeiba fetch win odds (api): race_id={$raceId}");
+
+        $response = $this->httpRace->get('/api/api_get_jra_odds.html', [
+            'query' => [
+                'pid'      => 'api_get_jra_odds',
+                'input'    => 'UTF-8',
+                'output'   => 'json',
+                'race_id'  => $raceId,
+                'type'     => '1',
+                'action'   => 'init',
+                'sort'     => 'odds',
+                'compress' => '0',
+            ],
+            'headers' => [
+                'X-Requested-With' => 'XMLHttpRequest',
+                'Referer'          => "https://race.netkeiba.com/race/shutuba.html?race_id={$raceId}",
+                'Accept'           => 'application/json, text/javascript, */*; q=0.01',
+            ],
+        ]);
+
+        $status = $response->getStatusCode();
+        if ($status !== 200) {
+            throw new \RuntimeException("netkeiba odds api HTTP {$status} for race_id={$raceId}");
+        }
+
+        $body = $response->getBody()->getContents();
+        $json = json_decode($body, true);
+        if (!is_array($json)) {
+            Log::warning("Netkeiba: odds api invalid json for race_id={$raceId}");
+            return [];
+        }
+
+        // "yoso"(予想オッズ) はダミー値のため採用しない。
+        // "NG" は取得失敗。"result"/"middle" のみ実数値として扱う。
+        $oddsStatus = $json['status'] ?? '';
+        if (!in_array($oddsStatus, ['result', 'middle'], true)) {
+            return [];
+        }
+
+        $tanOdds = $json['data']['odds']['1'] ?? null;
+        if (!is_array($tanOdds) || empty($tanOdds)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($tanOdds as $umaban => $row) {
+            $hno = (int) $umaban;
+            if ($hno < 1 || !is_array($row) || !isset($row[0])) continue;
+
+            $entry = [];
+            if (is_numeric($row[0])) {
+                $entry['win_odds'] = (float) $row[0];
+            }
+            // 3番目の要素が人気順 (0番目=単勝オッズ, 1番目=複勝上限オッズ, 2番目=人気)
+            if (isset($row[2]) && is_numeric($row[2])) {
+                $entry['popularity'] = (int) $row[2];
+            }
+            if (!empty($entry)) {
+                $result[$hno] = $entry;
+            }
+        }
+
+        return $result;
     }
 
     /**
