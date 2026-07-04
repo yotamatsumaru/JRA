@@ -6,6 +6,8 @@ use App\Models\Race;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * コース傾向集計サービス (Phase EV-4)
@@ -54,33 +56,45 @@ class CourseTrendService
             return $this->emptyResult();
         }
 
-        $cacheKey = sprintf(
-            'course_trend:v1:%d:%s:%d',
-            $race->venue_id,
-            $race->track_type,
-            $race->distance
-        );
-
-        $base = Cache::remember($cacheKey, self::CACHE_TTL, function () use ($race) {
-            return $this->computeBaseTrend($race);
-        });
-
-        // 現在レースの馬場状態にマッチした集計 (キャッシュ外: 条件が変わりうるため軽い集計だけ)
-        $currentCondition = null;
-        if ($race->course_condition) {
-            $currentCondition = Cache::remember(
-                $cacheKey . ':cond:' . $race->course_condition,
-                self::CACHE_TTL,
-                function () use ($race) {
-                    return $this->computeConditionSummary($race, $race->course_condition);
-                }
+        try {
+            $cacheKey = sprintf(
+                'course_trend:v1:%d:%s:%d',
+                $race->venue_id,
+                $race->track_type,
+                $race->distance
             );
+
+            $base = Cache::remember($cacheKey, self::CACHE_TTL, function () use ($race) {
+                return $this->computeBaseTrend($race);
+            });
+
+            // 現在レースの馬場状態にマッチした集計 (キャッシュ外: 条件が変わりうるため軽い集計だけ)
+            $currentCondition = null;
+            if ($race->course_condition) {
+                $currentCondition = Cache::remember(
+                    $cacheKey . ':cond:' . $race->course_condition,
+                    self::CACHE_TTL,
+                    function () use ($race) {
+                        return $this->computeConditionSummary($race, $race->course_condition);
+                    }
+                );
+            }
+
+            $base['current_condition_summary'] = $currentCondition;
+            $base['current_condition_label']   = $race->course_condition;
+
+            return $base;
+        } catch (Throwable $e) {
+            // コース傾向は補助情報。集計失敗で出馬表画面全体を落とさない。
+            Log::warning('CourseTrendService::analyze failed', [
+                'race_id'    => $race->id,
+                'venue_id'   => $race->venue_id,
+                'track_type' => $race->track_type,
+                'distance'   => $race->distance,
+                'error'      => $e->getMessage(),
+            ]);
+            return $this->emptyResult();
         }
-
-        $base['current_condition_summary'] = $currentCondition;
-        $base['current_condition_label']   = $race->course_condition;
-
-        return $base;
     }
 
     /**
@@ -97,9 +111,10 @@ class CourseTrendService
             ->where('distance', $race->distance)
             ->whereBetween('race_date', [$from, $to])
             ->whereHas('results', fn($q) => $q->whereNotNull('finish_position_int'))
-            ->pluck('id');
+            ->pluck('id')
+            ->all();
 
-        $sampleSize = $raceIds->count();
+        $sampleSize = count($raceIds);
 
         if ($sampleSize === 0) {
             return array_merge($this->emptyResult(), [
@@ -325,9 +340,10 @@ class CourseTrendService
             ->where('course_condition', $condition)
             ->whereBetween('race_date', [$from, $to])
             ->whereHas('results', fn($q) => $q->whereNotNull('finish_position_int'))
-            ->pluck('id');
+            ->pluck('id')
+            ->all();
 
-        $sample = $raceIds->count();
+        $sample = count($raceIds);
 
         if ($sample === 0) {
             return [
