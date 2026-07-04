@@ -26,9 +26,9 @@ class PedigreeRecommendService
 {
     /** デフォルト重み(合計を100に揃える運用) */
     public const DEFAULT_WEIGHTS = [
-        'pedigree' => 20,   // 血統(父60%/母父40%合成)
+        'pedigree' => 15,   // 血統(父60%/母父40%合成)
         'jockey'   => 20,   // 騎手×条件
-        'horse'    => 25,   // 馬の過去走
+        'horse'    => 30,   // 馬の過去走
         'roi'      => 10,   // 父複勝回収率の妙味ボーナス
         'frame'    => 10,   // 枠順 × 同コースの複勝率
         'course'   => 10,   // 同コース(track_type×direction)での馬の複勝率
