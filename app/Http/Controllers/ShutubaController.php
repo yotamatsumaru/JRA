@@ -10,6 +10,7 @@ use App\Models\Race;
 use App\Models\RaceMark;
 use App\Models\RaceResult;
 use App\Models\Venue;
+use App\Services\CourseTrendService;
 use App\Services\NetkeibaScraper;
 use App\Services\OddsSnapshotService;
 use App\Services\PedigreeRecommendService;
@@ -413,6 +414,11 @@ class ShutubaController extends Controller
         // 同じ開催週末 (=直近の土日) の全レースを取得し、Blade で日付・会場別にグルーピング
         $navigator = $this->buildRaceNavigator($race);
 
+        // コース傾向 (Phase EV-4)
+        //   同じ (venue_id, track_type, distance) のレースを直近36ヶ月から集計。
+        //   24h キャッシュ済みなので毎回の DB 集計は発生しない。
+        $courseTrend = app(CourseTrendService::class)->analyze($race);
+
         return view('shutuba.show', [
             'race'             => $race,
             'rows'             => $rows,
@@ -429,6 +435,8 @@ class ShutubaController extends Controller
             'has_live_odds'    => !empty($liveOddsMap),
             // レースナビゲーター (JRA 公式風)
             'navigator'        => $navigator,
+            // コース傾向 (Phase EV-4)
+            'course_trend'     => $courseTrend,
         ]);
     }
 
