@@ -461,23 +461,23 @@ class ShutubaController extends Controller
         //
         // 精密ガードなら「発走前」〜「発走後 N 分」の間は取得可能、
         // それ以降は netkeiba 側でオッズが確定固定なので取得抑止。
+        // Phase EV-3 修正:
+        //   race_date (00:00起点) でのガードは廃止した。
+        //   race_date は「日付だけ」なので、発走 12:10 のレースでも
+        //   "race_date + 90分" は当日 01:30 になり、朝の時点で
+        //   誤って「90分超過」判定になっていた (2026/07/04 スクショで確認)。
+        //
+        //   ガードを働かせるのは post_time が確実に埋まっているレースだけとする。
+        //   post_time が未取込のレースはガードをスキップ (誤判定より netkeiba 側の
+        //   「オッズなし」で自然に skip される方が安全)。
         $minutesAfterPost = config('jra.odds_capture.minutes_after_post');
-        if (is_numeric($minutesAfterPost) && (int) $minutesAfterPost > 0) {
+        if (is_numeric($minutesAfterPost) && (int) $minutesAfterPost > 0 && $race->post_time) {
             $minutesAfterPost = (int) $minutesAfterPost;
-            $threshold = null;
-            if ($race->post_time) {
-                // 精密ガード: 発走時刻 + N分
-                $threshold = $race->post_time->copy()->addMinutes($minutesAfterPost);
-            } elseif ($race->race_date) {
-                // 粗いフォールバック: 開催日 00:00 + N分
-                $threshold = $race->race_date->copy()->addMinutes($minutesAfterPost);
-            }
-            if ($threshold && now()->gt($threshold)) {
+            $threshold = $race->post_time->copy()->addMinutes($minutesAfterPost);
+            if (now()->gt($threshold)) {
                 return response()->json([
                     'ok'      => false,
-                    'message' => $race->post_time
-                        ? "発走時刻 ({$race->post_time->format('H:i')}) から{$minutesAfterPost}分超過のためオッズ取得を停止しました"
-                        : "レース開催日から{$minutesAfterPost}分超過のためオッズは取得できません",
+                    'message' => "発走時刻 ({$race->post_time->format('H:i')}) から{$minutesAfterPost}分超過のためオッズ取得を停止しました",
                 ], 422);
             }
         }
