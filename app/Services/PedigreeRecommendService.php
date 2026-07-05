@@ -369,11 +369,28 @@ class PedigreeRecommendService
         });
     }
 
+    /** 馬個体評価: 直近走ほど重みを大きくする減衰係数(0.82^0=1, 0.82^1=0.82, ...) */
+    private const HORSE_RECENT_DECAY = 0.82;
+
+    /** 馬個体評価: 直近フォーム/上がり3F分析で遡る過去走の最大数 */
+    private const HORSE_RECENT_LOOKBACK = 8;
+
     /**
-     * 馬スコア(過去走の複勝率 + 直近5走の3着内回数 を加味)
+     * 馬スコア(Phase EV-5: 多因子評価に拡張)
      *
-     * 馬の過去走集計は同距離±200m or 同track_type で。
-     * 直近5走の3着内が多いほど加点(現在好調補正)。
+     * 過去は「同条件複勝率×2」+「直近5走の3着内回数ボーナス(0〜20点)」のみだったが、
+     * 以下の3要素を合成した、より精密な個体評価に拡張する。
+     *
+     *   1) base_score  : 同条件(距離±200等)の複勝率ベーススコア(0〜100, 従来通り)
+     *   2) form_score  : 直近{最大8走}の「出走頭数に対する相対着順」を指数減衰加重平均
+     *                    したスコア(0〜100)。直近走ほど重視し、同じ5着でも
+     *                    18頭立てと8頭立てでは評価が変わる(相対着順で正規化)。
+     *   3) speed_score : 直近走の上がり3Fが同レース平均よりどれだけ速いかを
+     *                    指数減衰加重平均したスコア(0〜100, データ不足時は算出せず
+     *                    base+form の2要素で正規化して合成する)。
+     *
+     *   score = base_score*0.50 + form_score*0.35 + speed_score*0.15  (速さデータありの場合)
+     *   score = base_score*0.55 + form_score*0.45                     (速さデータなしの場合)
      *
      * @param int   $horseId
      * @param array $cond     ['track_type'=>?, 'distance'=>?]
@@ -384,7 +401,7 @@ class PedigreeRecommendService
             'track_type' => $cond['track_type'] ?? null,
             'distance'   => $cond['distance']   ?? null,
         ];
-        $key = 'rec:horse:v2:' . md5($horseId . '|' . json_encode($cacheKey) . '|' . $minRuns);
+        $key = 'rec:horse:v3:' . md5($horseId . '|' . json_encode($cacheKey) . '|' . $minRuns);
         return Cache::remember($key, self::CACHE_TTL, function () use ($horseId, $cond, $minRuns) {
             // ステップフォールバック: 距離±200 → ±400 → track のみ → 全レース
             $track = $cond['track_type'] ?? null;
@@ -429,32 +446,102 @@ class PedigreeRecommendService
                     'win_rate'     => 0,
                     'recent_shows' => 0,
                     'recent_bonus' => 0,
+                    'form_score'   => 0,
+                    'speed_score'  => null,
                     'scope'        => 'no_history',
                 ];
             }
 
-            // 直近5走の3着内ボーナス(0〜20点)
-            $recentShows = DB::table('race_results')
+            // ---- 直近走データ取得(頭数・着順・上がり3F・race_id) ----
+            $recentRows = DB::table('race_results')
                 ->join('races', 'races.id', '=', 'race_results.race_id')
                 ->where('race_results.horse_id', $horseId)
                 ->whereNotNull('race_results.finish_position_int')
                 ->orderByDesc('races.race_date')
-                ->limit(5)
-                ->pluck('race_results.finish_position_int')
-                ->filter(fn($p) => $p <= 3)
-                ->count();
-            $recentBonus = $recentShows * 4;  // 5/5なら +20
+                ->limit(self::HORSE_RECENT_LOOKBACK)
+                ->select([
+                    'races.id as race_id',
+                    'races.horses_count',
+                    'race_results.finish_position_int',
+                    'race_results.last_3f_seconds',
+                ])
+                ->get();
 
-            $score = min(100, $base['score'] + $recentBonus);
+            // 直近5走の3着内回数(後方互換の表示用テキストに利用)
+            $recentShows = $recentRows->take(5)
+                ->filter(fn($r) => (int) $r->finish_position_int <= 3)
+                ->count();
+
+            // ---- 1) 加重直近フォームスコア(相対着順を指数減衰加重平均) ----
+            $decay = self::HORSE_RECENT_DECAY;
+            $wSum = 0.0; $qSum = 0.0;
+            foreach ($recentRows as $i => $row) {
+                $hc = (int) ($row->horses_count ?? 0);
+                if ($hc < 2) $hc = 16; // 頭数不明時は JRA 平均的な16頭で近似
+                $pos = (int) $row->finish_position_int;
+                // 相対着順品質: 1着なら1.0、最下位なら0.0
+                $quality = 1.0 - (($pos - 1) / max(1, $hc - 1));
+                $quality = max(0.0, min(1.0, $quality));
+                $w = $decay ** $i;
+                $qSum += $quality * $w;
+                $wSum += $w;
+            }
+            $formScore = $wSum > 0 ? round(($qSum / $wSum) * 100, 2) : (float) $base['score'];
+
+            // ---- 2) 上がり3F相対スピードスコア(同レース平均との差を指数減衰加重平均) ----
+            $raceIds = $recentRows->pluck('race_id')->unique()->values()->all();
+            $raceAvgL3f = empty($raceIds) ? collect() : DB::table('race_results')
+                ->whereIn('race_id', $raceIds)
+                ->whereNotNull('last_3f_seconds')
+                ->groupBy('race_id')
+                ->selectRaw('race_id, AVG(last_3f_seconds) as avg_l3f, COUNT(*) as n')
+                ->get()
+                ->keyBy('race_id');
+
+            $dwSum = 0.0; $dSum = 0.0;
+            foreach ($recentRows as $i => $row) {
+                if ($row->last_3f_seconds === null) continue;
+                $avgRow = $raceAvgL3f->get($row->race_id);
+                // レース内サンプルが少なすぎる(3頭未満)場合は平均の信頼性が低いので除外
+                if (!$avgRow || (int) $avgRow->n < 3) continue;
+                // 正の値 = 平均より速い(上がり3Fは秒数が小さいほど速い)
+                $diff = (float) $avgRow->avg_l3f - (float) $row->last_3f_seconds;
+                $w = $decay ** $i;
+                $dSum  += $diff * $w;
+                $dwSum += $w;
+            }
+            $speedScore = null;
+            $avgLast3fDiff = null;
+            if ($dwSum > 0) {
+                $avgLast3fDiff = round($dSum / $dwSum, 2);
+                // 差 0秒 = 50点を基準に、0.6秒速いごとに+30点相当の傾き(経験則)
+                $speedScore = max(0.0, min(100.0, 50.0 + $avgLast3fDiff * 50.0));
+                $speedScore = round($speedScore, 2);
+            }
+
+            // ---- 3) 合成 ----
+            if ($speedScore !== null) {
+                $score = ((float) $base['score']) * 0.50 + $formScore * 0.35 + $speedScore * 0.15;
+            } else {
+                $score = ((float) $base['score']) * 0.55 + $formScore * 0.45;
+            }
+            $score = max(0.0, min(100.0, $score));
+
+            // recent_bonus: 後方互換の「直近フォームによる加点分」の目安値(base_score単体との差分)
+            $recentBonus = round($score - (float) $base['score'], 2);
+
             return [
-                'score'        => round($score, 2),
-                'base_score'   => $base['score'],
-                'runs'         => $base['runs'],
-                'show_rate'    => $base['show_rate'],
-                'win_rate'     => $base['win_rate'],
-                'recent_shows' => $recentShows,
-                'recent_bonus' => $recentBonus,
-                'scope'        => $usedScope,
+                'score'             => round($score, 2),
+                'base_score'        => $base['score'],
+                'runs'              => $base['runs'],
+                'show_rate'         => $base['show_rate'],
+                'win_rate'          => $base['win_rate'],
+                'recent_shows'      => $recentShows,
+                'recent_bonus'      => $recentBonus,
+                'form_score'        => $formScore,
+                'speed_score'       => $speedScore,
+                'avg_last_3f_diff'  => $avgLast3fDiff,
+                'scope'             => $usedScope,
             ];
         });
     }
@@ -715,7 +802,7 @@ class PedigreeRecommendService
             // 騎手
             $jockeyId ? 'rec:jockey:v3:' . md5($jockeyId . '|' . json_encode($jockeyCacheKey) . '|' . $minRuns) : null,
             // 馬
-            'rec:horse:v2:' . md5($horseId . '|' . json_encode($horseCacheKey) . '|' . $minRuns),
+            'rec:horse:v3:' . md5($horseId . '|' . json_encode($horseCacheKey) . '|' . $minRuns),
             // 回収率ボーナス
             $father ? 'rec:roi:' . md5($father . '|' . json_encode($cond) . '|' . $minRuns) : null,
             // 枠

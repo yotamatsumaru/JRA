@@ -1104,7 +1104,31 @@ class ShutubaController extends Controller
     }
 
     /**
-     * 期待値(EV)を計算 (Phase 1-B → EV-2 拡張)
+     * EV 10段階グレード定義 (Phase EV-4)
+     *
+     * 上から順に判定し、$ev がそのグレードの下限(config で調整可)以上なら採用する。
+     * 'e' は下限を持たず、どのグレードにも該当しなかった場合の受け皿。
+     *
+     *   code       : config の label_thresholds_v2 キー(閾値取得用)
+     *   grade      : 短い表示名 (S+ / S / A+ ... )
+     *   label      : UIに出す完全ラベル
+     *   badge      : Tailwind クラス(ライト/ダーク)
+     */
+    private const EV_GRADES = [
+        ['code' => 'sp', 'grade' => 'S+', 'label' => 'S+ 破格の妙味', 'default_min' =>  0.50, 'badge' => 'bg-rose-600 text-white dark:bg-rose-500 dark:text-white'],
+        ['code' => 's',  'grade' => 'S',  'label' => 'S 大きな妙味',   'default_min' =>  0.35, 'badge' => 'bg-red-500 text-white dark:bg-red-500 dark:text-white'],
+        ['code' => 'ap', 'grade' => 'A+', 'label' => 'A+ かなりお得', 'default_min' =>  0.20, 'badge' => 'bg-orange-400 text-white dark:bg-orange-500 dark:text-white'],
+        ['code' => 'a',  'grade' => 'A',  'label' => 'A お得',        'default_min' =>  0.10, 'badge' => 'bg-amber-300 text-amber-900 dark:bg-amber-500 dark:text-gray-900'],
+        ['code' => 'bp', 'grade' => 'B+', 'label' => 'B+ やや妙味',   'default_min' =>  0.02, 'badge' => 'bg-lime-200 text-lime-900 dark:bg-lime-600 dark:text-gray-900'],
+        ['code' => 'b',  'grade' => 'B',  'label' => 'B 均衡やや妙味', 'default_min' => -0.05, 'badge' => 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-100'],
+        ['code' => 'cp', 'grade' => 'C+', 'label' => 'C+ ほぼ均衡',   'default_min' => -0.12, 'badge' => 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'],
+        ['code' => 'c',  'grade' => 'C',  'label' => 'C やや過大',    'default_min' => -0.20, 'badge' => 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'],
+        ['code' => 'd',  'grade' => 'D',  'label' => 'D 過大評価',    'default_min' => -0.35, 'badge' => 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'],
+        ['code' => 'e',  'grade' => 'E',  'label' => 'E 大幅過大評価', 'default_min' => null,  'badge' => 'bg-blue-200 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'],
+    ];
+
+    /**
+     * 期待値(EV)を計算 (Phase 1-B → EV-2 拡張 → EV-4: 10段階グレード化)
      *
      * total スコアを推定勝率に変換し、単勝オッズで EV を出す。
      * さらに「単勝オッズから複勝オッズを推定」して複勝EVも計算する。
@@ -1116,11 +1140,12 @@ class ShutubaController extends Controller
      *   単勝EV = 単勝勝率 * 単勝オッズ - 1
      *   複勝EV = 複勝率   * 推定複勝オッズ - 1
      *
-     * EV>0 が「お得」、EV<0 が「過大評価」。
+     * EV>0 が「お得」、EV<0 が「過大評価」。10段階(S+〜E)で細かく格付けする。
      *
      * @return array{
-     *   prob:float, ev:float, label:string,
-     *   place_prob:float, place_odds:float, place_ev:float, place_label:string
+     *   prob:float, ev:float, label:string, grade:string, grade_badge:string,
+     *   place_prob:float, place_odds:float, place_ev:float, place_label:string,
+     *   place_grade:string, place_grade_badge:string
      * }
      */
     private function calcExpectedValue(float $total, float $winOdds): array
@@ -1141,7 +1166,7 @@ class ShutubaController extends Controller
         // total=70 で 21%、total=85 で 33% 程度 (デフォルト係数の場合)
         $prob = max($probMin, min($probMax, ($total / 100) * $probCoef));
         $ev   = $prob * $winOdds - 1.0;
-        $label = $this->labelForEv($ev);
+        $gradeInfo = $this->gradeForEv($ev);
 
         // ===== 複勝 (オッズ推定) =====
         // 経験則: 複勝率 ≒ 単勝率 × place_prob_ratio (デフォルト 2.6)
@@ -1155,22 +1180,50 @@ class ShutubaController extends Controller
         //   単勝50倍  → 複勝15.7倍
         $placeOdds = max($placeOddsFloor, 1.0 + ($winOdds - 1.0) * $placeOddsCoef);
         $placeEv   = $placeProb * $placeOdds - 1.0;
-        $placeLabel = $this->labelForEv($placeEv);
+        $placeGradeInfo = $this->gradeForEv($placeEv);
 
         return [
             // 単勝
-            'prob'        => round($prob * 100, 1),    // %
-            'ev'          => round($ev, 3),
-            'label'       => $label,
-            // 複勝 (Phase EV-2)
-            'place_prob'  => round($placeProb * 100, 1),
-            'place_odds'  => round($placeOdds, 1),
-            'place_ev'    => round($placeEv, 3),
-            'place_label' => $placeLabel,
+            'prob'              => round($prob * 100, 1),    // %
+            'ev'                => round($ev, 3),
+            'label'             => $gradeInfo['label'],
+            'grade'             => $gradeInfo['grade'],
+            'grade_badge'       => $gradeInfo['badge'],
+            // 複勝 (Phase EV-2, EV-4)
+            'place_prob'        => round($placeProb * 100, 1),
+            'place_odds'        => round($placeOdds, 1),
+            'place_ev'          => round($placeEv, 3),
+            'place_label'       => $placeGradeInfo['label'],
+            'place_grade'       => $placeGradeInfo['grade'],
+            'place_grade_badge' => $placeGradeInfo['badge'],
         ];
     }
 
-    /** EV値から「お得/中/過大」のラベルを返す (閾値は config 化) */
+    /**
+     * EV値から10段階グレード(S+〜E)の情報を返す (閾値は config で調整可能)
+     *
+     * @return array{grade:string, label:string, badge:string}
+     */
+    private function gradeForEv(float $ev): array
+    {
+        $thr = config('jra.ev.label_thresholds_v2', []);
+        foreach (self::EV_GRADES as $g) {
+            if ($g['default_min'] === null) {
+                // 最終段階(受け皿)
+                return ['grade' => $g['grade'], 'label' => $g['label'], 'badge' => $g['badge']];
+            }
+            $min = (float) ($thr[$g['code']] ?? $g['default_min']);
+            if ($ev >= $min) {
+                return ['grade' => $g['grade'], 'label' => $g['label'], 'badge' => $g['badge']];
+            }
+        }
+        // 理論上到達しないが、フォールバック
+        $grades = self::EV_GRADES;
+        $last = end($grades);
+        return ['grade' => $last['grade'], 'label' => $last['label'], 'badge' => $last['badge']];
+    }
+
+    /** EV値から「お得/中/過大」のラベルを返す (旧5段階、後方互換用に残置) */
     private function labelForEv(float $ev): string
     {
         $thr = config('jra.ev.label_thresholds', []);
