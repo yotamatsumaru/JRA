@@ -22,12 +22,10 @@ return [
     |   place_prob  = clamp(win_prob * place_prob_ratio,         place_prob_min, place_prob_max)
     |   place_odds  = max(place_odds_floor, 1 + (win_odds - 1) * place_odds_coef)
     |
-    | EV ラベルの閾値:
-    |   ev >= great        → ◎お得
-    |   ev >= good         → ○妙味
-    |   ev >= neutral_low  → 中
-    |   ev >= overrated    → △やや過大
-    |   それ以外            → ✕過大評価
+    | EV ラベルの閾値(10段階, Phase EV-4):
+    |   グレードは S+ (最高) 〜 E (最低) の10段階。
+    |   各段階の下限 EV 値を 'grades' に降順で列挙し、該当する最初の
+    |   段階(EV がその下限以上)を採用する。閾値は env でチューニング可能。
     */
     'ev' => [
         // 単勝勝率の換算係数
@@ -46,7 +44,30 @@ return [
         'place_odds_coef'  => (float) env('JRA_EV_PLACE_ODDS_COEF', 0.30),
         'place_odds_floor' => (float) env('JRA_EV_PLACE_ODDS_FLOOR', 1.1),
 
-        // EV ラベル閾値
+        // EV ラベル閾値 (10段階, 降順)
+        //   S+ : 破格の妙味 (EV >= 0.50)
+        //   S  : 大きな妙味 (EV >= 0.35)
+        //   A+ : かなりお得 (EV >= 0.20)
+        //   A  : お得       (EV >= 0.10)
+        //   B+ : やや妙味   (EV >= 0.02)
+        //   B  : 均衡やや妙味(EV >= -0.05)
+        //   C+ : ほぼ均衡   (EV >= -0.12)
+        //   C  : やや過大   (EV >= -0.20)
+        //   D  : 過大評価   (EV >= -0.35)
+        //   E  : 大幅過大   (それ以外)
+        'label_thresholds_v2' => [
+            'sp' => (float) env('JRA_EV_THR_SP', 0.50),
+            's'  => (float) env('JRA_EV_THR_S',  0.35),
+            'ap' => (float) env('JRA_EV_THR_AP', 0.20),
+            'a'  => (float) env('JRA_EV_THR_A',  0.10),
+            'bp' => (float) env('JRA_EV_THR_BP', 0.02),
+            'b'  => (float) env('JRA_EV_THR_B', -0.05),
+            'cp' => (float) env('JRA_EV_THR_CP', -0.12),
+            'c'  => (float) env('JRA_EV_THR_C', -0.20),
+            'd'  => (float) env('JRA_EV_THR_D', -0.35),
+        ],
+
+        // 旧5段階閾値(後方互換用に残置。label_thresholds_v2 が優先される)
         'label_thresholds' => [
             'great'       => (float) env('JRA_EV_THR_GREAT',       0.30),
             'good'        => (float) env('JRA_EV_THR_GOOD',        0.10),

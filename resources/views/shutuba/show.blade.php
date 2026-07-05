@@ -529,8 +529,8 @@
                     <th class="text-left px-2 py-2">血統 / コース傾向</th>
                     <th class="text-right px-2 py-2 w-[60px]">人気</th>
                     <th class="text-right px-2 py-2 w-[80px]" title="単勝オッズ (ライブ取得時はその値を表示)">単オッズ</th>
-                    <th class="text-right px-2 py-2 w-[80px]" title="単勝期待値 = 推定勝率 × 単勝オッズ - 1">単EV</th>
-                    <th class="text-right px-2 py-2 w-[80px]" title="複勝期待値 (オッズ推定値ベース)">複EV</th>
+                    <th class="text-right px-2 py-2 w-[80px]" title="単勝期待値 = 推定勝率 × 単勝オッズ - 1&#10;10段階グレード: S+(破格の妙味) > S > A+ > A > B+ > B > C+ > C > D > E(大幅過大評価)">単EV</th>
+                    <th class="text-right px-2 py-2 w-[80px]" title="複勝期待値 (オッズ推定値ベース)&#10;10段階グレード: S+(破格の妙味) > S > A+ > A > B+ > B > C+ > C > D > E(大幅過大評価)">複EV</th>
                     <th class="text-right px-2 py-2 w-[54px]" title="血統(父60%/母父40%)">血統</th>
                     <th class="text-right px-2 py-2 w-[54px]" title="騎手×条件 複勝率">騎手</th>
                     <th class="text-right px-2 py-2 w-[54px]" title="馬の過去走 複勝率(直近5走補正)">馬</th>
@@ -761,19 +761,21 @@
                             @endif
                         </td>
 
-                        {{-- 単勝期待値(EV) (Phase 1-B) --}}
+                        {{-- 単勝期待値(EV) (Phase 1-B → EV-4: 10段階グレード) --}}
                         <td class="px-2 py-2 text-right">
                             @if ($r->ev)
                                 @php
                                     $ev = $r->ev;
-                                    $evColor = $ev['ev'] >= 0.30 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                    $evGrade = $ev['grade'] ?? null;
+                                    $evBadge = $ev['grade_badge']
+                                        ?? ($ev['ev'] >= 0.30 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
                                         : ($ev['ev'] >= 0.10 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                                         : ($ev['ev'] >= -0.10 ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                                        : 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'));
+                                        : 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300')));
                                 @endphp
-                                <div class="inline-flex flex-col items-end px-1.5 py-0.5 rounded {{ $evColor }}"
-                                    title="推定単勝勝率 {{ $ev['prob'] }}% × 単勝オッズ {{ number_format((float)$ev['win_odds'], 1) }} - 1 = {{ number_format($ev['ev'], 2) }}">
-                                    <span class="font-bold text-[11px]">{{ $ev['label'] }}</span>
+                                <div class="inline-flex flex-col items-end px-1.5 py-0.5 rounded {{ $evBadge }}"
+                                    title="{{ $ev['label'] }}｜推定単勝勝率 {{ $ev['prob'] }}% × 単勝オッズ {{ number_format((float)$ev['win_odds'], 1) }} - 1 = {{ number_format($ev['ev'], 2) }}">
+                                    <span class="font-bold text-[11px]">{{ $evGrade ?? $ev['label'] }}</span>
                                     <span class="text-[10px] opacity-80">{{ number_format($ev['ev'], 2) }}</span>
                                 </div>
                             @else
@@ -781,19 +783,21 @@
                             @endif
                         </td>
 
-                        {{-- 複勝期待値 (Phase EV-2) --}}
+                        {{-- 複勝期待値 (Phase EV-2 → EV-4: 10段階グレード) --}}
                         <td class="px-2 py-2 text-right">
                             @if ($r->ev && isset($r->ev['place_ev']))
                                 @php
                                     $pev = (float) $r->ev['place_ev'];
-                                    $pevColor = $pev >= 0.30 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                    $pevGrade = $r->ev['place_grade'] ?? null;
+                                    $pevBadge = $r->ev['place_grade_badge']
+                                        ?? ($pev >= 0.30 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
                                         : ($pev >= 0.10 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                                         : ($pev >= -0.10 ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                                        : 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'));
+                                        : 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300')));
                                 @endphp
-                                <div class="inline-flex flex-col items-end px-1.5 py-0.5 rounded {{ $pevColor }}"
-                                    title="推定複勝率 {{ $r->ev['place_prob'] }}% × 推定複勝オッズ {{ number_format((float)$r->ev['place_odds'], 1) }} - 1 = {{ number_format($pev, 2) }} (※複勝オッズは単勝オッズから推定)">
-                                    <span class="font-bold text-[11px]">{{ $r->ev['place_label'] }}</span>
+                                <div class="inline-flex flex-col items-end px-1.5 py-0.5 rounded {{ $pevBadge }}"
+                                    title="{{ $r->ev['place_label'] }}｜推定複勝率 {{ $r->ev['place_prob'] }}% × 推定複勝オッズ {{ number_format((float)$r->ev['place_odds'], 1) }} - 1 = {{ number_format($pev, 2) }} (※複勝オッズは単勝オッズから推定)">
+                                    <span class="font-bold text-[11px]">{{ $pevGrade ?? $r->ev['place_label'] }}</span>
                                     <span class="text-[10px] opacity-80">{{ number_format($pev, 2) }}</span>
                                 </div>
                             @else
