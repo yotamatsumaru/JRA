@@ -471,6 +471,9 @@ class ShutubaController extends Controller
                     'race_note'      => $raceNote?->note,
                     'course_trend'   => $courseTrend,
                     'entries' => collect($rows)->map(function ($r) {
+                        // スコア内訳: 直近再計算分は $r->eval['sub'] を優先し、
+                        // キャッシュ済み(再計算スキップ)の場合は保存済みの $mark_obj カラムから取得する
+                        $sub = $r->eval['sub'] ?? null;
                         return [
                             'race_result_id' => $r->result->id,
                             'horse_number'   => $r->result->horse_number,
@@ -483,6 +486,15 @@ class ShutubaController extends Controller
                             'memo'           => $r->memo,
                             'is_favorite'    => $r->is_favorite,
                             'score_total'    => $r->eval['total'] ?? ($r->mark_obj?->score_total ?? null),
+                            'score_breakdown' => [
+                                'pedigree' => $sub['pedigree'] ?? ($r->mark_obj?->score_pedigree ?? null),
+                                'jockey'   => $sub['jockey']   ?? ($r->mark_obj?->score_jockey   ?? null),
+                                'horse'    => $sub['horse']    ?? ($r->mark_obj?->score_horse    ?? null),
+                                'roi'      => $sub['roi']      ?? ($r->mark_obj?->score_roi      ?? null),
+                                'frame'    => $sub['frame']    ?? ($r->mark_obj?->score_frame     ?? null),
+                                'course'   => $sub['course']   ?? ($r->mark_obj?->score_course    ?? null),
+                                'style'    => $sub['style']    ?? ($r->mark_obj?->score_style     ?? null),
+                            ],
                             'ev'             => $r->ev,
                             'live_win_odds'      => $r->live_win_odds,
                             'live_popularity'    => $r->live_popularity,
