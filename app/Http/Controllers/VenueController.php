@@ -3,14 +3,30 @@
 namespace App\Http\Controllers;
 
 use App\Models\Venue;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class VenueController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View|JsonResponse
     {
         $venues = Venue::withCount('races')->orderBy('code')->get();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok'   => true,
+                'data' => $venues->map(fn (Venue $v) => [
+                    'id'           => $v->id,
+                    'code'         => $v->code,
+                    'name'         => $v->name,
+                    'region'       => $v->region,
+                    'races_count'  => $v->races_count,
+                ]),
+            ]);
+        }
+
         return view('venues.index', compact('venues'));
     }
 

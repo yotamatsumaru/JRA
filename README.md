@@ -172,6 +172,60 @@ php artisan netkeiba:date 2020-01-01 --to=2025-05-08 --limit=10000
 - 〜 0.65 → **差**
 - それ以外 → **追**
 
+## 📱 アプリ版(Flutter)向け API
+
+既存のBlade画面(セッション認証)には一切影響を与えず、Laravel Sanctumによる
+トークン認証の独立したAPIレイヤーを `routes/api.php` に追加しています。
+
+### セットアップ(サーバー側で1回だけ実行)
+
+```bash
+composer install
+php artisan migrate   # personal_access_tokens テーブルが追加されます
+```
+
+### エンドポイント一覧
+
+| メソッド | パス | 説明 | 認証 |
+|---|---|---|---|
+| POST | `/api/login` | ログイン(トークン発行) | 不要 |
+| POST | `/api/logout` | ログアウト(トークン失効) | 要 |
+| GET  | `/api/user` | ログイン中ユーザー情報 | 要 |
+| GET  | `/api/venues` | 競馬場一覧 | 要 |
+| GET  | `/api/races` | レース一覧(結果確定分) | 要 |
+| GET  | `/api/races/{race}` | レース詳細・結果 | 要 |
+| GET  | `/api/shutuba` | 出馬表一覧(予想対象レース) | 要 |
+| GET  | `/api/shutuba/{race}` | 出馬表詳細・印・スコア・EV | 要 |
+| POST | `/api/shutuba/{race}/mark` | 印を付ける(◎○▲△☆✕) | 要 |
+| POST | `/api/shutuba/{race}/auto-mark` | 印を自動提案 | 要 |
+| POST | `/api/shutuba/{race}/memo` | メモ保存 | 要 |
+| GET  | `/api/shutuba/{race}/odds-timeline` | オッズ推移(グラフ用) | 要 |
+| POST | `/api/shutuba/{race}/capture-odds` | 最新オッズを取得 | 要 |
+| GET  | `/api/analytics/venue` | 競馬場別傾向分析 | 要 |
+| GET  | `/api/analytics/roi` | 回収率シミュレーション | 要 |
+
+### 認証方法
+
+```
+POST /api/login
+Content-Type: application/json
+Accept: application/json
+
+{ "email": "you@example.com", "password": "xxxx", "device_name": "iPhone 15" }
+
+→ { "ok": true, "token": "1|xxxxxxxx...", "user": { "id": 1, "name": "...", "email": "..." } }
+```
+
+以降のリクエストには以下のヘッダーを付与してください:
+
+```
+Authorization: Bearer {token}
+Accept: application/json
+```
+
+`Accept: application/json` を付けない場合、通常のBlade画面用リクエストとして
+扱われるため、必ず付与してください。
+
 ## ライセンス
 
 個人利用のためライセンス指定なし。

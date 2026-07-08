@@ -7,6 +7,7 @@ use App\Models\Jockey;
 use App\Models\Race;
 use App\Models\Trainer;
 use App\Models\Venue;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +15,7 @@ use Illuminate\View\View;
 
 class RaceController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $query = Race::with('venue')->withCount('results');
 
@@ -43,6 +44,32 @@ class RaceController extends Controller
             ->paginate(30)
             ->withQueryString();
 
+        // Flutterアプリ向け: Accept: application/json の場合はJSONで返す
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok'   => true,
+                'data' => collect($races->items())->map(fn (Race $r) => [
+                    'id'          => $r->id,
+                    'race_date'   => $r->race_date?->format('Y-m-d'),
+                    'race_number' => $r->race_number,
+                    'name'        => $r->name,
+                    'grade'       => $r->grade,
+                    'venue'       => $r->venue ? [
+                        'id'   => $r->venue->id,
+                        'name' => $r->venue->name,
+                    ] : null,
+                    'track_type'  => $r->track_type,
+                    'distance'    => $r->distance,
+                    'results_count' => $r->results_count,
+                ]),
+                'meta' => [
+                    'current_page' => $races->currentPage(),
+                    'last_page'    => $races->lastPage(),
+                    'total'        => $races->total(),
+                ],
+            ]);
+        }
+
         $venues = Venue::orderBy('code')->get();
 
         return view('races.index', compact('races', 'venues'));
@@ -64,7 +91,7 @@ class RaceController extends Controller
             ->with('status', 'レースを登録しました。続けて結果を入力してください。');
     }
 
-    public function show(Race $race): View
+    public function show(Race $race, Request $request): View|JsonResponse
     {
         try {
             $race->load([
@@ -118,6 +145,46 @@ class RaceController extends Controller
         $myBetSummary['roi']    = $myBetSummary['stake'] > 0
             ? round($myBetSummary['payout'] / $myBetSummary['stake'] * 100, 1)
             : null;
+
+        // Flutterアプリ向け: Accept: application/json の場合はJSONで返す
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok' => true,
+                'data' => [
+                    'id'          => $race->id,
+                    'name'        => $race->name,
+                    'grade'       => $race->grade,
+                    'race_date'   => $race->race_date?->format('Y-m-d'),
+                    'race_number' => $race->race_number,
+                    'venue'       => $race->venue ? [
+                        'id' => $race->venue->id, 'name' => $race->venue->name,
+                    ] : null,
+                    'track_type'       => $race->track_type,
+                    'distance'         => $race->distance,
+                    'course_condition' => $race->course_condition,
+                    'weather'          => $race->weather,
+                    'pace'             => $race->pace,
+                    'results' => $race->results->map(fn ($r) => [
+                        'id'                  => $r->id,
+                        'finish_position'     => $r->finish_position,
+                        'finish_position_int' => $r->finish_position_int,
+                        'frame_number'        => $r->frame_number,
+                        'horse_number'        => $r->horse_number,
+                        'horse_name'          => $r->horse?->name,
+                        'jockey_name'         => $r->jockey?->name,
+                        'trainer_name'        => $r->trainer?->name,
+                        'time'                => $r->time,
+                        'popularity'          => $r->popularity,
+                        'win_odds'            => $r->win_odds,
+                        'running_style'       => $r->running_style,
+                    ]),
+                    'payouts' => $payoutsByKind->map(fn ($group) => $group->map(fn ($p) => [
+                        'combination' => $p->combination ?? null,
+                        'amount'      => $p->amount ?? null,
+                    ])),
+                ],
+            ]);
+        }
 
         return view('races.show', compact('race', 'payoutsByKind', 'myBets', 'myBetSummary'));
     }

@@ -46,7 +46,7 @@ class ShutubaController extends Controller
      *   ?keyword=     レース名キーワード
      *   ?include_done=1  着順入りのレースも含める(再予想用)
      */
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $q = Race::with('venue')
             ->withCount(['results as entries_count'])
@@ -100,6 +100,36 @@ class ShutubaController extends Controller
                 });
         }
 
+        // Flutterアプリ向け: Accept: application/json の場合はJSONで返す
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok'   => true,
+                'data' => collect($races->items())->map(function (Race $r) use ($myMarkedRaceIds, $liveOddsLatestAt) {
+                    return [
+                        'id'          => $r->id,
+                        'race_date'   => $r->race_date?->format('Y-m-d'),
+                        'race_number' => $r->race_number,
+                        'name'        => $r->name,
+                        'grade'       => $r->grade,
+                        'venue'       => $r->venue ? ['id' => $r->venue->id, 'name' => $r->venue->name] : null,
+                        'track_type'  => $r->track_type,
+                        'distance'    => $r->distance,
+                        'entries_count'  => $r->entries_count,
+                        'finished_count' => $r->finished_count,
+                        'has_my_marks'   => in_array($r->id, $myMarkedRaceIds, true),
+                        'live_odds_latest_at' => isset($liveOddsLatestAt[$r->id]) && $liveOddsLatestAt[$r->id]
+                            ? $liveOddsLatestAt[$r->id]->toIso8601String()
+                            : null,
+                    ];
+                }),
+                'meta' => [
+                    'current_page' => $races->currentPage(),
+                    'last_page'    => $races->lastPage(),
+                    'total'        => $races->total(),
+                ],
+            ]);
+        }
+
         return view('shutuba.index', [
             'races'              => $races,
             'venues'             => Venue::orderBy('code')->get(),
@@ -116,7 +146,7 @@ class ShutubaController extends Controller
      *   ?sort=horse_no|score|popularity|odds  並び順(default: horse_no)
      *   ?recompute=1    キャッシュを無視してスコア再計算
      */
-    public function show(Race $race, Request $request): View
+    public function show(Race $race, Request $request): View|JsonResponse
     {
         // ゲスト閲覧時はマーク・メモが見えないだけで、出馬表本体は表示される
         $userId = optional($request->user())->id;
@@ -418,6 +448,51 @@ class ShutubaController extends Controller
         //   同じ (venue_id, track_type, distance) のレースを直近36ヶ月から集計。
         //   24h キャッシュ済みなので毎回の DB 集計は発生しない。
         $courseTrend = app(CourseTrendService::class)->analyze($race);
+
+        // Flutterアプリ向け: Accept: application/json の場合はJSONで返す
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok' => true,
+                'data' => [
+                    'race' => [
+                        'id'          => $race->id,
+                        'name'        => $race->name,
+                        'grade'       => $race->grade,
+                        'race_date'   => $race->race_date?->format('Y-m-d'),
+                        'race_number' => $race->race_number,
+                        'venue'       => $race->venue ? ['id' => $race->venue->id, 'name' => $race->venue->name] : null,
+                        'track_type'  => $race->track_type,
+                        'distance'    => $race->distance,
+                    ],
+                    'pace_forecast'  => $paceForecast,
+                    'mark_summary'   => $markSummary,
+                    'has_live_odds'  => !empty($liveOddsMap),
+                    'live_odds_at'   => $liveOddsAt?->toIso8601String(),
+                    'race_note'      => $raceNote?->note,
+                    'course_trend'   => $courseTrend,
+                    'entries' => collect($rows)->map(function ($r) {
+                        return [
+                            'race_result_id' => $r->result->id,
+                            'horse_number'   => $r->result->horse_number,
+                            'frame_number'   => $r->result->frame_number,
+                            'horse_name'     => $r->horse?->name,
+                            'jockey_name'    => $r->jockey?->name,
+                            'trainer_name'   => $r->trainer?->name,
+                            'running_style'  => $r->running_style,
+                            'mark'           => $r->mark,
+                            'memo'           => $r->memo,
+                            'is_favorite'    => $r->is_favorite,
+                            'score_total'    => $r->eval['total'] ?? ($r->mark_obj?->score_total ?? null),
+                            'ev'             => $r->ev,
+                            'live_win_odds'      => $r->live_win_odds,
+                            'live_popularity'    => $r->live_popularity,
+                            'live_captured_at'   => $r->live_captured_at?->toIso8601String(),
+                            'sire_hint'      => $r->sire_hint,
+                        ];
+                    })->values(),
+                ],
+            ]);
+        }
 
         return view('shutuba.show', [
             'race'             => $race,

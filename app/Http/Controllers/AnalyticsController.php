@@ -6,6 +6,7 @@ use App\Models\Horse;
 use App\Models\Venue;
 use App\Models\VenueCourse;
 use App\Services\PaceStyleAnalysisService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +18,7 @@ class AnalyticsController extends Controller
      * 競馬場別傾向分析
      * 枠順×勝率ヒートマップ、脚質別成績、距離別成績
      */
-    public function venue(Request $request): View
+    public function venue(Request $request): View|JsonResponse
     {
         $venues = Venue::orderBy('code')->get();
         $venueId = $request->get('venue_id', $venues->first()?->id);
@@ -76,6 +77,21 @@ class AnalyticsController extends Controller
             ->groupBy('distance')
             ->orderBy('distance')
             ->pluck('distance');
+
+        // Flutterアプリ向け: Accept: application/json の場合はJSONで返す
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok' => true,
+                'data' => [
+                    'venue'      => $venue ? ['id' => $venue->id, 'name' => $venue->name] : null,
+                    'track_type' => $trackType,
+                    'distance'   => $distance,
+                    'frame_stats' => $frameStats,
+                    'style_stats' => $styleStats,
+                    'available_distances' => $availableDistances,
+                ],
+            ]);
+        }
 
         return view('analytics.venue', compact(
             'venues', 'venue', 'venueId', 'trackType', 'distance',
@@ -1012,7 +1028,7 @@ class AnalyticsController extends Controller
      *     - 馬連/ワイド: popularity<=N の馬同士の組合せが C(N,2) 通り
      *     - 3連複       : popularity<=N の馬同士の組合せが C(N,3) 通り
      */
-    public function roi(Request $request): View
+    public function roi(Request $request): View|JsonResponse
     {
         $kind       = $request->get('kind', 'tan');
         $popularity = $request->get('popularity');
@@ -1059,6 +1075,26 @@ class AnalyticsController extends Controller
             'wide'     => 'ワイド',
             'san-fuku' => '3連複',
         ];
+
+        // Flutterアプリ向け: Accept: application/json の場合はJSONで返す
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok' => true,
+                'data' => [
+                    'kind'       => $kind,
+                    'kind_label' => $kindLabels[$kind] ?? $kind,
+                    'simulation' => $simulation,
+                    'charts'     => $charts,
+                    'filters'    => [
+                        'popularity' => $popularity,
+                        'venue_id'   => $venueId,
+                        'track_type' => $trackType,
+                        'from'       => $from,
+                        'to'         => $to,
+                    ],
+                ],
+            ]);
+        }
 
         return view('analytics.roi', [
             'kind'        => $kind,
