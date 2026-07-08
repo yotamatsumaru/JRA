@@ -588,11 +588,21 @@ class ShutubaController extends Controller
             ], 500);
         }
 
+        // Phase EV-5: captureForRace() 内で天候/馬場状態が races テーブルへ反映されているので
+        // 最新値を読み直し、レスポンスに含める (オッズが取れなくても馬場状況だけは更新できるケースがある)
+        $race->refresh();
+        $conditionPayload = [
+            'weather'                     => $race->weather,
+            'course_condition'            => $race->course_condition,
+            'course_condition_checked_at' => optional($race->course_condition_checked_at)->toIso8601String(),
+            'course_condition_checked_at_human' => optional($race->course_condition_checked_at)->format('H:i:s'),
+        ];
+
         if (!$snap) {
-            return response()->json([
+            return response()->json(array_merge([
                 'ok'      => false,
                 'message' => 'スナップショット作成不可 (発走後 / オッズが取得できない)',
-            ], 422);
+            ], $conditionPayload), 422);
         }
 
         try {
@@ -603,16 +613,18 @@ class ShutubaController extends Controller
                 'horses'    => count($snap->payload ?? []),
                 'is_guest'  => $isGuest,
                 'client_ip' => $isGuest ? $request->ip() : null,
+                'weather'   => $race->weather,
+                'course_condition' => $race->course_condition,
             ]);
         } catch (\Throwable $e) {}
 
-        return response()->json([
+        return response()->json(array_merge([
             'ok'          => true,
             'captured_at' => $snap->captured_at->toIso8601String(),
             'captured_at_human' => $snap->captured_at->format('H:i:s'),
             'count'       => count($snap->payload ?? []),
             'message'     => sprintf('オッズを取得しました (%d頭, %s)', count($snap->payload ?? []), $snap->captured_at->format('H:i:s')),
-        ]);
+        ], $conditionPayload));
     }
 
     /**

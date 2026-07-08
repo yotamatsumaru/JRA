@@ -41,6 +41,7 @@ class Race extends Model
         'direction',
         'course_detail',
         'course_condition',
+        'course_condition_checked_at',
         'weather',
         'pace',
         'lap_times',
@@ -56,6 +57,7 @@ class Race extends Model
         return [
             'race_date' => 'date',
             'post_time' => 'datetime',
+            'course_condition_checked_at' => 'datetime',
             'lap_times' => 'array',
         ];
     }

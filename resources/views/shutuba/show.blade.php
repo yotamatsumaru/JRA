@@ -35,12 +35,39 @@
         $subtitleParts[] = $race->venue?->name . ' ' . $race->race_number . 'R';
         $subtitleParts[] = $race->track_type . $race->distance . 'm' . ($race->course_condition ? ' ' . $race->course_condition : '');
         $subtitle = implode(' ', array_filter($subtitleParts));
+
+        // 馬場状況バッジの色分け (Phase EV-5)
+        //   良: 緑 / 稍重: 黄緑 / 重: オレンジ / 不良: 赤 / 未確認: グレー
+        $condBadgeMap = [
+            '良'   => 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700',
+            '稍重' => 'bg-lime-100 text-lime-700 border-lime-300 dark:bg-lime-900/40 dark:text-lime-300 dark:border-lime-700',
+            '重'   => 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700',
+            '不良' => 'bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-700',
+        ];
+        $condBadgeClass = $condBadgeMap[$race->course_condition] ?? 'bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600';
+        $weatherIconMap = ['晴' => '☀️', '曇' => '☁️', '小雨' => '🌦️', '雨' => '🌧️', '小雪' => '🌨️', '雪' => '❄️'];
+        $weatherIcon = $weatherIconMap[$race->weather] ?? '';
     @endphp
     <x-page-header
         title="{{ $race->name }}"
         subtitle="{{ $subtitle }}"
         icon="target">
         <x-slot name="actions">
+            {{-- 馬場状況バッジ (Phase EV-5: リアルタイム取得対応) --}}
+            <span id="race-condition-badge"
+                class="inline-flex items-center space-x-1 px-3 py-2 rounded-md text-xs font-medium border {{ $condBadgeClass }}"
+                title="{{ $race->course_condition_checked_at ? '最終確認: ' . $race->course_condition_checked_at->format('Y/m/d H:i:s') . ' (netkeiba)' : '出馬表取込時点の情報 (未リアルタイム確認)' }}">
+                <span id="race-condition-weather-icon">{{ $weatherIcon }}</span>
+                <span id="race-condition-weather-text">{{ $race->weather ?? '天候未定' }}</span>
+                <span>/</span>
+                <span>馬場:</span>
+                <span id="race-condition-text">{{ $race->course_condition ?? '未定' }}</span>
+                @if ($race->course_condition_checked_at)
+                    <span id="race-condition-checked-at" class="opacity-70">({{ $race->course_condition_checked_at->format('H:i') }}確認)</span>
+                @else
+                    <span id="race-condition-checked-at" class="opacity-70">(未確認)</span>
+                @endif
+            </span>
             <a href="{{ route('shutuba.index') }}" class="inline-flex items-center space-x-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-2 rounded-md text-xs font-medium">
                 <x-icon name="arrow-left" class="w-4 h-4" />
                 <span>一覧</span>
@@ -1378,6 +1405,50 @@
         let tickTimer = null;   // カウントダウン表示更新タイマー
         let nextAt    = 0;      // 次回発火予定 (epoch ms)
 
+        // ---- 馬場状況バッジ更新 (Phase EV-5) ----
+        //   captureOdds() のレスポンスに含まれる weather / course_condition /
+        //   course_condition_checked_at_human を使い、ページ全体をリロードせずに
+        //   バッジ表示だけを即時更新する (silent=true の自動更新時はリロードするが、
+        //   リロード完了までのタイムラグでも最新値を出したいため常に呼ぶ)。
+        const condBadgeColors = {
+            '良':   'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700',
+            '稍重': 'bg-lime-100 text-lime-700 border-lime-300 dark:bg-lime-900/40 dark:text-lime-300 dark:border-lime-700',
+            '重':   'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700',
+            '不良': 'bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-700',
+        };
+        const condBadgeDefault = 'bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600';
+        const weatherIcons = { '晴': '☀️', '曇': '☁️', '小雨': '🌦️', '雨': '🌧️', '小雪': '🌨️', '雪': '❄️' };
+
+        function updateConditionBadge(data) {
+            if (!data || (data.weather === undefined && data.course_condition === undefined)) return;
+            const badge = document.getElementById('race-condition-badge');
+            if (!badge) return;
+
+            const weather   = data.weather ?? null;
+            const condition = data.course_condition ?? null;
+
+            const weatherIconEl = document.getElementById('race-condition-weather-icon');
+            const weatherTextEl = document.getElementById('race-condition-weather-text');
+            const condTextEl    = document.getElementById('race-condition-text');
+            const checkedAtEl   = document.getElementById('race-condition-checked-at');
+
+            if (weatherIconEl) weatherIconEl.textContent = weather ? (weatherIcons[weather] || '') : '';
+            if (weatherTextEl) weatherTextEl.textContent = weather || '天候未定';
+            if (condTextEl)    condTextEl.textContent    = condition || '未定';
+            if (checkedAtEl) {
+                checkedAtEl.textContent = data.course_condition_checked_at_human
+                    ? `(${data.course_condition_checked_at_human}確認)`
+                    : '(未確認)';
+            }
+
+            // バッジの色を condition に応じて張り替え (Tailwind の border/bg/text クラスを丸ごと差し替え)
+            const colorClass = condBadgeColors[condition] || condBadgeDefault;
+            badge.className = 'inline-flex items-center space-x-1 px-3 py-2 rounded-md text-xs font-medium border ' + colorClass;
+            if (data.course_condition_checked_at) {
+                badge.title = `最終確認: ${new Date(data.course_condition_checked_at).toLocaleString('ja-JP')} (netkeiba)`;
+            }
+        }
+
         // ---- 実 fetch (手動/自動 共通) ----
         async function doCapture({ reloadOnSuccess = true, silent = false } = {}) {
             if (!url) return false;
@@ -1398,6 +1469,11 @@
                     },
                 });
                 const data = await res.json().catch(() => ({}));
+
+                // 馬場状況バッジは成功/失敗に関わらず反映する (Phase EV-5)
+                //   オッズが取得不能(発走後等)でも、天候/馬場状態だけは更新できているケースがあるため。
+                //   ページを丸ごとリロードしない silent/非成功パスでも、この更新は行う。
+                updateConditionBadge(data);
 
                 if (res.ok && data.ok) {
                     if (statusEl) {
