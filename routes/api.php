@@ -26,7 +26,12 @@ use Illuminate\Support\Facades\Route;
 // =====================================================================
 // 🔓 認証不要
 // =====================================================================
-Route::post('/login', [AuthController::class, 'login'])->name('api.login');
+// セキュリティ強化: ブルートフォース攻撃対策として IP 単位で 1分に10回まで
+// (Web版ログインは LoginRequest 側で email+IP 単位 5回ロックアウト済みだが、
+//  API側にも同様のレート制限がなかったため追加)
+Route::post('/login', [AuthController::class, 'login'])
+    ->middleware('throttle:10,1')
+    ->name('api.login');
 
 // =====================================================================
 // 🔐 要トークン認証 (Sanctum)

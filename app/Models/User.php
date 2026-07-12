@@ -19,6 +19,9 @@ class User extends Authenticatable
         'password',
     ];
 
+    // is_admin は fillable に含めない (セキュリティ強化: 会員登録フォーム経由での
+    // 自己昇格を防止するため、マスアサインメントでは変更不可にする)
+
     protected $hidden = [
         'password',
         'remember_token',
@@ -29,6 +32,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_admin' => 'boolean',
         ];
     }
 

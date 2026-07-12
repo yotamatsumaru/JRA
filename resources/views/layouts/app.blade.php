@@ -384,6 +384,8 @@
                             </div>
                         </div>
 
+                        @if (auth()->user()?->is_admin)
+                        {{-- セキュリティ強化: 取込/DB管理は is_admin ユーザーのみナビゲーションに表示 --}}
                         <div class="relative" x-data="{ open: false }">
                             <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('import.*') ? $active : $inactive }} flex items-center space-x-1">
                                 <span>取込</span>
@@ -408,6 +410,7 @@
                                 <a href="{{ route('admin.db.schema') }}" class="flex items-center space-x-2 px-4 py-2.5 hover:bg-turf-50 dark:hover:bg-gray-700"><x-icon name="map" class="w-4 h-4 text-emerald-500" /><span>ER図</span></a>
                             </div>
                         </div>
+                        @endif
 
                         <div class="relative" x-data="{ open: false }">
                             <button @click="open = !open" @click.away="open = false" class="{{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? $active : $inactive }} flex items-center space-x-1">
@@ -427,7 +430,9 @@
                             </div>
                         </div>
 
+                        @if (auth()->user()?->is_admin)
                         <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $active : $inactive }}">運用</a>
+                        @endif
                         <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $active : $inactive }}">ウォッチ</a>
                         <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $active : $inactive }}">共有</a>
                         <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $active : $inactive }}">メモ</a>
@@ -548,6 +553,8 @@
                 </div>
 
                 @auth
+                @if (auth()->user()?->is_admin)
+                {{-- セキュリティ強化: 取込/DBビューア/運用ダッシュボードは is_admin ユーザーのみ表示 --}}
                 {{-- 取込(折り畳み) — 要ログイン --}}
                 <div x-data="{ o: {{ request()->routeIs('import.*') ? 'true' : 'false' }} }" class="rounded">
                     <button @click="o = !o" class="w-full flex items-center justify-between px-3 py-2.5 rounded hover:bg-turf-600 active:bg-turf-700">
@@ -574,6 +581,7 @@
                         <a href="{{ route('admin.db.schema') }}" class="{{ $mSub }}" @click="menuOpen=false"><x-icon name="map" class="w-4 h-4" /> ER図</a>
                     </div>
                 </div>
+                @endif
 
                 {{-- 馬券(折り畳み) — 要ログイン (上の @auth に含まれる) --}}
                 <div x-data="{ o: {{ request()->routeIs('bets.*') || request()->routeIs('betting.*') ? 'true' : 'false' }} }" class="rounded">
@@ -592,7 +600,9 @@
                     </div>
                 </div>
 
+                @if (auth()->user()?->is_admin)
                 <a href="{{ route('operations.index') }}" class="{{ request()->routeIs('operations.*') ? $mActive : $mLink }}" @click="menuOpen=false">運用ダッシュボード</a>
+                @endif
                 <a href="{{ route('watchlist.index') }}" class="{{ request()->routeIs('watchlist.*') ? $mActive : $mLink }}" @click="menuOpen=false">ウォッチリスト</a>
                 <a href="{{ route('shares.index') }}" class="{{ request()->routeIs('shares.*') ? $mActive : $mLink }}" @click="menuOpen=false">予想共有</a>
                 <a href="{{ route('notes.index') }}" class="{{ request()->routeIs('notes.*') ? $mActive : $mLink }}" @click="menuOpen=false">メモ</a>

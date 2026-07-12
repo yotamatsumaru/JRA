@@ -116,9 +116,14 @@ Route::prefix('analytics')->name('analytics.')->group(function () {
 // =====================================================================
 Route::middleware('guest')->group(function () {
     Route::get('login',    [AuthenticatedSessionController::class, 'create'])->name('login');
-    Route::post('login',   [AuthenticatedSessionController::class, 'store']);
+    // ログインPOST自体は LoginRequest::ensureIsNotRateLimited() で email+IP単位 5回ロックアウト済み。
+    // ここでは更に IP単位の粗いレート制限を重ねて多アカウント総当たりも抑止する。
+    Route::post('login',   [AuthenticatedSessionController::class, 'store'])
+        ->middleware('throttle:10,1');
     Route::get('register', [RegisteredUserController::class, 'create'])->name('register');
-    Route::post('register',[RegisteredUserController::class, 'store']);
+    // セキュリティ強化: 登録フォームの自動投稿・大量アカウント作成を防止 (IP単位 5回/分)
+    Route::post('register',[RegisteredUserController::class, 'store'])
+        ->middleware('throttle:5,1');
 });
 
 // =====================================================================
@@ -220,7 +225,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/shares/{share}',      [PredictionShareController::class, 'destroy'])->name('shares.destroy');
 
     // 管理: DBビューア (読み取り専用)
-    Route::prefix('admin/db')->name('admin.db.')->group(function () {
+    // セキュリティ強化: 全DB内容(ユーザー個人情報含む)が閲覧できるため is_admin 限定
+    Route::prefix('admin/db')->name('admin.db.')->middleware('admin')->group(function () {
         Route::get('/',              [DbViewerController::class, 'index'])->name('index');
         Route::get('/stats',         [DbViewerController::class, 'stats'])->name('stats');
         Route::get('/schema',        [DbViewerController::class, 'schema'])->name('schema');
@@ -228,7 +234,8 @@ Route::middleware('auth')->group(function () {
     });
 
     // Phase 3-Z: 運用ダッシュボード
-    Route::prefix('operations')->name('operations.')->group(function () {
+    // セキュリティ強化: 手動ジョブ実行はアプリ全体に影響するため is_admin 限定
+    Route::prefix('operations')->name('operations.')->middleware('admin')->group(function () {
         Route::get('/',                     [OperationsController::class, 'index'])->name('index');
         Route::post('/run-job',             [OperationsController::class, 'runJob'])->name('run-job');
         Route::get('/odds/{race}',          [OperationsController::class, 'odds'])->name('odds');
@@ -236,7 +243,8 @@ Route::middleware('auth')->group(function () {
     });
 
     // インポート
-    Route::prefix('import')->name('import.')->group(function () {
+    // セキュリティ強化: 外部データの一括取込・OpenAI API呼び出しコストが発生するため is_admin 限定
+    Route::prefix('import')->name('import.')->middleware('admin')->group(function () {
         Route::get('/',              [ImportController::class, 'index'])->name('index');
         Route::get('/csv',           [ImportController::class, 'csvForm'])->name('csv');
         Route::post('/csv',          [ImportController::class, 'csvStore'])->name('csv.store');
