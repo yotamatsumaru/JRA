@@ -599,6 +599,21 @@
                             '追' => 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
                             '不' => 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
                         ];
+                        // 枠番色 (JRA公式の枠色に準拠: 1白/2黒/3赤/4青/5黄/6緑/7橙/8桃)
+                        //   背景色でJRA配色を再現し、文字色は視認性のためコントラストを確保。
+                        //   9枠以上(まず出現しないが安全のため)はグレーにフォールバック。
+                        $frameColors = [
+                            1 => 'bg-white text-gray-900 border-gray-400 dark:bg-gray-100 dark:text-gray-900',
+                            2 => 'bg-gray-900 text-white border-gray-900 dark:bg-gray-950 dark:text-white',
+                            3 => 'bg-red-600 text-white border-red-600',
+                            4 => 'bg-blue-600 text-white border-blue-600',
+                            5 => 'bg-yellow-400 text-gray-900 border-yellow-400',
+                            6 => 'bg-green-600 text-white border-green-600',
+                            7 => 'bg-orange-500 text-white border-orange-500',
+                            8 => 'bg-pink-500 text-white border-pink-500',
+                        ];
+                        $frameNo = (int) ($rr->frame_number ?? 0);
+                        $frameClass = $frameColors[$frameNo] ?? 'bg-gray-200 text-gray-600 border-gray-300 dark:bg-gray-700 dark:text-gray-300';
                     @endphp
                     <tr class="border-b dark:border-gray-700 align-top hover:bg-turf-50/30 dark:hover:bg-gray-700/30 transition-colors {{ $r->is_favorite ? 'bg-amber-50/40 dark:bg-amber-900/10' : '' }}"
                         data-hno="{{ $hno }}"
@@ -636,7 +651,8 @@
                         {{-- 馬 --}}
                         <td class="px-2 py-2">
                             <div class="flex items-center space-x-2">
-                                <span class="inline-flex w-7 h-7 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-bold">{{ $hno }}</span>
+                                <span class="inline-flex w-7 h-7 items-center justify-center rounded-full border {{ $frameClass }} text-xs font-bold shadow-sm"
+                                      title="{{ $frameNo > 0 ? $frameNo . '枠' : '' }}">{{ $hno }}</span>
                                 <div>
                                     @if ($r->horse)
                                         <a href="{{ route('horses.show', $r->horse) }}" class="font-medium text-turf-700 dark:text-turf-400 hover:underline">{{ $r->horse->name }}</a>
