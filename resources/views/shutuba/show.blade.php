@@ -153,50 +153,68 @@
         </form>
     </div>
 
-    {{-- Phase 3-I: リアルタイムオッズ --}}
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-gray-100 dark:ring-gray-700 p-4"
-         x-show="liveOdds.enabled" x-cloak>
-        <div class="flex items-center justify-between mb-2">
-            <div class="text-xs font-semibold text-gray-700 dark:text-gray-200 flex items-center space-x-2">
-                <x-icon name="bolt" class="w-4 h-4 text-amber-500" />
-                <span>リアルタイムオッズ</span>
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-mono"
-                      :class="liveOdds.fresh ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'"
-                      x-text="liveOdds.lastAt ? ('最終取得: ' + liveOdds.lastAt) : '未取得'"></span>
-                <span class="text-[10px] text-gray-400" x-text="'スナップショット ' + liveOdds.count + ' 件'"></span>
+    {{-- ⚡ リアルタイムオッズ (Phase EV-6: 401エラー修正 + UI統合・見やすさ改善) --}}
+    @if ($race->netkeiba_id)
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm ring-1 ring-amber-100 dark:ring-amber-900/40 p-4"
+         x-data="liveOddsPanel()" x-init="init()">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-900/40">
+                    <x-icon name="bolt" class="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                </span>
+                <span class="text-sm font-bold text-gray-800 dark:text-gray-100">リアルタイムオッズ</span>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold"
+                      :class="fresh ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'"
+                      x-text="lastAt ? ('最終取得 ' + lastAt) : '未取得'"></span>
+                <span class="text-[11px] text-gray-400" x-text="'スナップショット ' + count + ' 件'"></span>
             </div>
             <div class="flex items-center gap-2">
-                <label class="inline-flex items-center gap-1 text-[11px] text-gray-600 dark:text-gray-300 cursor-pointer">
-                    <input type="checkbox" x-model="liveOdds.autoRefresh" @change="toggleAutoRefresh()"
+                <label class="inline-flex items-center gap-1.5 text-[11px] text-gray-600 dark:text-gray-300 cursor-pointer px-2 py-1 rounded border border-gray-200 dark:border-gray-600 select-none">
+                    <input type="checkbox" x-model="autoRefresh" @change="toggleAutoRefresh()"
                         class="rounded border-gray-300 text-turf-600 focus:ring-turf-500">
-                    <span>自動更新 (30秒)</span>
+                    <span x-text="'自動更新 (' + intervalSec + '秒)'"></span>
+                    <span class="text-gray-400" x-text="countdownLabel"></span>
                 </label>
                 <button type="button" @click="captureOdds()"
-                    :disabled="liveOdds.loading"
-                    class="inline-flex items-center gap-1 px-3 py-1.5 rounded text-[11px] font-medium bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white">
-                    <x-icon name="refresh" class="w-3.5 h-3.5" />
-                    <span x-text="liveOdds.loading ? '取得中...' : '今すぐ取得'"></span>
+                    :disabled="loading"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white shadow-sm">
+                    <x-icon name="bolt" class="w-3.5 h-3.5" />
+                    <span x-text="loading ? '📡 取得中...' : '🔶 今すぐ取得'"></span>
                 </button>
             </div>
         </div>
-        <div x-show="liveOdds.message" class="text-[11px] text-gray-500 mb-2" x-text="liveOdds.message"></div>
+
+        <div x-show="message" class="text-[11px] mb-2 px-2 py-1.5 rounded"
+             :class="ok === false ? 'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-300' : 'bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-300'"
+             x-text="message" x-cloak></div>
+
+        <div x-show="horses.length === 0" class="text-center py-6 text-xs text-gray-400" x-cloak>
+            まだオッズスナップショットがありません。「🔶 今すぐ取得」を押してください。
+        </div>
+
         <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-1.5"
-             x-show="liveOdds.horses && liveOdds.horses.length > 0">
-            <template x-for="h in liveOdds.horses" :key="h.horse_number">
-                <div class="rounded ring-1 ring-gray-200 dark:ring-gray-700 px-2 py-1.5 text-center"
-                     :class="h.popularity === 1 ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-white dark:bg-gray-900'">
-                    <div class="text-[10px] text-gray-400">#<span x-text="h.horse_number"></span></div>
+             x-show="horses.length > 0" x-cloak>
+            <template x-for="h in horses" :key="h.horse_number">
+                <div class="rounded-md ring-1 px-2 py-1.5 text-center"
+                     :class="h.popularity === 1
+                        ? 'ring-amber-400 bg-amber-50 dark:bg-amber-900/20'
+                        : (h.popularity && h.popularity <= 3 ? 'ring-sky-200 dark:ring-sky-800 bg-sky-50/60 dark:bg-sky-900/10' : 'ring-gray-200 dark:ring-gray-700 bg-white dark:bg-gray-900')">
+                    <div class="text-[10px] font-medium"
+                         :class="h.popularity === 1 ? 'text-amber-600' : 'text-gray-400'">
+                        #<span x-text="h.horse_number"></span>
+                    </div>
                     <div class="font-mono text-sm font-bold"
-                         :class="h.win_odds && h.win_odds < 5 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-200'"
+                         :class="h.win_odds !== null && h.win_odds < 5 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-200'"
                          x-text="h.win_odds !== null ? h.win_odds.toFixed(1) : '-'"></div>
-                    <div class="text-[10px] text-gray-500" x-text="h.popularity ? (h.popularity + '人気') : ''"></div>
-                    <div class="text-[9px] mt-0.5" x-show="h.delta !== null && h.delta !== 0"
+                    <div class="text-[10px] text-gray-500" x-text="h.popularity ? ('★' + h.popularity + '人気') : ''"></div>
+                    <div class="text-[9px] mt-0.5 font-semibold" x-show="h.delta !== null && h.delta !== 0"
                          :class="h.delta < 0 ? 'text-emerald-600' : 'text-red-500'"
                          x-text="(h.delta > 0 ? '▲' : '▼') + Math.abs(h.delta).toFixed(1)"></div>
                 </div>
             </template>
         </div>
     </div>
+    @endif
 
     {{-- ペース予想 + レース全体メモ (Phase 1-A, 1-T) --}}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -505,37 +523,16 @@
                 ↻ 再計算
             </a>
 
-            {{-- 最新オッズ取得 (Phase EV-2) --}}
+            {{-- 最新オッズ取得は下の「⚡ リアルタイムオッズ」パネルに統合 (Phase EV-6) --}}
             @if ($race->netkeiba_id)
-                <button type="button" id="btn-capture-odds"
-                    data-url="{{ route('shutuba.capture-odds', $race) }}"
-                    class="ml-2 px-2 py-1 rounded border bg-sky-600 text-white border-sky-600 hover:bg-sky-700 inline-flex items-center gap-1"
-                    title="netkeiba から最新オッズを取得し、期待値(EV)を再計算します">
-                    <span>📊 最新オッズ取得</span>
-                </button>
-
-                {{-- 自動更新トグル (Phase EV-3) --}}
-                @php $autoSec = (int) config('jra.odds_capture.auto_refresh_seconds', 60); @endphp
-                <label id="lbl-auto-capture-odds"
-                    class="ml-2 inline-flex items-center gap-1 text-[11px] text-gray-700 dark:text-gray-300 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 cursor-pointer select-none"
-                    title="ONの間、{{ $autoSec }}秒ごとに最新オッズを取得しページを更新します (タブがアクティブなときのみ)">
-                    <input type="checkbox" id="chk-auto-capture-odds"
-                        data-interval-seconds="{{ $autoSec }}"
-                        class="align-middle" />
-                    <span>🔄 自動更新 ({{ $autoSec }}秒)</span>
-                    <span id="auto-capture-countdown" class="text-gray-400 ml-1"></span>
-                </label>
-
-                <span id="capture-odds-status" class="ml-1 text-[11px] text-gray-500"></span>
-
                 @if ($has_live_odds && $live_odds_at)
                     <span class="ml-2 inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded"
                         title="現在表示中の EV は {{ $live_odds_at->format('Y/m/d H:i') }} 時点のライブオッズで計算されています">
                         ● ライブEV ({{ $live_odds_at->format('H:i') }})
                     </span>
-                @elseif (!$has_live_odds)
+                @else
                     <span class="ml-2 inline-flex items-center gap-1 text-[11px] text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
-                        title="現在の EV は出馬表時点の単勝オッズで計算されています。最新オッズ取得を押すとライブオッズに更新されます">
+                        title="現在の EV は出馬表時点の単勝オッズで計算されています。下の「リアルタイムオッズ」パネルで取得するとライブオッズに更新されます">
                         ○ 出馬表時EV
                     </span>
                 @endif
@@ -602,6 +599,21 @@
                             '追' => 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
                             '不' => 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
                         ];
+                        // 枠番色 (JRA公式の枠色に準拠: 1白/2黒/3赤/4青/5黄/6緑/7橙/8桃)
+                        //   背景色でJRA配色を再現し、文字色は視認性のためコントラストを確保。
+                        //   9枠以上(まず出現しないが安全のため)はグレーにフォールバック。
+                        $frameColors = [
+                            1 => 'bg-white text-gray-900 border-gray-400 dark:bg-gray-100 dark:text-gray-900',
+                            2 => 'bg-gray-900 text-white border-gray-900 dark:bg-gray-950 dark:text-white',
+                            3 => 'bg-red-600 text-white border-red-600',
+                            4 => 'bg-blue-600 text-white border-blue-600',
+                            5 => 'bg-yellow-400 text-gray-900 border-yellow-400',
+                            6 => 'bg-green-600 text-white border-green-600',
+                            7 => 'bg-orange-500 text-white border-orange-500',
+                            8 => 'bg-pink-500 text-white border-pink-500',
+                        ];
+                        $frameNo = (int) ($rr->frame_number ?? 0);
+                        $frameClass = $frameColors[$frameNo] ?? 'bg-gray-200 text-gray-600 border-gray-300 dark:bg-gray-700 dark:text-gray-300';
                     @endphp
                     <tr class="border-b dark:border-gray-700 align-top hover:bg-turf-50/30 dark:hover:bg-gray-700/30 transition-colors {{ $r->is_favorite ? 'bg-amber-50/40 dark:bg-amber-900/10' : '' }}"
                         data-hno="{{ $hno }}"
@@ -639,7 +651,8 @@
                         {{-- 馬 --}}
                         <td class="px-2 py-2">
                             <div class="flex items-center space-x-2">
-                                <span class="inline-flex w-7 h-7 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-bold">{{ $hno }}</span>
+                                <span class="inline-flex w-7 h-7 items-center justify-center rounded-full border {{ $frameClass }} text-xs font-bold shadow-sm"
+                                      title="{{ $frameNo > 0 ? $frameNo . '枠' : '' }}">{{ $hno }}</span>
                                 <div>
                                     @if ($r->horse)
                                         <a href="{{ route('horses.show', $r->horse) }}" class="font-medium text-turf-700 dark:text-turf-400 hover:underline">{{ $r->horse->name }}</a>
@@ -1057,20 +1070,6 @@
             // Phase 4-S: 共有ダイアログ
             shareDialog: { open: false },
 
-            // Phase 3-I: リアルタイムオッズ
-            liveOdds: {
-                enabled: true,
-                autoRefresh: false,
-                loading: false,
-                fresh: false,
-                lastAt: null,
-                count: 0,
-                horses: [],
-                message: '',
-                _timer: null,
-                _prev: {},
-            },
-
             togglePast(rrid) {
                 this.past[rrid] = !this.past[rrid];
             },
@@ -1280,66 +1279,71 @@
                 });
             },
 
-            // Phase 3-I: リアルタイムオッズ取得
-            async refreshOdds() {
-                try {
-                    const res = await fetch(@json(route('operations.odds', $race)), {
-                        headers: { 'Accept': 'application/json' },
-                    });
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    const data = await res.json();
-                    this.liveOdds.count = data.snapshot_count || 0;
-                    this.liveOdds.lastAt = data.latest_at
-                        ? new Date(data.latest_at).toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
-                        : null;
-                    const fresh = data.latest_at && (Date.now() - new Date(data.latest_at).getTime()) < 15 * 60 * 1000;
-                    this.liveOdds.fresh = !!fresh;
+            init() {
+                this.initKeyboard();
+            },
+        };
+    }
 
-                    // Phase EV-3 修正:
-                    //   サーバは OddsSnapshot.payload を { horse_number: {...} } の
-                    //   連想配列で保存しているため、JSでは Object になる。
-                    //   従来 payload.map() で "payload.map is not a function" が発生していた。
-                    //   Array と Object の両方に対応する。
-                    const payloadRaw = data.latest_payload || {};
-                    const payloadArr = Array.isArray(payloadRaw)
-                        ? payloadRaw
-                        : Object.entries(payloadRaw).map(([hno, row]) => ({
-                            horse_number: Number(row.horse_number ?? hno),
-                            win_odds:     row.win_odds ?? null,
-                            popularity:   row.popularity ?? null,
-                            horse_name:   row.horse_name ?? null,
-                        }));
-                    const prev = this.liveOdds._prev || {};
-                    const horses = payloadArr.map(h => {
-                        const num = Number(h.horse_number);
-                        const odds = h.win_odds !== null && h.win_odds !== undefined ? Number(h.win_odds) : null;
-                        let delta = null;
-                        if (odds !== null && prev[num] !== undefined && prev[num] !== null) {
-                            delta = +(odds - prev[num]).toFixed(1);
-                        }
-                        return {
-                            horse_number: num,
-                            win_odds:     odds,
-                            popularity:   h.popularity ? Number(h.popularity) : null,
-                            delta:        delta,
-                        };
-                    }).sort((a, b) => a.horse_number - b.horse_number);
+    // ========================================================
+    // ⚡ リアルタイムオッズ パネル (Phase EV-6)
+    //   - HTTP 401 エラー修正:
+    //     旧実装は route('operations.odds', ...) / route('operations.odds.capture', ...)
+    //     (= auth ミドルウェア配下、ログイン必須) を叩いていたため、ゲスト/未ログイン
+    //     ユーザーが押すと常に 401 Unauthorized になっていた。
+    //     出馬表ページの他のオッズ機能と同じ、ゲスト解放済みの
+    //     route('shutuba.capture-odds', ...) / route('shutuba.odds-timeline', ...)
+    //     (throttle 制限付き) に差し替えて修正。
+    //   - UI 見やすさ改善:
+    //     ページロード時点のスナップショットをサーバから埋め込み表示 (初回 fetch 待ち無し)、
+    //     人気1位/上位3位のハイライト、取得中/エラー時の視覚フィードバック、
+    //     カウントダウン表示付き自動更新トグルなどを追加。
+    // ========================================================
+    function liveOddsPanel() {
+        const init         = @json($odds_panel_init ?? ['count' => 0, 'lastAt' => null, 'horses' => []]);
+        const captureUrl    = @json(route('shutuba.capture-odds', $race));
+        const intervalSec   = @json((int) config('jra.odds_capture.auto_refresh_seconds', 60));
+        const AUTO_KEY      = 'shutuba.auto_capture_odds';
 
-                    // 次回比較用に保存
-                    const next = {};
-                    horses.forEach(h => { if (h.win_odds !== null) next[h.horse_number] = h.win_odds; });
-                    this.liveOdds._prev = next;
-                    this.liveOdds.horses = horses;
-                    this.liveOdds.message = horses.length === 0 ? 'まだスナップショットがありません。「今すぐ取得」を押してください。' : '';
-                } catch (e) {
-                    this.liveOdds.message = 'オッズ取得エラー: ' + e.message;
+        return {
+            autoRefresh: false,
+            loading: false,
+            ok: null,
+            fresh: false,
+            lastAt: init.lastAt
+                ? new Date(init.lastAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                : null,
+            count: init.count || 0,
+            horses: (init.horses || []).map(h => ({ ...h, delta: null })),
+            message: '',
+            intervalSec: intervalSec,
+            countdownLabel: '',
+            _prev: {},
+            _timer: null,
+            _tick: null,
+            _nextAt: 0,
+
+            init() {
+                if (init.lastAt) {
+                    this.fresh = (Date.now() - new Date(init.lastAt).getTime()) < 15 * 60 * 1000;
                 }
+                (init.horses || []).forEach(h => {
+                    if (h.win_odds !== null && h.win_odds !== undefined) this._prev[h.horse_number] = Number(h.win_odds);
+                });
+                try {
+                    if (localStorage.getItem(AUTO_KEY) === '1') {
+                        this.autoRefresh = true;
+                        this._schedule();
+                    }
+                } catch (e) {}
+                document.addEventListener('visibilitychange', () => this._updateCountdown());
             },
 
             async captureOdds() {
-                this.liveOdds.loading = true;
+                this.loading = true;
+                this.message = '';
                 try {
-                    const res = await fetch(@json(route('operations.odds.capture', $race)), {
+                    const res = await fetch(captureUrl, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1347,69 +1351,117 @@
                             'Accept': 'application/json',
                         },
                     });
-                    const data = await res.json();
-                    if (!data.ok) {
-                        this.liveOdds.message = data.message || '取得に失敗しました';
+                    const data = await res.json().catch(() => ({}));
+
+                    // 馬場状況バッジは成功/失敗に関わらず反映する (Phase EV-5 と連携)
+                    if (typeof window.__updateRaceConditionBadge === 'function') {
+                        window.__updateRaceConditionBadge(data);
+                    }
+
+                    if (res.ok && data.ok) {
+                        this.ok = true;
+                        const t = new Date().toLocaleTimeString('ja-JP', { hour12: false });
+                        this.message = (data.message || `取得完了 (${data.count}頭)`) + ` [${t}]`;
+                        this._applyPayload(data.payload || {}, data.captured_at);
+                        this.count = (this.count || 0) + 1;
                     } else {
-                        this.liveOdds.message = '取得完了';
-                        await this.refreshOdds();
+                        this.ok = false;
+                        this.message = (data && data.message) ? data.message : `HTTP ${res.status}`;
                     }
                 } catch (e) {
-                    this.liveOdds.message = '取得エラー: ' + e.message;
+                    this.ok = false;
+                    this.message = 'オッズ取得エラー: ' + e.message;
                 } finally {
-                    this.liveOdds.loading = false;
+                    this.loading = false;
                 }
+            },
+
+            // captureOdds() のレスポンス payload ({horse_number: {...}}) を
+            // horses[] (表示用配列, 前回比較のΔ付き) に変換して反映する。
+            _applyPayload(payloadRaw, capturedAt) {
+                const payloadArr = Array.isArray(payloadRaw)
+                    ? payloadRaw
+                    : Object.entries(payloadRaw).map(([hno, row]) => ({
+                        horse_number: Number(row.horse_number ?? hno),
+                        win_odds:     row.win_odds ?? null,
+                        popularity:   row.popularity ?? null,
+                    }));
+                if (payloadArr.length === 0) return;
+
+                const prev = this._prev || {};
+                const horses = payloadArr.map(h => {
+                    const num  = Number(h.horse_number);
+                    const odds = h.win_odds !== null && h.win_odds !== undefined ? Number(h.win_odds) : null;
+                    let delta = null;
+                    if (odds !== null && prev[num] !== undefined && prev[num] !== null) {
+                        delta = +(odds - prev[num]).toFixed(1);
+                    }
+                    return {
+                        horse_number: num,
+                        win_odds:     odds,
+                        popularity:   h.popularity ? Number(h.popularity) : null,
+                        delta:        delta,
+                    };
+                }).sort((a, b) => a.horse_number - b.horse_number);
+
+                const next = {};
+                horses.forEach(h => { if (h.win_odds !== null) next[h.horse_number] = h.win_odds; });
+                this._prev = next;
+                this.horses = horses;
+                this.fresh = true;
+                this.lastAt = capturedAt
+                    ? new Date(capturedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    : new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             },
 
             toggleAutoRefresh() {
-                if (this.liveOdds._timer) {
-                    clearInterval(this.liveOdds._timer);
-                    this.liveOdds._timer = null;
-                }
-                if (this.liveOdds.autoRefresh) {
-                    this.liveOdds._timer = setInterval(() => this.refreshOdds(), 30000);
-                    this.refreshOdds();
+                try { localStorage.setItem(AUTO_KEY, this.autoRefresh ? '1' : '0'); } catch (e) {}
+                if (this.autoRefresh) {
+                    this._schedule();
+                    this.captureOdds();
+                } else {
+                    this._stop();
                 }
             },
 
-            init() {
-                this.initKeyboard();
-                // 初回ロードでオッズを表示(スナップショットがあれば)
-                this.refreshOdds();
+            _schedule() {
+                this._stop();
+                this._nextAt = Date.now() + this.intervalSec * 1000;
+                this._timer = setTimeout(() => this._runAuto(), this.intervalSec * 1000);
+                this._tick  = setInterval(() => this._updateCountdown(), 1000);
+                this._updateCountdown();
+            },
+
+            _stop() {
+                if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+                if (this._tick)  { clearInterval(this._tick); this._tick = null; }
+                this.countdownLabel = '';
+            },
+
+            async _runAuto() {
+                // タブが非表示の間は取得を止め、次のスロットへ (netkeiba 負荷軽減)
+                if (document.hidden) { this._schedule(); return; }
+                await this.captureOdds();
+                if (this.autoRefresh) this._schedule();
+            },
+
+            _updateCountdown() {
+                if (!this.autoRefresh) { this.countdownLabel = ''; return; }
+                if (document.hidden) { this.countdownLabel = '(タブ非表示中)'; return; }
+                const remain = Math.max(0, Math.ceil((this._nextAt - Date.now()) / 1000));
+                this.countdownLabel = `次: ${remain}s`;
             },
         };
     }
 
     // ========================================================
-    // 最新オッズ取得ボタン + 自動更新 (Phase EV-2 / EV-3)
-    //   - 手動: 「📊 最新オッズ取得」ボタン click で 1 回取得 → リロード
-    //   - 自動: 「🔄 自動更新 (Nsec)」ON の間、N秒ごとに取得 → リロード
-    //           * タブが非表示のときは停止 (netkeiba 負荷軽減)
-    //           * localStorage で ON/OFF を永続化 (ページ遷移しても継続)
-    //           * 直近取得時刻を基準に「あと N 秒」カウントダウン表示
+    // 馬場状況バッジ更新 (Phase EV-5)
+    //   「⚡ リアルタイムオッズ」パネル (liveOddsPanel()) の captureOdds() レスポンスに
+    //   含まれる weather / course_condition / course_condition_checked_at_human を使い、
+    //   ページ全体をリロードせずにヘッダーのバッジ表示だけを即時更新する。
+    //   window.__updateRaceConditionBadge として公開し、liveOddsPanel() から呼び出す。
     // ========================================================
     (function () {
-        const btn        = document.getElementById('btn-capture-odds');
-        if (!btn) return;
-
-        const statusEl   = document.getElementById('capture-odds-status');
-        const chk        = document.getElementById('chk-auto-capture-odds');
-        const countdown  = document.getElementById('auto-capture-countdown');
-        const csrfToken  = document.querySelector('meta[name="csrf-token"]')?.content || '';
-        const url        = btn.dataset.url;
-        const raceId     = @json($race->id);
-        const AUTO_KEY   = 'shutuba.auto_capture_odds';
-        const intervalMs = Math.max(15, Number(chk?.dataset.intervalSeconds || 60)) * 1000;
-
-        let timer     = null;   // メイン発火タイマー
-        let tickTimer = null;   // カウントダウン表示更新タイマー
-        let nextAt    = 0;      // 次回発火予定 (epoch ms)
-
-        // ---- 馬場状況バッジ更新 (Phase EV-5) ----
-        //   captureOdds() のレスポンスに含まれる weather / course_condition /
-        //   course_condition_checked_at_human を使い、ページ全体をリロードせずに
-        //   バッジ表示だけを即時更新する (silent=true の自動更新時はリロードするが、
-        //   リロード完了までのタイムラグでも最新値を出したいため常に呼ぶ)。
         const condBadgeColors = {
             '良':   'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700',
             '稍重': 'bg-lime-100 text-lime-700 border-lime-300 dark:bg-lime-900/40 dark:text-lime-300 dark:border-lime-700',
@@ -1419,7 +1471,7 @@
         const condBadgeDefault = 'bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600';
         const weatherIcons = { '晴': '☀️', '曇': '☁️', '小雨': '🌦️', '雨': '🌧️', '小雪': '🌨️', '雪': '❄️' };
 
-        function updateConditionBadge(data) {
+        window.__updateRaceConditionBadge = function (data) {
             if (!data || (data.weather === undefined && data.course_condition === undefined)) return;
             const badge = document.getElementById('race-condition-badge');
             if (!badge) return;
@@ -1447,138 +1499,7 @@
             if (data.course_condition_checked_at) {
                 badge.title = `最終確認: ${new Date(data.course_condition_checked_at).toLocaleString('ja-JP')} (netkeiba)`;
             }
-        }
-
-        // ---- 実 fetch (手動/自動 共通) ----
-        async function doCapture({ reloadOnSuccess = true, silent = false } = {}) {
-            if (!url) return false;
-            if (!silent) {
-                btn.disabled = true;
-                btn.dataset._orig = btn.dataset._orig || btn.innerHTML;
-                btn.innerHTML = '<span class="animate-pulse">📡 取得中...</span>';
-            }
-            if (statusEl) statusEl.textContent = '';
-
-            try {
-                const res = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json',
-                    },
-                });
-                const data = await res.json().catch(() => ({}));
-
-                // 馬場状況バッジは成功/失敗に関わらず反映する (Phase EV-5)
-                //   オッズが取得不能(発走後等)でも、天候/馬場状態だけは更新できているケースがあるため。
-                //   ページを丸ごとリロードしない silent/非成功パスでも、この更新は行う。
-                updateConditionBadge(data);
-
-                if (res.ok && data.ok) {
-                    if (statusEl) {
-                        const t = new Date().toLocaleTimeString('ja-JP', { hour12: false });
-                        statusEl.textContent = (data.message || `取得完了 (${data.count}頭)`) + ` [${t}]`;
-                        statusEl.className = 'ml-1 text-[11px] text-emerald-600';
-                    }
-                    if (reloadOnSuccess) {
-                        // 少し遅延してリロード (ユーザーがトーストを目視できるように)
-                        setTimeout(() => window.location.reload(), 600);
-                    } else {
-                        if (!silent) {
-                            btn.disabled = false;
-                            btn.innerHTML = btn.dataset._orig;
-                        }
-                    }
-                    return true;
-                } else {
-                    const msg = (data && data.message) ? data.message : `HTTP ${res.status}`;
-                    if (statusEl) {
-                        statusEl.textContent = '❌ ' + msg;
-                        statusEl.className = 'ml-1 text-[11px] text-rose-600';
-                    }
-                    btn.disabled = false;
-                    btn.innerHTML = btn.dataset._orig || btn.innerHTML;
-                    return false;
-                }
-            } catch (e) {
-                if (statusEl) {
-                    statusEl.textContent = '❌ ' + e.message;
-                    statusEl.className = 'ml-1 text-[11px] text-rose-600';
-                }
-                btn.disabled = false;
-                btn.innerHTML = btn.dataset._orig || btn.innerHTML;
-                return false;
-            }
-        }
-
-        // ---- 手動 click ----
-        btn.addEventListener('click', () => doCapture({ reloadOnSuccess: true }));
-
-        // ---- 自動更新の start/stop ----
-        function stopAuto() {
-            if (timer)     { clearTimeout(timer); timer = null; }
-            if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
-            if (countdown) countdown.textContent = '';
-        }
-
-        function scheduleNext() {
-            stopAuto();
-            nextAt = Date.now() + intervalMs;
-            timer = setTimeout(runOnce, intervalMs);
-            tickTimer = setInterval(updateCountdown, 1000);
-            updateCountdown();
-        }
-
-        function updateCountdown() {
-            if (!countdown) return;
-            const remain = Math.max(0, Math.ceil((nextAt - Date.now()) / 1000));
-            countdown.textContent = document.hidden ? '(タブ非表示中)' : `次: ${remain}s`;
-        }
-
-        async function runOnce() {
-            // タブが非表示なら発火せずに次のスロットへ (netkeiba 負荷軽減)
-            if (document.hidden) {
-                scheduleNext();
-                return;
-            }
-            // silent モードで捕捉 → 成功したらリロード (Alpine を含む全表示を最新化)
-            const ok = await doCapture({ reloadOnSuccess: true, silent: true });
-            if (!ok) {
-                // 失敗時も次回試行はスケジュール (ネットワーク瞬断等を吸収)
-                scheduleNext();
-            }
-            // 成功時はリロードするので何もしない (次のページで再度 auto=on を読む)
-        }
-
-        // ---- チェックボックス handler ----
-        if (chk) {
-            // 初期状態: localStorage から復元
-            try {
-                if (localStorage.getItem(AUTO_KEY) === '1') {
-                    chk.checked = true;
-                }
-            } catch (e) {}
-
-            chk.addEventListener('change', () => {
-                try {
-                    localStorage.setItem(AUTO_KEY, chk.checked ? '1' : '0');
-                } catch (e) {}
-                if (chk.checked) {
-                    scheduleNext();
-                } else {
-                    stopAuto();
-                }
-            });
-
-            // タブ可視性変化 → カウントダウン表示を即更新
-            document.addEventListener('visibilitychange', updateCountdown);
-
-            // ページ表示時に auto=on ならタイマー開始
-            if (chk.checked) {
-                scheduleNext();
-            }
-        }
+        };
     })();
 
     // ========================================================

@@ -506,6 +506,27 @@ class ShutubaController extends Controller
             ]);
         }
 
+        // リアルタイムオッズパネル用 初期表示データ (Phase EV-6: UI見やすさ改善 + 401エラー修正)
+        //   ページロード時点で既に持っている最新スナップショットをそのまま使い、
+        //   JS側の初回 fetch を待たずに表示できるようにする (401エラー修正のついでに体験改善)。
+        $oddsSnapshotCount = OddsSnapshot::where('race_id', $race->id)->count();
+        $oddsPanelHorses = [];
+        if (!empty($liveOddsMap)) {
+            foreach ($liveOddsMap as $hno => $row) {
+                $oddsPanelHorses[] = [
+                    'horse_number' => $hno,
+                    'win_odds'     => $row['win_odds'],
+                    'popularity'   => $row['popularity'],
+                ];
+            }
+            usort($oddsPanelHorses, fn($a, $b) => $a['horse_number'] <=> $b['horse_number']);
+        }
+        $oddsPanelInit = [
+            'count'   => $oddsSnapshotCount,
+            'lastAt'  => optional($liveOddsAt)->toIso8601String(),
+            'horses'  => $oddsPanelHorses,
+        ];
+
         return view('shutuba.show', [
             'race'             => $race,
             'rows'             => $rows,
@@ -520,6 +541,7 @@ class ShutubaController extends Controller
             // ライブオッズ表示用 (Phase EV-2)
             'live_odds_at'     => $liveOddsAt,
             'has_live_odds'    => !empty($liveOddsMap),
+            'odds_panel_init'  => $oddsPanelInit,
             // レースナビゲーター (JRA 公式風)
             'navigator'        => $navigator,
             // コース傾向 (Phase EV-4)

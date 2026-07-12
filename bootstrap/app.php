@@ -17,6 +17,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
+
+        // セキュリティ強化: 全レスポンスに標準セキュリティヘッダーを付与
+        // (クリックジャッキング対策・MIMEスニッフィング対策等。web/api 両方に適用)
+        $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
+
+        // セキュリティ強化: 管理者専用機能(DBビューア/運用ダッシュボード/インポート等)
+        // へのアクセス制御用ミドルウェアエイリアス。ルート側で ->middleware('admin') と指定する。
+        $middleware->alias([
+            'admin' => \App\Http\Middleware\EnsureIsAdmin::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
